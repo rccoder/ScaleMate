@@ -6,7 +6,7 @@
 
 **目前支持云麦 YMBS-M263 · Android 14+ · 中文 / English**
 
-[下载体验版](https://github.com/rccoder/ScaleMate/releases)
+[下载体验版](https://github.com/rccoder/ScaleMate/releases/latest/download/ScaleMate.apk)
 
 ## 每天称重，少一步手动记录
 
@@ -72,9 +72,9 @@
 
 当前版本专注于 **云麦 YUNMAI YMBS-M263 的体重同步**，真实称重与 Google 健康应用同步流程已完成实测。未来希望连接更多体重秤与健康应用。
 
-现在提供的是 **0.1.0 测试版**，需要 Android 14 或更新版本。称重期间请保持 App 在前台，锁屏或离开页面会取消待确认的读数。Google 健康应用需获得体重读取权限，显示可能稍有延迟。
+现在提供的是 **0.1.0 体验版**，由 GitHub CI 构建并使用固定发布密钥签名，需要 Android 14 或更新版本。称重期间请保持 App 在前台，锁屏或离开页面会取消待确认的读数。Google 健康应用需获得体重读取权限，显示可能稍有延迟。
 
-[下载称伴体验版](https://github.com/rccoder/ScaleMate/releases)
+[下载称伴体验版](https://github.com/rccoder/ScaleMate/releases/latest/download/ScaleMate.apk) · [版本与更新记录](https://github.com/rccoder/ScaleMate/releases)
 
 ## 致谢
 

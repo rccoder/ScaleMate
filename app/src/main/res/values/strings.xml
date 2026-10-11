@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">ScaleMate</string>
     <string name="tagline">Every weigh-in has a home.</string>
-    <string name="intro">Connect your YUNMAI YMBS-M263 scale and save weight to Health Connect for Google Fit or Google Health.</string>
+    <string name="intro">Connect your %1$s and save weight to Health Connect for Google Fit or Google Health.</string>
     <string name="get_started">Get started</string>
     <string name="continue_local">Continue with local records</string>
     <string name="weigh">Weigh</string>
@@ -18,13 +18,13 @@
     <string name="health_ready">Weight writing is allowed</string>
     <string name="health_required">Local records only · authorization needed</string>
     <string name="add_scale">Add a scale</string>
-    <string name="scan_hint">Step briefly on your scale to wake it, then keep your phone nearby. Only M263-compatible packets appear here.</string>
+    <string name="scan_hint">Step briefly on your scale to wake it, then keep your phone nearby. Currently supported: %1$s.</string>
     <string name="scan">Scan nearby scales</string>
     <string name="scanning">Looking for your scale…</string>
     <string name="stop">Stop</string>
     <string name="no_scales_found">No compatible scales found. Wake the scale and try again.</string>
     <string name="confirm_scale">Confirm your scale</string>
-    <string name="confirm_model">Check that the label on this scale says YMBS-M263. It broadcasts weight and needs no system pairing.</string>
+    <string name="confirm_model">Confirm this is a %1$s. The model number on the bottom should be %2$s. No system Bluetooth pairing is needed.</string>
     <string name="bind">Confirm and add</string>
     <string name="cancel">Cancel</string>
     <string name="rename">Rename</string>
@@ -86,7 +86,7 @@
     <string name="stale_reading">No fresh weight data. Please weigh again.</string>
     <string name="open_error">Could not open this screen. Please check your system settings.</string>
     <string name="signal">Signal: %1$d dBm · %2$s</string>
-    <string name="model">YUNMAI YMBS-M263</string>
+    <string name="model_yunmai_smart_body_fat_scale_3_se">YUNMAI Smart Body Fat Scale 3 SE</string>
     <string name="done">Done</string>
     <string name="loading">Loading…</string>
     <string name="unverified">Not yet verified</string>
@@ -96,4 +96,5 @@
     <string name="permission_denied">Weight permission was not granted. You can still save locally.</string>
     <string name="phase_saving">Saving locally…</string>
     <string name="retry_save">Retry local save</string>
+    <string name="device_model_and_address">Model: %1$s · %2$s</string>
 </resources>

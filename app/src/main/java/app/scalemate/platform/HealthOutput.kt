@@ -7,6 +7,7 @@ import android.health.connect.datatypes.*
 import android.health.connect.datatypes.units.Mass
 import android.os.OutcomeReceiver
 import app.scalemate.data.Measurement
+import app.scalemate.core.ScaleCatalog
 import java.time.Instant
 import java.time.ZoneOffset
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -22,7 +23,7 @@ class HealthOutput(private val context: Context) {
         try {
             val metadata = Metadata.Builder().setClientRecordId(m.id).setClientRecordVersion(1)
                 .setRecordingMethod(Metadata.RECORDING_METHOD_AUTOMATICALLY_RECORDED)
-                .setDevice(Device.Builder().setManufacturer("YUNMAI").setModel("YMBS-M263").setType(Device.DEVICE_TYPE_SCALE).build()).build()
+                .setDevice(Device.Builder().setManufacturer(ScaleCatalog.yunmai3Se.manufacturer).setModel(ScaleCatalog.yunmai3Se.internalModel).setType(Device.DEVICE_TYPE_SCALE).build()).build()
             val record = WeightRecord.Builder(metadata, Instant.ofEpochMilli(m.time), Mass.fromGrams(m.kg * 1000)).setZoneOffset(ZoneOffset.ofTotalSeconds(m.offset)).build()
             manager().insertRecords(listOf(record),context.mainExecutor,object: OutcomeReceiver<InsertRecordsResponse,HealthConnectException> {
                 override fun onResult(result: InsertRecordsResponse) { if(continuation.isActive) continuation.resume(result.records.first().metadata.id) }

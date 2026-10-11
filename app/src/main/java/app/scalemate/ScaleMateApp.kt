@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.scalemate.core.Phase
+import app.scalemate.core.ScaleCatalog
 import app.scalemate.data.*
 import java.text.NumberFormat
 import java.time.Instant
@@ -49,7 +50,8 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),primaryContainer=Colo
     var replacing by remember {mutableStateOf<BoundScale?>(null)}
     val context=LocalContext.current
     val locale=LocalConfiguration.current.locales[0]
-    val modelName=stringResource(R.string.model)
+    val model=ScaleCatalog.yunmai3Se
+    val modelName=stringResource(model.displayNameResource)
     val number=remember(locale) {NumberFormat.getNumberInstance(locale).apply {minimumFractionDigits=2;maximumFractionDigits=2}}
     val dates=remember(locale) {DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(locale).withZone(ZoneId.systemDefault())}
     val actualPage=if(!state.loaded)"loading" else if(!state.onboarded && !welcomeDone)"welcome" else page
@@ -70,7 +72,7 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),primaryContainer=Colo
                         Spacer(Modifier.height(32.dp));Text(stringResource(R.string.app_name),fontSize=32.sp,fontWeight=FontWeight.Bold)
                         Surface(shape=RoundedCornerShape(40.dp),color=c.primaryContainer,modifier=Modifier.fillMaxWidth().height(150.dp)){Box(contentAlignment=Alignment.Center){Icon(Icons.Default.Favorite,null,Modifier.size(64.dp),tint=c.primary)}}
                         Text(stringResource(R.string.tagline),style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.SemiBold)
-                        Text(stringResource(R.string.intro),color=c.onSurfaceVariant)
+                        Text(stringResource(R.string.intro,modelName),color=c.onSurfaceVariant)
                         Action(R.string.get_started){welcomeDone=true;page="setup"}
                     }
                     "setup"->{
@@ -84,24 +86,25 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),primaryContainer=Colo
                         TextButton(onClick={vm.onboardingDone();navigate("home")}){Text(stringResource(R.string.continue_local))}
                     }
                     "devices"->{
-                        Text(stringResource(R.string.scan_hint),color=c.onSurfaceVariant)
+                        Text(stringResource(R.string.scan_hint,modelName),color=c.onSurfaceVariant)
                         state.scales.forEach{s->
+                            val displayName=scaleDisplayName(s.name)
                             Card(modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp)) {Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-                                Text(s.name,style=MaterialTheme.typography.titleMedium)
-                                Text(stringResource(R.string.model)+" · "+s.address.takeLast(5),style=MaterialTheme.typography.bodySmall)
+                                Text(scaleDisplayName(s.name),style=MaterialTheme.typography.titleMedium)
+                                Text(stringResource(R.string.device_model_and_address,model.internalModel,s.address.takeLast(5)),style=MaterialTheme.typography.bodySmall)
                                 Text(stringResource(if(s.verified)R.string.verified else R.string.unverified),color=c.primary)
-                                Row {TextButton(onClick={vm.select(s.id);navigate("home")}){Text(stringResource(R.string.select_scale))};TextButton(onClick={rename=s;name=s.name}){Text(stringResource(R.string.rename))}}
+                                Row {TextButton(onClick={vm.select(s.id);navigate("home")}){Text(stringResource(R.string.select_scale))};TextButton(onClick={rename=s;name=displayName}){Text(stringResource(R.string.rename))}}
                                 Row {TextButton(onClick={replacing=s;bluetooth{vm.discover()}}){Text(stringResource(R.string.rebind))};TextButton(onClick={vm.unbind(s.id)}){Text(stringResource(R.string.remove))}}
                             }}
                         }
                         if(state.discovering){LinearProgressIndicator(Modifier.fillMaxWidth());Text(stringResource(R.string.scanning));TextButton(onClick={vm.stop()}){Text(stringResource(R.string.stop))}}
                         else Action(R.string.scan){bluetooth{vm.discover()}}
-                        state.candidates.forEach{(address,rssi)->OutlinedCard(onClick={candidate=address},modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(18.dp)){Text(stringResource(R.string.model));Text(stringResource(R.string.signal,rssi,address.takeLast(5)),style=MaterialTheme.typography.bodySmall)}}}
+                        state.candidates.forEach{(address,rssi)->OutlinedCard(onClick={candidate=address},modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(18.dp)){Text(modelName);Text(stringResource(R.string.signal,rssi,address.takeLast(5)),style=MaterialTheme.typography.bodySmall)}}}
                     }
                     "home"->{
                         if(scale==null) {Text(stringResource(R.string.no_scale),style=MaterialTheme.typography.headlineMedium);Action(R.string.add_scale){navigate("devices")}}
                         else {
-                            OutlinedCard(onClick={choose=true},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp)){Column(Modifier.padding(18.dp)){Text(scale.name,style=MaterialTheme.typography.titleMedium);Text(stringResource(R.string.model),color=c.onSurfaceVariant,style=MaterialTheme.typography.bodySmall)}}
+                            OutlinedCard(onClick={choose=true},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp)){Column(Modifier.padding(18.dp)){Text(scaleDisplayName(scale.name),style=MaterialTheme.typography.titleMedium);Text(if(scaleDisplayName(scale.name)==modelName)stringResource(if(scale.verified)R.string.verified else R.string.unverified) else modelName,color=c.onSurfaceVariant,style=MaterialTheme.typography.bodySmall)}}
                             val session=state.session
                             val phase=session.phase
                             Surface(color=if(phase in listOf(Phase.COUNTDOWN,Phase.STABLE))c.primaryContainer else c.surfaceVariant.copy(alpha=.45f),shape=RoundedCornerShape(32.dp),modifier=Modifier.fillMaxWidth()){
@@ -150,13 +153,13 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),primaryContainer=Colo
                 Spacer(Modifier.height(24.dp))
             }
         }
-        if(candidate!=null)AlertDialog(onDismissRequest={candidate=null},title={Text(stringResource(R.string.confirm_scale))},text={Text(stringResource(R.string.confirm_model))},confirmButton={TextButton(onClick={vm.bind(candidate!!,replacing?.name ?: modelName,replacing?.id);candidate=null;replacing=null;navigate("home")}){Text(stringResource(R.string.bind))}},dismissButton={TextButton(onClick={candidate=null}){Text(stringResource(R.string.cancel))}})
+        if(candidate!=null)AlertDialog(onDismissRequest={candidate=null},title={Text(stringResource(R.string.confirm_scale))},text={Text(stringResource(R.string.confirm_model,modelName,model.internalModel))},confirmButton={TextButton(onClick={vm.bind(candidate!!,replacing?.name ?: model.id,replacing?.id);candidate=null;replacing=null;navigate("home")}){Text(stringResource(R.string.bind))}},dismissButton={TextButton(onClick={candidate=null}){Text(stringResource(R.string.cancel))}})
         if(rename!=null)AlertDialog(onDismissRequest={rename=null},title={Text(stringResource(R.string.rename))},text={OutlinedTextField(value=name,onValueChange={name=it.take(60)},label={Text(stringResource(R.string.name))},singleLine=true)},confirmButton={TextButton(enabled=name.isNotBlank(),onClick={vm.rename(rename!!.id,name);rename=null}){Text(stringResource(R.string.save))}},dismissButton={TextButton(onClick={rename=null}){Text(stringResource(R.string.cancel))}})
-        if(choose)AlertDialog(onDismissRequest={choose=false},title={Text(stringResource(R.string.select_scale))},text={Column{state.scales.forEach{s->TextButton(onClick={vm.select(s.id);choose=false}){Text(s.name)}};TextButton(onClick={choose=false;navigate("devices")}){Text(stringResource(R.string.add_scale))}}},confirmButton={TextButton(onClick={choose=false}){Text(stringResource(R.string.done))}})
+        if(choose)AlertDialog(onDismissRequest={choose=false},title={Text(stringResource(R.string.select_scale))},text={Column{state.scales.forEach{s->TextButton(onClick={vm.select(s.id);choose=false}){Text(scaleDisplayName(s.name))}};TextButton(onClick={choose=false;navigate("devices")}){Text(stringResource(R.string.add_scale))}}},confirmButton={TextButton(onClick={choose=false}){Text(stringResource(R.string.done))}})
         if(autoDialog)AlertDialog(onDismissRequest={autoDialog=false},title={Text(stringResource(R.string.auto_confirm))},text={Text(stringResource(R.string.auto_explain))},confirmButton={TextButton(onClick={vm.automatic(true);autoDialog=false}){Text(stringResource(R.string.enable))}},dismissButton={TextButton(onClick={autoDialog=false}){Text(stringResource(R.string.cancel))}})
         if(languageDialog)AlertDialog(onDismissRequest={languageDialog=false},title={Text(stringResource(R.string.language))},text={Column{listOf("" to R.string.language_system,"zh" to R.string.language_zh,"en" to R.string.language_en).forEach{(tag,label)->TextButton(onClick={languageDialog=false;language(tag)}){Text(stringResource(label))}}}},confirmButton={TextButton(onClick={languageDialog=false}){Text(stringResource(R.string.cancel))}})
         selected?.let{snapshot->val m=state.records.find{it.id==snapshot.id} ?: snapshot
-            AlertDialog(onDismissRequest={selected=null},title={Text(stringResource(R.string.detail))},text={Column(verticalArrangement=Arrangement.spacedBy(12.dp)){Text(number.format(m.kg)+" "+stringResource(R.string.unit_kg),style=MaterialTheme.typography.headlineLarge);Text(dates.format(Instant.ofEpochMilli(m.time)));Text(stringResource(R.string.source,m.source));Text(stringResource(statusResource(m.status)));if(m.status in listOf("pending","failed","permission"))TextButton(onClick={if(m.status=="permission")authorize() else vm.retry(m.id)}){Text(stringResource(if(m.status=="permission")R.string.authorize else R.string.retry))};TextButton(onClick={selected=null;deleting=m}){Text(stringResource(R.string.delete_title))}}},confirmButton={TextButton(onClick={selected=null}){Text(stringResource(R.string.done))}})
+            AlertDialog(onDismissRequest={selected=null},title={Text(stringResource(R.string.detail))},text={Column(verticalArrangement=Arrangement.spacedBy(12.dp)){Text(number.format(m.kg)+" "+stringResource(R.string.unit_kg),style=MaterialTheme.typography.headlineLarge);Text(dates.format(Instant.ofEpochMilli(m.time)));Text(stringResource(R.string.source,scaleDisplayName(m.source)));Text(stringResource(statusResource(m.status)));if(m.status in listOf("pending","failed","permission"))TextButton(onClick={if(m.status=="permission")authorize() else vm.retry(m.id)}){Text(stringResource(if(m.status=="permission")R.string.authorize else R.string.retry))};TextButton(onClick={selected=null;deleting=m}){Text(stringResource(R.string.delete_title))}}},confirmButton={TextButton(onClick={selected=null}){Text(stringResource(R.string.done))}})
         }
         deleting?.let{m->AlertDialog(onDismissRequest={deleting=null},title={Text(stringResource(R.string.delete_title))},text={Column{Text(stringResource(R.string.delete_note));TextButton(onClick={vm.delete(m.id,false);deleting=null}){Text(stringResource(R.string.delete_local))};TextButton(onClick={vm.delete(m.id,true);deleting=null}){Text(stringResource(R.string.delete_both))}}},confirmButton={TextButton(onClick={deleting=null}){Text(stringResource(R.string.cancel))}})}
     }
@@ -165,6 +168,11 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),primaryContainer=Colo
 @Composable private fun Action(label: Int, action: ()->Unit) {Button(onClick=action,modifier=Modifier.fillMaxWidth().heightIn(min=54.dp)){Text(stringResource(label))}}
 @Composable private fun Pill(label: Int) {Surface(shape=CircleShape,color=MaterialTheme.colorScheme.secondaryContainer){Text(stringResource(label),Modifier.padding(horizontal=14.dp,vertical=8.dp),style=MaterialTheme.typography.labelMedium)}}
 @Composable private fun Preference(label: Int, value: Boolean, action: (Boolean)->Unit) {Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text(stringResource(label),Modifier.weight(1f));Switch(value,action)}}
-@Composable private fun RecordCard(m: Measurement, kg: String, date: String, action: ()->Unit) {Card(onClick=action,modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp)){Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text(date,style=MaterialTheme.typography.labelMedium);Text(kg+" "+stringResource(R.string.unit_kg),fontSize=28.sp);Text(stringResource(statusResource(m.status)),color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.bodySmall);Text(m.source,style=MaterialTheme.typography.bodySmall)}}}
+@Composable private fun RecordCard(m: Measurement, kg: String, date: String, action: ()->Unit) {Card(onClick=action,modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp)){Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text(date,style=MaterialTheme.typography.labelMedium);Text(kg+" "+stringResource(R.string.unit_kg),fontSize=28.sp);Text(stringResource(statusResource(m.status)),color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.bodySmall);Text(scaleDisplayName(m.source),style=MaterialTheme.typography.bodySmall)}}}
 private fun phaseResource(p: Phase)=when(p){Phase.IDLE->R.string.phase_idle;Phase.WAITING->R.string.phase_waiting;Phase.MEASURING->R.string.phase_measuring;Phase.STABLE->R.string.phase_stable;Phase.COUNTDOWN->R.string.phase_countdown;Phase.SAVING->R.string.phase_saving;Phase.SAVE_FAILED->R.string.storage_error;Phase.CONFIRMED->R.string.phase_confirmed;Phase.CANCELLED->R.string.phase_cancelled;Phase.EXPIRED->R.string.phase_expired}
 private fun statusResource(s: String)=when(s){"synced"->R.string.status_synced;"writing"->R.string.status_writing;"permission"->R.string.status_permission;"failed"->R.string.status_failed;"deleting"->R.string.status_deleting;"delete_failed"->R.string.status_delete_failed;else->R.string.status_pending}
+
+@Composable private fun scaleDisplayName(storedName: String): String {
+    val model = ScaleCatalog.yunmai3Se
+    return model.displayName(storedName, stringResource(model.displayNameResource))
+}

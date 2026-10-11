@@ -82,7 +82,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          称伴 · ScaleMate 首版，支持云麦 YMBS-M263 与 Health Connect 体重同步。
+          称伴 · ScaleMate，支持云麦智能体脂秤 3 SE（YMBS-M263） 与 Health Connect 体重同步。
 
           - Android 14 及以上；中文与英文界面。
           - 稳定体重确认、5 秒自动保存、本地记录与同步状态。

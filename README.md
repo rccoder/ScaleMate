@@ -8,7 +8,7 @@
 
 喜欢用 Google Fit，却发现家里的体重秤无法同步？称伴为它们搭一座桥。连接体重秤，接收每次测量，把确认后的体重送到你常用的健康应用。
 
-**目前支持云麦 YMBS-M263 · Android 14+ · 中文 / English**
+**目前支持云麦智能体脂秤 3 SE · Android 14+ · 中文 / English**
 
 [下载体验版](https://github.com/rccoder/ScaleMate/releases/latest/download/ScaleMate.apk)
 
@@ -29,7 +29,7 @@
 
 ## 从第一次连接，到每天称重
 
-首次引导带你完成健康授权与设备添加。以下截图来自真实 Android App，称重和记录页面展示实际测量结果。
+首次引导带你完成健康授权与设备添加。以下截图来自 0.1.0 版本的真实 Android App，称重和记录页面展示实际测量结果；截图中的旧名称“YMBS-M263”对应云麦智能体脂秤 3 SE。
 
 <table>
   <tr>
@@ -48,7 +48,7 @@
     <th>管理已绑定的秤</th>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/04-scan.png" width="250" alt="扫描发现云麦 YMBS-M263"></td>
+    <td><img src="docs/screenshots/04-scan.png" width="250" alt="扫描发现云麦智能体脂秤 3 SE"></td>
     <td><img src="docs/screenshots/04-confirm-device.png" width="250" alt="核对型号并确认添加体重秤"></td>
     <td><img src="docs/screenshots/04-devices.png" width="250" alt="体重秤管理与读数验证状态"></td>
   </tr>
@@ -74,9 +74,15 @@
 
 ## 从一台秤开始
 
-当前版本专注于 **云麦 YUNMAI YMBS-M263 的体重同步**，真实称重与 Google 健康应用同步流程已完成实测。未来希望连接更多体重秤与健康应用。
+当前版本专注于 **云麦智能体脂秤 3 SE 的体重同步**，真实称重与 Google 健康应用同步流程已完成实测。未来希望连接更多体重秤与健康应用。
 
-现在提供的是 **0.1.0 体验版**，由 GitHub CI 构建并使用固定发布密钥签名，需要 Android 14 或更新版本。称重期间请保持 App 在前台，锁屏或离开页面会取消待确认的读数。Google 健康应用需获得体重读取权限，显示可能稍有延迟。
+| 产品名称 | 英文界面名称 | 底部／内部型号 |
+| --- | --- | --- |
+| 云麦智能体脂秤 3 SE | YUNMAI Smart Body Fat Scale 3 SE | `YMBS-M263` |
+
+添加秤时显示好记的产品名称，确认页面同时提供内部型号，方便核对。你仍然可以为每台秤取自己的名字。更多型号会逐步加入这张对照表。
+
+现在提供的是 **体验版**，由 GitHub CI 构建并使用固定发布密钥签名，需要 Android 14 或更新版本。称重期间请保持 App 在前台，锁屏或离开页面会取消待确认的读数。Google 健康应用需获得体重读取权限，显示可能稍有延迟。
 
 [下载称伴体验版](https://github.com/rccoder/ScaleMate/releases/latest/download/ScaleMate.apk) · [版本与更新记录](https://github.com/rccoder/ScaleMate/releases)
 

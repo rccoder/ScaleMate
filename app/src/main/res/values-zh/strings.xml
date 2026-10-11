@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">称伴</string>
     <string name="tagline">每一次称重，都有去处。</string>
-    <string name="intro">连接云麦 YMBS-M263，把体重写入 Health Connect，供 Google Fit 或 Google Health 读取。</string>
+    <string name="intro">连接%1$s，把体重写入 Health Connect，供 Google Fit 或 Google Health 读取。</string>
     <string name="get_started">开始设置</string>
     <string name="continue_local">先使用本地记录</string>
     <string name="weigh">称重</string>
@@ -18,13 +18,13 @@
     <string name="health_ready">已允许写入体重</string>
     <string name="health_required">仅本地保存 · 待授权</string>
     <string name="add_scale">添加体重秤</string>
-    <string name="scan_hint">轻踩唤醒体重秤，让手机靠近。这里只展示报文符合 M263 协议的设备。</string>
+    <string name="scan_hint">轻踩唤醒体重秤，让手机靠近。目前支持：%1$s。</string>
     <string name="scan">扫描附近的秤</string>
     <string name="scanning">正在寻找体重秤…</string>
     <string name="stop">停止</string>
     <string name="no_scales_found">没有找到兼容的秤，请唤醒后重试。</string>
     <string name="confirm_scale">确认这台秤</string>
-    <string name="confirm_model">请核对秤底部型号为 YMBS-M263。这类秤通过广播发送体重，无需系统配对。</string>
+    <string name="confirm_model">请确认这台设备是%1$s，底部型号为 %2$s。无需在系统蓝牙设置中配对。</string>
     <string name="bind">确认并添加</string>
     <string name="cancel">取消</string>
     <string name="rename">重命名</string>
@@ -86,7 +86,7 @@
     <string name="stale_reading">没有新的体重数据，请重新称重。</string>
     <string name="open_error">无法打开此页面，请检查系统设置。</string>
     <string name="signal">信号：%1$d dBm · %2$s</string>
-    <string name="model">云麦 YMBS-M263</string>
+    <string name="model_yunmai_smart_body_fat_scale_3_se">云麦智能体脂秤 3 SE</string>
     <string name="done">完成</string>
     <string name="loading">加载中…</string>
     <string name="unverified">尚未核对读数</string>
@@ -96,4 +96,5 @@
     <string name="permission_denied">未获得体重权限，仍可在本地保存。</string>
     <string name="phase_saving">正在本地保存…</string>
     <string name="retry_save">重试本地保存</string>
+    <string name="device_model_and_address">型号：%1$s · %2$s</string>
 </resources>

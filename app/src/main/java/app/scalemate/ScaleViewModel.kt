@@ -57,7 +57,7 @@ class ScaleViewModel(application: Application): AndroidViewModel(application) {
             try {
                 withContext(Dispatchers.IO) {
                     if(replacing!=null) store.rebind(replacing,address)
-                    else store.bind(BoundScale(UUID.randomUUID().toString(),name.take(60).ifBlank { "YUNMAI M263" },address,false))
+                    else store.bind(BoundScale(UUID.randomUUID().toString(),name.take(60).ifBlank { ScaleCatalog.yunmai3Se.id },address,false))
                 }
                 reload()
                 mutable.value.scales.find { it.address==address }?.let { select(it.id) }

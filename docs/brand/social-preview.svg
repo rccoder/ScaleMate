@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+<rect width="1280" height="640" fill="#F7F9F5"/>
+<circle cx="1210" cy="90" r="220" fill="#E9F1E9"/>
+<circle cx="1230" cy="520" r="290" fill="#CEEBDA"/>
+<g transform="translate(92 74) scale(2.5)"><path fill="#376A52" d="M10,0L38,0Q48,0 48,10L48,38Q48,48 38,48L10,48Q0,48 0,38L0,10Q0,0 10,0"/>
+<path fill="#CEEBDA" d="M14,9L34,9Q39,9 39,14L39,34Q39,39 34,39L14,39Q9,39 9,34L9,14Q9,9 14,9"/>
+<path fill="#376A52" d="M17,14L31,14L31,20L17,20Z"/></g>
+<g font-family="Noto Sans CJK SC, WenQuanYi Zen Hei, sans-serif">
+<text x="242" y="132" font-size="46" font-weight="700" fill="#19221D">称伴</text>
+<text x="242" y="179" font-size="30" fill="#376A52" font-family="sans-serif">ScaleMate</text>
+<text x="92" y="300" font-size="54" font-weight="700" fill="#19221D">站上秤，让体重回到</text>
+<text x="92" y="375" font-size="54" font-weight="700" fill="#19221D">你的健康记录里。</text>
+<text x="94" y="444" font-size="25" fill="#526158">连接云麦 YMBS-M263，同步 Google 健康应用</text>
+<rect x="92" y="502" width="156" height="48" rx="24" fill="#E2E9E1"/>
+<text x="170" y="533" font-size="20" text-anchor="middle" fill="#376A52" font-family="sans-serif">Android 14+</text>
+<rect x="264" y="502" width="194" height="48" rx="24" fill="#E2E9E1"/>
+<text x="361" y="533" font-size="20" text-anchor="middle" fill="#376A52" font-family="sans-serif">Health Connect</text>
+<rect x="474" y="502" width="166" height="48" rx="24" fill="#E2E9E1"/>
+<text x="557" y="533" font-size="20" text-anchor="middle" fill="#376A52">中文 / English</text>
+</g>
+<g transform="translate(964 274) rotate(-9) scale(4.3)"><path fill="#376A52" d="M10,0L38,0Q48,0 48,10L48,38Q48,48 38,48L10,48Q0,48 0,38L0,10Q0,0 10,0"/>
+<path fill="#CEEBDA" d="M14,9L34,9Q39,9 39,14L39,34Q39,39 34,39L14,39Q9,39 9,34L9,14Q9,9 14,9"/>
+<path fill="#376A52" d="M17,14L31,14L31,20L17,20Z"/></g>
+<text x="92" y="598" font-family="sans-serif" font-size="18" fill="#526158">github.com/rccoder/ScaleMate</text>
+</svg>

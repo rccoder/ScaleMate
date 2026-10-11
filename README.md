@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/brand/logo.svg" width="112" height="112" alt="称伴 ScaleMate Logo">
+</p>
+
 # 称伴 · ScaleMate
 
 ### 站上秤，让体重回到你的健康记录里。

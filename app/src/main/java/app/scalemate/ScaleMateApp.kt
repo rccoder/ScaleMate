@@ -15,6 +15,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -47,7 +48,8 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),primaryContainer=Colo
     var deleting by remember {mutableStateOf<Measurement?>(null)}
     var replacing by remember {mutableStateOf<BoundScale?>(null)}
     val context=LocalContext.current
-    val locale=context.resources.configuration.locales[0]
+    val locale=LocalConfiguration.current.locales[0]
+    val modelName=stringResource(R.string.model)
     val number=remember(locale) {NumberFormat.getNumberInstance(locale).apply {minimumFractionDigits=2;maximumFractionDigits=2}}
     val dates=remember(locale) {DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(locale).withZone(ZoneId.systemDefault())}
     val actualPage=if(!state.loaded)"loading" else if(!state.onboarded && !welcomeDone)"welcome" else page
@@ -148,7 +150,7 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),primaryContainer=Colo
                 Spacer(Modifier.height(24.dp))
             }
         }
-        if(candidate!=null)AlertDialog(onDismissRequest={candidate=null},title={Text(stringResource(R.string.confirm_scale))},text={Text(stringResource(R.string.confirm_model))},confirmButton={TextButton(onClick={vm.bind(candidate!!,replacing?.name ?: context.getString(R.string.model),replacing?.id);candidate=null;replacing=null;navigate("home")}){Text(stringResource(R.string.bind))}},dismissButton={TextButton(onClick={candidate=null}){Text(stringResource(R.string.cancel))}})
+        if(candidate!=null)AlertDialog(onDismissRequest={candidate=null},title={Text(stringResource(R.string.confirm_scale))},text={Text(stringResource(R.string.confirm_model))},confirmButton={TextButton(onClick={vm.bind(candidate!!,replacing?.name ?: modelName,replacing?.id);candidate=null;replacing=null;navigate("home")}){Text(stringResource(R.string.bind))}},dismissButton={TextButton(onClick={candidate=null}){Text(stringResource(R.string.cancel))}})
         if(rename!=null)AlertDialog(onDismissRequest={rename=null},title={Text(stringResource(R.string.rename))},text={OutlinedTextField(value=name,onValueChange={name=it.take(60)},label={Text(stringResource(R.string.name))},singleLine=true)},confirmButton={TextButton(enabled=name.isNotBlank(),onClick={vm.rename(rename!!.id,name);rename=null}){Text(stringResource(R.string.save))}},dismissButton={TextButton(onClick={rename=null}){Text(stringResource(R.string.cancel))}})
         if(choose)AlertDialog(onDismissRequest={choose=false},title={Text(stringResource(R.string.select_scale))},text={Column{state.scales.forEach{s->TextButton(onClick={vm.select(s.id);choose=false}){Text(s.name)}};TextButton(onClick={choose=false;navigate("devices")}){Text(stringResource(R.string.add_scale))}}},confirmButton={TextButton(onClick={choose=false}){Text(stringResource(R.string.done))}})
         if(autoDialog)AlertDialog(onDismissRequest={autoDialog=false},title={Text(stringResource(R.string.auto_confirm))},text={Text(stringResource(R.string.auto_explain))},confirmButton={TextButton(onClick={vm.automatic(true);autoDialog=false}){Text(stringResource(R.string.enable))}},dismissButton={TextButton(onClick={autoDialog=false}){Text(stringResource(R.string.cancel))}})

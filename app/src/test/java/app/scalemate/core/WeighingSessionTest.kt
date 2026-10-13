@@ -22,4 +22,35 @@ class WeighingSessionTest {
     @Test fun staleManualRejected(){val s=WeighingSession("A",false);stable(s);assertFalse(s.confirm(14000))}
     @Test fun gapsDoNotImplyContinuousStability(){val s=WeighingSession("A",true);s.frame(frame(),0,0);s.frame(frame(),3000,3000);s.frame(frame(),4000,4000);assertEquals(Phase.MEASURING,s.state.phase)}
     @Test fun changingTokenResetsCandidate(){val s=WeighingSession("A",true);stable(s);s.frame(frame(token=30),4000,4000);assertEquals(Phase.MEASURING,s.state.phase);assertFalse(s.tick(8000))}
+    @Test fun continuousListeningDoesNotSaveCancelledMeasurementAgain() {
+        val first=WeighingSession("A",true)
+        stable(first)
+        val token=first.state.token
+        first.cancel()
+        val waiting=WeighingSession("A",true,token)
+        for(t in 4000L..14000L step 1000) {
+            waiting.frame(frame(),t,t)
+            assertFalse(waiting.tick(t))
+        }
+        assertEquals(Phase.WAITING,waiting.state.phase)
+        waiting.frame(frame(0.0),15000,15000)
+        for(t in 16000L..19000L step 1000)waiting.frame(frame(),t,t)
+        assertEquals(Phase.COUNTDOWN,waiting.state.phase)
+        assertTrue(waiting.tick(24000))
+    }
+    @Test fun continuousListeningRequiresNewMeasurementAfterSaving() {
+        val first=WeighingSession("A",true)
+        stable(first)
+        assertTrue(first.tick(8000))
+        val waiting=WeighingSession("A",true,first.state.token)
+        for(t in 9000L..20000L step 1000) {
+            waiting.frame(frame(state=2),t,t)
+            assertFalse(waiting.tick(t))
+        }
+        assertEquals(Phase.WAITING,waiting.state.phase)
+        for(t in 21000L..24000L step 1000)waiting.frame(frame(token=30),t,t)
+        assertFalse(waiting.tick(28999))
+        assertTrue(waiting.tick(29000))
+        assertFalse(waiting.tick(30000))
+    }
 }

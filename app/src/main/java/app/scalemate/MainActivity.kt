@@ -41,6 +41,6 @@ class MainActivity: ComponentActivity() {
             privacy = {open(Intent(this,PrivacyActivity::class.java))}) }
     }
     private fun open(intent: Intent) {try {startActivity(intent)}catch(_: Exception){model.message(R.string.open_error)}}
-    override fun onResume() {super.onResume();if(::model.isInitialized)model.refreshPermissions()}
-    override fun onPause() {if(::model.isInitialized)model.stop();super.onPause()}
+    override fun onResume() {super.onResume();if(::model.isInitialized){model.refreshPermissions();model.foreground(true)}}
+    override fun onPause() {if(::model.isInitialized)model.foreground(false);super.onPause()}
 }

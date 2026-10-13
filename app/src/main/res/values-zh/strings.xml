@@ -50,7 +50,7 @@
     <string name="verify_scale">手机与秤读数一致</string>
     <string name="verify_hint">首次请核对秤屏幕，未核对的秤只允许手动确认。</string>
     <string name="verified_message">读数已核对，可以在设置中开启自动确认。</string>
-    <string name="foreground_hint">称重时保持此页在前台，离开或锁屏会取消待确认读数。</string>
+    <string name="foreground_hint">APP 在前台时会自动接收当前选中秤的新测量；开启自动确认后，读数稳定后倒计时 5 秒保存。切换页面、离开 APP 或锁屏会取消待确认读数。</string>
     <string name="empty_records">确认保存的称重记录会显示在这里。</string>
     <string name="recent">最近一次</string>
     <string name="all_records">全部记录</string>
@@ -97,4 +97,5 @@
     <string name="phase_saving">正在本地保存…</string>
     <string name="retry_save">重试本地保存</string>
     <string name="device_model_and_address">型号：%1$s · %2$s</string>
+    <string name="listening_hint">正在等待体重秤上报，直接上秤即可。</string>
 </resources>

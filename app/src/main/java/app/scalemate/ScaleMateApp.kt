@@ -57,7 +57,8 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),primaryContainer=Colo
     val actualPage=if(!state.loaded)"loading" else if(!state.onboarded && !welcomeDone)"welcome" else page
     val scale=state.scales.find {it.id==state.activeId}
     val colors=if(state.dynamic) {if(state.dark)dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)} else if(state.dark)Dark else Light
-    fun navigate(next: String) {if(next!=page)vm.stop();page=next}
+    fun navigate(next: String) {if(next!=page && state.weighing)vm.cancelWeighing();page=next}
+    LaunchedEffect(state.weighing) {if(state.weighing){page="home";selected=null;choose=false;autoDialog=false;rename=null;candidate=null;deleting=null;languageDialog=false}}
     MaterialTheme(colorScheme=colors) {
         val c=MaterialTheme.colorScheme
         Scaffold(topBar={ if(actualPage !in listOf("welcome","loading")) TopAppBar(title={Text(stringResource(when(actualPage){"devices"->R.string.devices;"records"->R.string.records;"settings"->R.string.settings;"setup"->R.string.prepare_health;else->R.string.app_name}),fontWeight=FontWeight.SemiBold)},navigationIcon={if(actualPage in listOf("devices","setup"))IconButton(onClick={navigate("settings")}){Icon(Icons.AutoMirrored.Filled.ArrowBack,stringResource(R.string.cancel))}}) },
@@ -97,7 +98,7 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),primaryContainer=Colo
                                 Row {TextButton(onClick={replacing=s;bluetooth{vm.discover()}}){Text(stringResource(R.string.rebind))};TextButton(onClick={vm.unbind(s.id)}){Text(stringResource(R.string.remove))}}
                             }}
                         }
-                        if(state.discovering){LinearProgressIndicator(Modifier.fillMaxWidth());Text(stringResource(R.string.scanning));TextButton(onClick={vm.stop()}){Text(stringResource(R.string.stop))}}
+                        if(state.discovering){LinearProgressIndicator(Modifier.fillMaxWidth());Text(stringResource(R.string.scanning));TextButton(onClick={vm.cancelWeighing()}){Text(stringResource(R.string.stop))}}
                         else Action(R.string.scan){bluetooth{vm.discover()}}
                         state.candidates.forEach{(address,rssi)->OutlinedCard(onClick={candidate=address},modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(18.dp)){Text(modelName);Text(stringResource(R.string.signal,rssi,address.takeLast(5)),style=MaterialTheme.typography.bodySmall)}}}
                     }
@@ -123,12 +124,13 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),primaryContainer=Colo
                                     }
                                     if(state.weighing) {
                                         if(phase in listOf(Phase.WAITING,Phase.MEASURING))LinearProgressIndicator(Modifier.fillMaxWidth())
-                                        OutlinedButton(onClick={vm.stop()},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Text(stringResource(R.string.cancel_weigh))}
+                                        OutlinedButton(onClick={vm.cancelWeighing()},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Text(stringResource(R.string.cancel_weigh))}
                                     } else if(phase==Phase.SAVING)CircularProgressIndicator()
                                     else if(phase==Phase.SAVE_FAILED)Action(R.string.retry_save){vm.retrySave()}
                                     else Action(if(phase in listOf(Phase.CANCELLED,Phase.CONFIRMED))R.string.next_weigh else R.string.start_weigh){bluetooth{vm.start()}}
                                 }
                             }
+                            if(state.listening && !state.weighing)Text(stringResource(R.string.listening_hint),color=c.primary)
                             Text(stringResource(R.string.foreground_hint),style=MaterialTheme.typography.bodySmall,color=c.onSurfaceVariant)
                             state.records.firstOrNull()?.let{m->Text(stringResource(R.string.recent),style=MaterialTheme.typography.titleMedium);RecordCard(m,number.format(m.kg),dates.format(Instant.ofEpochMilli(m.time))){selected=m}}
                         }

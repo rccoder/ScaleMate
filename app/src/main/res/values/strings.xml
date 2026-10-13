@@ -50,7 +50,7 @@
     <string name="verify_scale">Reading matches my scale</string>
     <string name="verify_hint">First verify the reading. Automatic confirmation remains off for unverified scales.</string>
     <string name="verified_message">Scale reading verified. You can enable automatic confirmation in Settings.</string>
-    <string name="foreground_hint">Keep this screen open while weighing. Leaving or locking cancels the pending reading.</string>
+    <string name="foreground_hint">While the app is open, new measurements from the selected scale start automatically. Enable automatic confirmation to save after a 5-second countdown. Changing pages, leaving the app, or locking cancels the pending reading.</string>
     <string name="empty_records">Your confirmed weigh-ins will appear here.</string>
     <string name="recent">Latest weigh-in</string>
     <string name="all_records">All records</string>
@@ -97,4 +97,5 @@
     <string name="phase_saving">Saving locally…</string>
     <string name="retry_save">Retry local save</string>
     <string name="device_model_and_address">Model: %1$s · %2$s</string>
+    <string name="listening_hint">Waiting for your scale. Step on to start automatically.</string>
 </resources>

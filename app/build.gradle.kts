@@ -25,6 +25,12 @@ android {
         }
     }
     buildTypes {
+        create("prototype") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".prototype"
+            versionNameSuffix = "-ai-preview"
+            matchingFallbacks += listOf("debug")
+        }
         getByName("release") {
             isDebuggable = false
             if (releaseSigningReady) signingConfig = signingConfigs.getByName("release")

@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" tools:node="remove" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.WRITE_WEIGHT" tools:node="remove" />
+    <application android:label="称伴 AI 原型" tools:replace="android:label">
+        <activity android:name="app.scalemate.MainActivity" tools:node="remove" />
+        <activity android:name="app.scalemate.PrivacyActivity" tools:node="remove" />
+        <activity-alias android:name="app.scalemate.PermissionUsage" tools:node="remove" />
+        <activity android:name="app.scalemate.prototype.PrototypeActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -24,3 +24,9 @@ JAVA_HOME="$HOME/.local/share/health-connect-tools/jdk" \
 `local.properties` 指向本机 SDK，未纳入版本控制。APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。截图与总览保存在 `../design/`。
 
 参考：[Material 3 官方组件](https://developer.android.com/develop/ui/compose/designsystems/material3)。
+
+## 新版 AI 功能原型（2026-10-17）
+
+饮食与健康 AI 的新原型已放在当前主项目 `app/src/prototype/`，通过 `:app:assemblePrototype` 构建；本目录继续保留早期称重视觉稿。
+
+[新版原型与设计说明](../design/ai-prototype/README.md) · [31 张实机截图总览](../design/ai-prototype/index.html) · [构建与体验路径](../docs/testing/AI%20功能交互原型.md)

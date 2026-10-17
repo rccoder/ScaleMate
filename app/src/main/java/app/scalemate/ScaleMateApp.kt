@@ -164,9 +164,8 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),primaryContainer=Colo
                         state.records.forEach{m->RecordCard(m,number.format(m.kg),dates.format(Instant.ofEpochMilli(m.time))){selected=m}}
                     }
                     "settings"->{
+                        HealthConnectionCard(state.healthAllowed){navigate("setup")}
                         Action(R.string.devices){navigate("devices")}
-                        OutlinedButton(onClick={navigate("setup")},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.prepare_health))}
-                        Pill(if(state.healthAllowed)R.string.health_ready else R.string.health_required)
                         Preference(R.string.auto_confirm,state.automatic && scale?.verified==true,enabled=scale?.verified==true){if(it)autoDialog=true else vm.automatic(false)}
                         Text(stringResource(R.string.auto_explain),style=MaterialTheme.typography.bodySmall,color=c.onSurfaceVariant)
                         if(scale?.verified!=true) {
@@ -199,6 +198,24 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),primaryContainer=Colo
             AlertDialog(onDismissRequest={selected=null},title={Text(stringResource(R.string.detail))},text={Column(verticalArrangement=Arrangement.spacedBy(12.dp)){Text(number.format(m.kg)+" "+stringResource(R.string.unit_kg),style=MaterialTheme.typography.headlineLarge);Text(dates.format(Instant.ofEpochMilli(m.time)));Text(stringResource(R.string.source,scaleDisplayName(m.source)));Text(stringResource(statusResource(m.status)));if(m.status in listOf("pending","failed","permission"))TextButton(onClick={if(m.status=="permission")authorize() else vm.retry(m.id)}){Text(stringResource(if(m.status=="permission")R.string.authorize else R.string.retry))};TextButton(onClick={selected=null;deleting=m}){Text(stringResource(R.string.delete_title))}}},confirmButton={TextButton(onClick={selected=null}){Text(stringResource(R.string.done))}})
         }
         deleting?.let{m->AlertDialog(onDismissRequest={deleting=null},title={Text(stringResource(R.string.delete_title))},text={Column{Text(stringResource(R.string.delete_note));TextButton(onClick={vm.delete(m.id,false);deleting=null}){Text(stringResource(R.string.delete_local))};TextButton(onClick={vm.delete(m.id,true);deleting=null}){Text(stringResource(R.string.delete_both))}}},confirmButton={TextButton(onClick={deleting=null}){Text(stringResource(R.string.cancel))}})}
+    }
+}
+
+@Composable private fun HealthConnectionCard(allowed: Boolean, connect: ()->Unit) {
+    val colors=MaterialTheme.colorScheme
+    Card(
+        modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp),
+        colors=CardDefaults.cardColors(containerColor=if(allowed)colors.secondaryContainer else colors.primaryContainer)
+    ) {
+        Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                Icon(if(allowed)Icons.Default.CheckCircle else Icons.Default.Info,null,Modifier.size(28.dp))
+                Text(stringResource(if(allowed)R.string.health_write_enabled_title else R.string.health_not_connected_title),style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.SemiBold,modifier=Modifier.weight(1f))
+            }
+            Text(stringResource(if(allowed)R.string.health_write_enabled_hint else R.string.health_not_connected_hint),style=MaterialTheme.typography.bodyMedium)
+            if(allowed)OutlinedButton(onClick=connect,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_check_connection))}
+            else Action(R.string.prepare_health,connect)
+        }
     }
 }
 

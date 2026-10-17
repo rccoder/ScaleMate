@@ -123,4 +123,9 @@
     <string name="health_read_note">这一步需要在健康应用里操作，称伴无法确认其读取权限是否已开启。</string>
     <string name="health_setup_note">完成后，新的称重记录会通过 Health Connect 同步；健康应用显示可能稍有延迟。暂不连接也可以先保存本地记录。</string>
     <string name="continue_add_scale">下一步：添加体重秤</string>
+    <string name="health_not_connected_title">尚未开启健康同步</string>
+    <string name="health_not_connected_hint">当前体重仅保存在这台手机上，不会自动写入 Google Fit 或 Google Health。完成连接与授权后，称伴才能通过 Health Connect 同步体重。</string>
+    <string name="health_write_enabled_title">已获得体重写入权限</string>
+    <string name="health_write_enabled_hint">称伴已获得 Health Connect 写入权限。请确保 Google Fit 或 Google Health 也已连接，并允许读取体重；否则仍无法在健康应用中看到记录。</string>
+    <string name="health_check_connection">检查健康应用连接</string>
 </resources>

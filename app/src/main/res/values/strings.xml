@@ -123,4 +123,9 @@
     <string name="health_read_note">Complete this step in your health app. ScaleMate cannot check whether that app has reading permission.</string>
     <string name="health_setup_note">New weigh-ins will sync through Health Connect; your health app may take a little time to show them. You can also use local records without connecting yet.</string>
     <string name="continue_add_scale">Next: add your scale</string>
+    <string name="health_not_connected_title">Health sync is not enabled</string>
+    <string name="health_not_connected_hint">Weights are currently saved only on this phone and are not automatically written to Google Fit or Google Health. Complete connection and authorization to sync through Health Connect.</string>
+    <string name="health_write_enabled_title">Weight writing is allowed</string>
+    <string name="health_write_enabled_hint">Health Connect writing permission is granted. Also connect Google Fit or Google Health and allow it to read weight; otherwise your records will not appear in that app.</string>
+    <string name="health_check_connection">Check health app connection</string>
 </resources>

@@ -53,4 +53,21 @@ class WeighingSessionTest {
         assertTrue(waiting.tick(29000))
         assertFalse(waiting.tick(30000))
     }
+    @Test fun completedSetupTrialIsNotReusedForAutomaticSaving() {
+        val trial=WeighingSession("A",false)
+        stable(trial)
+        assertEquals(Phase.STABLE,trial.state.phase)
+        assertFalse(trial.tick(8000))
+        assertTrue(trial.confirm(8000))
+        val daily=WeighingSession("A",true,trial.state.token)
+        for(t in 9000L..20000L step 1000) {
+            daily.frame(frame(),t,t)
+            assertFalse(daily.tick(t))
+        }
+        assertEquals(Phase.WAITING,daily.state.phase)
+        for(t in 21000L..24000L step 1000)daily.frame(frame(token=30),t,t)
+        assertEquals(Phase.COUNTDOWN,daily.state.phase)
+        assertFalse(daily.tick(28999))
+        assertTrue(daily.tick(29000))
+    }
 }

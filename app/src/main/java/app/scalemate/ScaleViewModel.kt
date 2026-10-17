@@ -70,10 +70,21 @@ class ScaleViewModel(application: Application): AndroidViewModel(application) {
     }
     fun rename(id: String, name: String) { if(name.isBlank()) return;viewModelScope.launch { withContext(Dispatchers.IO) { store.rename(id,name.take(60)) };reload() } }
     fun unbind(id: String) { stop();viewModelScope.launch { withContext(Dispatchers.IO) { store.unbind(id) };reload() } }
-    fun verify() {
-        val s=sessionScale ?: return
-        if(mutable.value.session.phase !in listOf(Phase.STABLE,Phase.COUNTDOWN))return
-        viewModelScope.launch { withContext(Dispatchers.IO) {store.verify(s.id)};reload();message(R.string.verified_message) }
+    fun completeScaleSetup(automatic: Boolean) {
+        val scale = sessionScale ?: return
+        if (scale.verified || engine?.confirm(SystemClock.elapsedRealtime()) != true) return
+        rememberToken()
+        stop()
+        update { it.copy(session=SessionState()) }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { store.verify(scale.id) }
+                prefs.edit().putBoolean("auto",automatic).apply()
+                update { it.copy(automatic=automatic) }
+                reload()
+                message(R.string.setup_complete)
+            } catch (_: Exception) { message(R.string.storage_error) }
+        }
     }
     fun start() { stop();listen(true) }
     private fun listen(manual: Boolean = false) {
@@ -107,7 +118,7 @@ class ScaleViewModel(application: Application): AndroidViewModel(application) {
             }
         }
     }
-    fun confirm() { if(engine?.confirm(SystemClock.elapsedRealtime())==true) persist() }
+    fun confirm() { if(sessionScale?.verified==true && engine?.confirm(SystemClock.elapsedRealtime())==true) persist() }
     fun retrySave() {if(mutable.value.session.phase==Phase.SAVE_FAILED)persist()}
     private fun rememberToken() { val s=sessionScale;val token=engine?.state?.token;if(s!=null && token!=null)prefs.edit().putInt("token-${s.id}",token).apply() }
     private fun persist() {

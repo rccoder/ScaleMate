@@ -92,5 +92,8 @@ jobs:
           当前为早期版本，称重时请保持 App 在前台。
           已安装旧 debug 版的用户不能直接覆盖安装此包，请先保留需要的记录再安排迁移；卸载旧版会删除它的本地记录。
           NOTES
+          if [ -f "docs/releases/$RELEASE_TAG.md" ]; then
+            cp "docs/releases/$RELEASE_TAG.md" "$RUNNER_TEMP/release-notes.md"
+          fi
           gh release create "$RELEASE_TAG" dist/ScaleMate.apk dist/SHA256SUMS dist/signing-certificate.txt \
             --verify-tag --title "称伴 · ScaleMate ${RELEASE_TAG#v}" --notes-file "$RUNNER_TEMP/release-notes.md"

@@ -2,8 +2,9 @@
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from check_release import metadata, validate_package
+from check_release import metadata, previous_release_code, validate_next_code, validate_package
 
 
 class ReleaseChecksTest(unittest.TestCase):
@@ -52,6 +53,17 @@ class ReleaseChecksTest(unittest.TestCase):
             for tag in ['v0.1.1', '0.2.0', '../v0.2.0']:
                 with self.subTest(tag=tag), self.assertRaises(ValueError):
                     metadata(root, tag)
+
+    def test_previous_code_excludes_current_tag_and_rejects_non_increment(self):
+        with patch('check_release.checked_in_release_codes', return_value={
+            '0.2.1': 5, '0.3.0-preview.1': 6, '0.3.0': 7,
+        }):
+            self.assertEqual(6, previous_release_code(tag='v0.3.0'))
+            self.assertEqual(7, previous_release_code(tag='v0.3.1-preview.1'))
+        validate_next_code(7, 6)
+        for value in (5, 6):
+            with self.subTest(code=value), self.assertRaises(ValueError):
+                validate_next_code(value, 6)
 
 
 if __name__ == '__main__':

@@ -1,5 +1,6 @@
 package app.scalemate
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
@@ -20,10 +21,16 @@ import androidx.compose.ui.unit.dp
     }
 }
 @Composable internal fun SettingsDivider() {HorizontalDivider(Modifier.padding(horizontal=16.dp),color=MaterialTheme.colorScheme.onSurface.copy(alpha=.08f))}
-@Composable internal fun SettingsRow(title:String,summary:String,onClick:(()->Unit)?=null) {
+@Composable internal fun SettingsRow(title:String,summary:String,onClick:(()->Unit)?=null) =
+    SettingsRow(title,summary,showBadge=false,onClick=onClick)
+
+@Composable internal fun SettingsRow(title:String,summary:String,showBadge:Boolean,onClick:(()->Unit)?=null) {
     Row(Modifier.fillMaxWidth().then(if(onClick!=null)Modifier.clickable(role=Role.Button,onClick=onClick) else Modifier).padding(horizontal=16.dp,vertical=14.dp).heightIn(min=36.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-            Text(title,style=MaterialTheme.typography.bodyLarge,fontWeight=FontWeight.Medium,maxLines=2,overflow=TextOverflow.Ellipsis)
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                Text(title,style=MaterialTheme.typography.bodyLarge,fontWeight=FontWeight.Medium,maxLines=2,overflow=TextOverflow.Ellipsis)
+                if(showBadge)Box(Modifier.size(8.dp).background(MaterialTheme.colorScheme.error, RoundedCornerShape(50)))
+            }
             if(summary.isNotBlank())Text(summary,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=2,overflow=TextOverflow.Ellipsis)
         }
         if(onClick!=null)Text("›",style=MaterialTheme.typography.headlineSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)

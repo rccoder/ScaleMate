@@ -51,10 +51,21 @@ README 面向潜在用户，也给简单开发者提供入口。它是当前产�
 
 用户要求发版时，按 [发布指南](docs/发布指南.md) 完成至实际下载附件核验，不止于推送 Tag。
 
-1. 更新 `versionName`、递增 `versionCode`，添加非空 `docs/releases/vX.Y.Z.md`；同步修正 README 中已过时的版本提示。
+1. 正式版 `versionName = X.Y.Z`、Tag `vX.Y.Z`；预览版 `X.Y.Z-preview.N`、Tag `vX.Y.Z-preview.N`。两个通道共用 `app.scalemate`、固定发布签名和全局递增的 `versionCode`，添加与 Tag 同名的非空 `docs/releases/<Tag>.md`；同步修正 README 中已过时的版本提示。
 2. 执行发布校验、相关测试与构建。发布提交推送后，等待**同一提交**的 Android CI 成功，再创建并推送对应 annotated Tag。
 3. 固定发布签名必须沿用，不将开发版包名／签名作为正式包。发布工作流成功后，下载实际 Release 附件，核验 SHA-256、固定签名、包名、版本、版本码与非调试属性，再报告完成。
 4. 更新说明只描述已实现能力，说明 AI 估算、外部服务费用、目标应用读取权限与升级限制；不可声称开发版数据会自动合并到正式版。
 5. 不移动已发布 Tag，不替换附件掩盖错误；修正后发布新版本。工作流成功不能代替覆盖升级与数据迁移验证。
+
+### 双通道发版与升级验收
+
+- 后续 Agent 执行发布前必须阅读 [发布指南的双通道操作](docs/发布指南.md#双通道发布操作)，不能只推 Tag 或把食物开发包／debug 包当预览版。
+- 预览版用 `-preview.N` Tag，由同一 `release.yml` 自动创建 GitHub prerelease，不占 Latest；正式版使用无后缀 Tag，创建普通 Release。不要在网页上把旧预览 Release 改成正式版代替重新构建。
+- 发布前执行 `python3 scripts/check_release.py --tag <Tag> --check-previous-code`；必须有完整 Git Tag 历史。比较两个通道所有历史版本，排除当前 Tag，不能只依赖旧 Release 正文里的版本码。
+- 用户要求“预览 → 验证 → 正式 → 验证”时，先发布预览版并完成实际附件核验及手机应用内升级；有失败先修正、发布更高版本码的新预览版，不在验证失败时继续发正式版。
+- 预览版验收通过后，用新的正式版本名、全局更高版本码、新更新说明提交；等该提交 CI 成功，再打正式 annotated Tag。正式版也必须重新下载附件并验证从预览版覆盖升级，不能复用预览版 APK 或版本码。
+- 每个 Release 应含 `ScaleMate.apk`、`SHA256SUMS`、`signing-certificate.txt`、`update.json`／签名及 `releases.json`／签名。清单使用固定发布证书的 RSA SHA-256 签名，客户端通过 GitHub API 发现、按 Tag 验签；不是受控 CDN 或任意代理 URL。
+- 升级验收保留已有餐食、体重、设备、草稿、AI 服务与默认项；可用显式开启的只读 `UpdateUpgradeDataTest` 对比应用私有摘要，不能把数据库、服务或凭据导出到 Git／日志。系统安装必须使用正常 Android 授权和确认，不用卸载或清数据完成验证。
+- 将对应提交 SHA、CI／Release 链接、实际附件摘要／签名／版本与升级结果写入 `docs/testing/`，真实截图写入 `design/app-update/screenshots/`。首个更新器版本需旧用户手动安装一次，本地测试更新器可用于首轮应用内升级，不冒充公开旧版原本就有更新器。
 
 常用入口：[开发指南](docs/开发指南.md) · [测试与验收指南](docs/测试与验收指南.md) · [发布指南](docs/发布指南.md)

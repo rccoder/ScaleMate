@@ -1,0 +1,95 @@
+{
+  "checkedAt": "2026-10-18T12:36:40.807551+00:00",
+  "results": [
+    {
+      "source": "github-official",
+      "api": {
+        "status": 200,
+        "finalUrl": "https://api.github.com/repos/rccoder/ScaleMate/releases",
+        "contentType": "application/json; charset=utf-8",
+        "bytesRead": 32601,
+        "releases": 4
+      },
+      "range": {
+        "status": 206,
+        "finalUrl": "https://release-assets.githubusercontent.com/github-production-release-asset/1414429722/1918cd85-ddd0-4f67-9e1b-5a960276fbd2",
+        "contentType": "application/vnd.android.package-archive",
+        "bytesRead": 1024
+      }
+    },
+    {
+      "source": "gh-proxy.com",
+      "api": {
+        "status": 200,
+        "finalUrl": "https://gh-proxy.com/https://api.github.com/repos/rccoder/ScaleMate/releases",
+        "contentType": "application/json; charset=utf-8",
+        "bytesRead": 32601,
+        "releases": 4
+      },
+      "range": {
+        "status": 206,
+        "finalUrl": "https://gh-proxy.com/https://github.com/rccoder/ScaleMate/releases/download/v0.2.1/ScaleMate.apk",
+        "contentType": "application/vnd.android.package-archive",
+        "bytesRead": 1024
+      }
+    },
+    {
+      "source": "ghfast.top",
+      "api": {
+        "error": "HTTP Error 403: FORBIDDEN",
+        "status": 403
+      },
+      "range": {
+        "status": 206,
+        "finalUrl": "https://ghfast.top/https://github.com/rccoder/ScaleMate/releases/download/v0.2.1/ScaleMate.apk",
+        "contentType": "application/vnd.android.package-archive",
+        "bytesRead": 1024
+      }
+    },
+    {
+      "source": "ghproxy.net",
+      "api": {
+        "error": "HTTP Error 403: FORBIDDEN",
+        "status": 403
+      },
+      "range": {
+        "status": 206,
+        "finalUrl": "https://ghproxy.net/https://github.com/rccoder/ScaleMate/releases/download/v0.2.1/ScaleMate.apk",
+        "contentType": "application/vnd.android.package-archive",
+        "bytesRead": 1024
+      }
+    },
+    {
+      "source": "gh.llkk.cc",
+      "api": {
+        "status": 200,
+        "finalUrl": "https://gh.llkk.cc/https://api.github.com/repos/rccoder/ScaleMate/releases",
+        "contentType": "application/json; charset=utf-8",
+        "bytesRead": 32601,
+        "releases": 4
+      },
+      "range": {
+        "status": 206,
+        "finalUrl": "https://gh.llkk.cc/https://github.com/rccoder/ScaleMate/releases/download/v0.2.1/ScaleMate.apk",
+        "contentType": "application/vnd.android.package-archive",
+        "bytesRead": 1024
+      }
+    },
+    {
+      "source": "gh-proxy.org",
+      "api": {
+        "status": 200,
+        "finalUrl": "https://gh-proxy.org/https://api.github.com/repos/rccoder/ScaleMate/releases",
+        "contentType": "application/json; charset=utf-8",
+        "bytesRead": 32601,
+        "releases": 4
+      },
+      "range": {
+        "status": 206,
+        "finalUrl": "https://gh-proxy.org/https://github.com/rccoder/ScaleMate/releases/download/v0.2.1/ScaleMate.apk",
+        "contentType": "application/vnd.android.package-archive",
+        "bytesRead": 1024
+      }
+    }
+  ]
+}

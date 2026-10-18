@@ -13,8 +13,9 @@ android {
         applicationId = if (providers.gradleProperty("foodDev").isPresent) "app.scalemate.fooddev" else "app.scalemate"
         minSdk = 34
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.2.1"
+        versionCode = 6
+        versionName = "0.3.0-preview.1"
+        buildConfigField("String", "UPDATE_PUBLIC_KEY_BASE64", "\"MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAtf6kkga/AnvxC0Cf9EMX/J+KZKPU5G4Uu1nW7U/jNMqAT1n+F+QM+FG10v8nTWlAud9K8DgoQyKqTtZ8r78QE02VD0ZC5lBzNxzjiZQK5Bm0VeERXcLDwKRzCCMwwVjV0QupPgikRUpzBTGUkkv66oCy8EpISQubbRK/aTm8HIGms0P0MpsOKapQwkDc+Ud41JCVEBNqA2YLlESmiNedS3/VM0f40di/Z5Ap68wXHp6dNnUXp3tTXXT0zq6VVCp11LIU4A1VhBm14cpxNkiU8nkFsjiikbD1R1wTZA7D16vpoB0zaFfsnL0pMlZbUqVSsR153c6nL53/L/bpNXMnCp70PfUj1ZsQF/3x+lEPJJ2mEC3CeyXRcakarKk47DvEbhVjqNVCLxvL4+56pYp3J3eoKTf7boxtDt5wHe6kuBKGJtGUl4SwEmcEIMH2QC6pDIvWC9QmcquM3vPIXy459yab3gXZ9gnYtMWTcl4BH3cX6aQbkQnWOpacIbkbv2QBAgMBAAE=\"")
         testApplicationId = "app.scalemate.test"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -38,7 +39,7 @@ android {
             if (releaseSigningReady) signingConfig = signingConfigs.getByName("release")
         }
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
 }
@@ -55,6 +56,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
 }

@@ -1,0 +1,45 @@
+{
+  "checkedAt": "2026-10-18T20:50:52.946336+08:00",
+  "network": "Android device current network, isolated instrumentation; no multi-carrier coverage",
+  "tag": "v0.2.1",
+  "sampleBytesPerRoute": 65536,
+  "maxConcurrentRoutes": 2,
+  "results": [
+    {
+      "source": "gh-proxy-com",
+      "bytesRead": 65536,
+      "elapsedMillis": 1298,
+      "failed": false
+    },
+    {
+      "source": "github-official",
+      "bytesRead": 65536,
+      "elapsedMillis": 1539,
+      "failed": false
+    },
+    {
+      "source": "ghfast-top",
+      "bytesRead": 65536,
+      "elapsedMillis": 1912,
+      "failed": false
+    },
+    {
+      "source": "gh-llkk-cc",
+      "bytesRead": 65536,
+      "elapsedMillis": 725,
+      "failed": false
+    },
+    {
+      "source": "gh-proxy-org",
+      "bytesRead": 65536,
+      "elapsedMillis": 759,
+      "failed": false
+    },
+    {
+      "source": "ghproxy-net",
+      "bytesRead": 65536,
+      "elapsedMillis": 3424,
+      "failed": false
+    }
+  ]
+}

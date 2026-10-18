@@ -21,6 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
@@ -33,7 +34,8 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          python3 scripts/check_release.py --tag "$RELEASE_TAG"
+          python3 scripts/check_release.py --tag "$RELEASE_TAG" --check-previous-code
+          python3 scripts/release_version.py --tag "$RELEASE_TAG" --output "$RUNNER_TEMP/release.json"
       - name: Install Android SDK packages
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"'
       - name: Validate before signing
@@ -60,14 +62,65 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk dist/ScaleMate.apk
       - name: Verify signature and package
         run: |
+          set -euo pipefail
           python3 scripts/check_release.py --tag "${{ github.ref_name }}" \
             --apk dist/ScaleMate.apk --certificate-output dist/signing-certificate.txt
           cd dist
           sha256sum ScaleMate.apk > SHA256SUMS
+      - name: Build signed update metadata
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/scalemate-release.jks"
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          unset ANDROID_KEYSTORE_BASE64
+          trap 'rm -f "$ANDROID_KEYSTORE_PATH"' EXIT
+          # Export the public key from the same release keystore. This is
+          # public verification material, never private key material.
+          python3 scripts/update_signing.py public-key \
+            --keystore "$ANDROID_KEYSTORE_PATH" \
+            --output "$RUNNER_TEMP/release-public.pem"
+          version_name=$(python3 -c 'import json,os;print(json.load(open(os.environ["RUNNER_TEMP"]+"/release.json"))["versionName"])')
+          version_code=$(python3 -c 'import json,os;print(json.load(open(os.environ["RUNNER_TEMP"]+"/release.json"))["versionCode"])')
+          python3 scripts/build_update_assets.py \
+            --tag "$RELEASE_TAG" --version-name "$version_name" --version-code "$version_code" \
+            --apk dist/ScaleMate.apk --notes "docs/releases/$RELEASE_TAG.md" \
+            --output-dir dist/update
+          python3 scripts/update_signing.py sign \
+            --input dist/update/update.json --output dist/update/update.json.sig \
+            --keystore "$ANDROID_KEYSTORE_PATH"
+          python3 scripts/update_signing.py sign \
+            --input dist/update/releases.json --output dist/update/releases.json.sig \
+            --keystore "$ANDROID_KEYSTORE_PATH"
+          python3 scripts/update_signing.py verify \
+            --input dist/update/update.json --signature dist/update/update.json.sig \
+            --public-key "$RUNNER_TEMP/release-public.pem"
+          python3 scripts/update_signing.py verify \
+            --input dist/update/releases.json --signature dist/update/releases.json.sig \
+            --public-key "$RUNNER_TEMP/release-public.pem"
+          cp dist/update/update.json dist/update.json
+          cp dist/update/update.json.sig dist/update.json.sig
+          cp dist/update/releases.json dist/releases.json
+          cp dist/update/releases.json.sig dist/releases.json.sig
+          python3 scripts/validate_update_index.py \
+            --index dist/releases.json --manifest dist/update.json --tag "$RELEASE_TAG" \
+            --version-code "$version_code" \
+            --apk-sha256 "$(cut -d' ' -f1 dist/SHA256SUMS)" \
+            --apk-size "$(stat -c%s dist/ScaleMate.apk)"
       - name: Publish download
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          prerelease=""
+          if [[ "$RELEASE_TAG" == *-preview.* ]]; then prerelease="--prerelease"; fi
           gh release create "$RELEASE_TAG" dist/ScaleMate.apk dist/SHA256SUMS dist/signing-certificate.txt \
-            --verify-tag --title "称伴 · ScaleMate ${RELEASE_TAG#v}" --notes-file "docs/releases/$RELEASE_TAG.md"
+            dist/update.json dist/update.json.sig dist/releases.json dist/releases.json.sig \
+            --verify-tag $prerelease --title "称伴 · ScaleMate ${RELEASE_TAG#v}" --notes-file "docs/releases/$RELEASE_TAG.md"

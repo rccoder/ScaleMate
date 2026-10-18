@@ -30,6 +30,8 @@ import app.scalemate.food.FoodViewModel
 import app.scalemate.food.FoodScreen
 import app.scalemate.food.Meal
 import app.scalemate.food.Nutrients
+import app.scalemate.update.UpdateScreen
+import app.scalemate.update.UpdateViewModel
 import java.time.LocalDate
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
@@ -42,10 +44,11 @@ private val Light=lightColorScheme(primary=Color(0xFF376A52),primaryContainer=Co
 private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0A3826),primaryContainer=Color(0xFF214F38),onPrimaryContainer=Color(0xFFCEEBDA),secondaryContainer=Color(0xFF263E30),onSecondaryContainer=Color(0xFFD6E8DA),background=Color(0xFF111914),surface=Color(0xFF111914),surfaceVariant=Color(0xFF26372C),onSurfaceVariant=Color(0xFFB8C7BC),outline=Color(0xFF819087),outlineVariant=Color(0xFF3D4D43))
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun ScaleMateApp(vm: ScaleViewModel, foodVm: FoodViewModel, authorizeNutrition: ()->Unit, bluetooth: (() -> Unit)->Unit, authorize: ()->Unit, healthSettings: ()->Unit, googleApp: ()->Unit, language: (String)->Unit, privacy: ()->Unit) {
+@Composable fun ScaleMateApp(vm: ScaleViewModel, foodVm: FoodViewModel, updateVm: UpdateViewModel, authorizeNutrition: ()->Unit, bluetooth: (() -> Unit)->Unit, authorize: ()->Unit, healthSettings: ()->Unit, googleApp: ()->Unit, language: (String)->Unit, privacy: ()->Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     var page by rememberSaveable { mutableStateOf("records") }
     val foodState by foodVm.state.collectAsStateWithLifecycle()
+    val updateState by updateVm.state.collectAsStateWithLifecycle()
     var weightSyncGuide by remember {mutableStateOf(false)}
     var weightBaseline by remember {mutableStateOf<Set<String>?>(null)}
     var showAllRecords by rememberSaveable {mutableStateOf(false)}
@@ -93,15 +96,15 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
         }
     }
     fun navigate(next: String) {if(next=="devices")devicesReturn=if(page=="settings")"settings" else "home";if(page=="devices"&&next!="devices")vm.stop();vm.foodPage(next.startsWith("food"));if(next!=page && state.weighing)vm.cancelWeighing();page=next}
-    BackHandler(actualPage in listOf("devices","setup","food-services","sync-settings") || actualPage=="records" && showAllRecords) {
-        when(actualPage){"devices"->navigate(devicesReturn);"setup"->navigate("sync-settings");"food-services","sync-settings"->navigate("settings");else->showAllRecords=false}
+    BackHandler(actualPage in listOf("devices","setup","food-services","sync-settings","update") || actualPage=="records" && showAllRecords) {
+        when(actualPage){"devices"->navigate(devicesReturn);"setup"->navigate("sync-settings");"food-services","sync-settings","update"->navigate("settings");else->showAllRecords=false}
     }
     LaunchedEffect(state.weighing) {if(state.weighing){page="home";selected=null;choose=false;autoDialog=false;rename=null;candidate=null;deleting=null;languageDialog=false}}
     MaterialTheme(colorScheme=colors) {
         val c=MaterialTheme.colorScheme
-        Scaffold(topBar={ if(actualPage !in listOf("welcome","loading")) TopAppBar(title={Text(stringResource(when(actualPage){"food"->R.string.food_title;"food-services"->R.string.food_services;"devices"->R.string.devices;"records"->R.string.records;"settings"->R.string.settings;"setup"->R.string.prepare_health;"sync-settings"->R.string.settings_sync;"home"->if(settingUp)R.string.finish_scale_setup else R.string.weigh;else->R.string.app_name}),fontWeight=FontWeight.SemiBold)},navigationIcon={if(actualPage in listOf("devices","setup","food-services","sync-settings"))IconButton(onClick={navigate(when(actualPage){"devices"->devicesReturn;"setup"->"sync-settings";else->"settings"})}){Icon(Icons.AutoMirrored.Filled.ArrowBack,stringResource(R.string.cancel))}}) },
+        Scaffold(topBar={ if(actualPage !in listOf("welcome","loading")) TopAppBar(title={Text(stringResource(when(actualPage){"food"->R.string.food_title;"food-services"->R.string.food_services;"devices"->R.string.devices;"records"->R.string.records;"settings"->R.string.settings;"update"->R.string.update_title;"setup"->R.string.prepare_health;"sync-settings"->R.string.settings_sync;"home"->if(settingUp)R.string.finish_scale_setup else R.string.weigh;else->R.string.app_name}),fontWeight=FontWeight.SemiBold)},navigationIcon={if(actualPage in listOf("devices","setup","food-services","sync-settings","update"))IconButton(onClick={navigate(when(actualPage){"devices"->devicesReturn;"setup"->"sync-settings";else->"settings"})}){Icon(Icons.AutoMirrored.Filled.ArrowBack,stringResource(R.string.cancel))}}) },
             bottomBar={if(actualPage in listOf("home","food","records","settings"))NavigationBar(containerColor=c.surface){
-                listOf(Triple("records",R.string.records,Icons.AutoMirrored.Filled.List),Triple("food",R.string.food_title,Icons.Default.Add),Triple("home",R.string.weigh,Icons.Default.Home),Triple("settings",R.string.settings,Icons.Default.Settings)).forEach{(key,label,icon)->NavigationBarItem(selected=actualPage==key,onClick={if(key=="food"){foodStartPage="home";foodSelection=null};navigate(key)},icon={Icon(icon,stringResource(label))},label={Text(stringResource(label))})}
+                listOf(Triple("records",R.string.records,Icons.AutoMirrored.Filled.List),Triple("food",R.string.food_title,Icons.Default.Add),Triple("home",R.string.weigh,Icons.Default.Home),Triple("settings",R.string.settings,Icons.Default.Settings)).forEach{(key,label,icon)->NavigationBarItem(selected=actualPage==key,onClick={if(key=="food"){foodStartPage="home";foodSelection=null};navigate(key)},icon={BadgedBox(badge={if(key=="settings" && updateState.hasUpdate)Badge()}){Icon(icon,stringResource(label))}},label={Text(stringResource(label))})}
             }}
         ) {padding->
             Column(Modifier.fillMaxSize().padding(padding).verticalScroll(mainScroll).padding(horizontal=24.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
@@ -289,7 +292,19 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                             SettingsRow(stringResource(R.string.privacy),stringResource(R.string.settings_local_privacy),privacy)
                             SettingsDivider()
                             val version=remember {context.packageManager.getPackageInfo(context.packageName,0).versionName.orEmpty()}
-                            SettingsRow(stringResource(R.string.settings_version),if(context.packageName.endsWith(".fooddev"))stringResource(R.string.settings_dev_version,version) else version)
+                            val versionSummary=when {
+                                context.packageName.endsWith(".fooddev")->stringResource(R.string.settings_dev_version,version)
+                                updateState.hasUpdate->stringResource(R.string.settings_update_available,version)
+                                else->version
+                            }
+                            SettingsRow(
+                                stringResource(R.string.settings_version),
+                                versionSummary,
+                                onClick = if (context.packageName.endsWith(".fooddev")) null else {
+                                    { navigate("update") }
+                                },
+                                showBadge = updateState.hasUpdate && !context.packageName.endsWith(".fooddev")
+                            )
                         }
                     }
                     "sync-settings"->{
@@ -308,6 +323,9 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                             SettingsRow(stringResource(R.string.settings_health_steps),stringResource(R.string.settings_health_steps_hint)){navigate("setup")}
                         }
                         Text(stringResource(R.string.records_sync_hint),style=MaterialTheme.typography.bodySmall,color=c.onSurfaceVariant)
+                    }
+                    "update"->{
+                        key(actualPage){UpdateScreen(updateVm)}
                     }
                 }
                 state.message?.let{Text(stringResource(it),color=c.error,style=MaterialTheme.typography.bodyMedium)}

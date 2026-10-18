@@ -1,0 +1,47 @@
+{
+  "tag": "v0.3.0",
+  "url": "https://github.com/rccoder/ScaleMate/releases/tag/v0.3.0",
+  "prerelease": false,
+  "versionCode": 7,
+  "sha256": "93fd5f5145985edc53de96a5b9e3a06302586d113e90e277413977f276991ad8",
+  "sizeBytes": 23752506,
+  "verifiedAssets": [
+    "SHA256SUMS",
+    "ScaleMate.apk",
+    "releases.json",
+    "releases.json.sig",
+    "signing-certificate.txt",
+    "update.json",
+    "update.json.sig"
+  ],
+  "fixedSigner": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5",
+  "commit": "a5c179a55b16bce3a1fef832b62eebe23ebdcc30",
+  "ci": "https://github.com/rccoder/ScaleMate/actions/runs/39131500948",
+  "releaseRun": "https://github.com/rccoder/ScaleMate/actions/runs/39131669657",
+  "phoneUpgrade": {
+    "from": "0.3.0-preview.1 / code 6",
+    "to": "0.3.0 / code 7",
+    "route": "gh-proxy-com",
+    "method": "in-app download and Android system installer",
+    "installedApkMatchesPublished": true,
+    "dataPreservationVerify": "passed before and after computer restart",
+    "baseline": "original code 5; seven database tables and non-update settings",
+    "baselineCleaned": true
+  },
+  "cleanup": {
+    "kept": [
+      "app.scalemate",
+      "app.scalemate.fooddev"
+    ],
+    "removed": [
+      "app.scalemate.prototype",
+      "app.scalemate.testing",
+      "app.scalemate.nutritionprobe",
+      "app.scalemate.test"
+    ],
+    "channel": "stable",
+    "route": "auto",
+    "screenOffTimeoutMs": 60000,
+    "developmentIcon": "orange; same package and signer replacement; data digests unchanged"
+  }
+}

@@ -1,0 +1,5 @@
+app.scalemate.UpdateUpgradeDataTest:.
+
+Time: 0.016
+
+OK (1 test)

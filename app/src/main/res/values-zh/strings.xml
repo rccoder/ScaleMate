@@ -84,6 +84,7 @@
     <string name="stale_reading">没有新的体重数据，请重新称重。</string>
     <string name="open_error">无法打开此页面，请检查系统设置。</string>
     <string name="signal">信号：%1$d dBm · %2$s</string>
+    <string name="signal_without_address">信号：%1$d dBm</string>
     <string name="model_yunmai_smart_body_fat_scale_3_se">云麦智能体脂秤 3 SE</string>
     <string name="done">完成</string>
     <string name="loading">加载中…</string>
@@ -94,7 +95,7 @@
     <string name="permission_denied">未获得体重权限，仍可在本地保存。</string>
     <string name="phase_saving">正在本地保存…</string>
     <string name="retry_save">重试本地保存</string>
-    <string name="device_model_and_address">型号：%1$s · %2$s</string>
+    <string name="device_model">型号：%1$s</string>
     <string name="listening_hint">正在等待体重秤上报，直接上秤即可。</string>
     <string name="verify_title">第 2 步：核对读数</string>
     <string name="auto_needs_scale">请先添加体重秤并完成首次试称，再选择保存方式。</string>

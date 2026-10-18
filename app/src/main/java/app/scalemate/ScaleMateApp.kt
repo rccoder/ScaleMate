@@ -142,7 +142,7 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                             val displayName=scaleDisplayName(s.name)
                             Card(modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp)) {Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                                 Text(scaleDisplayName(s.name),style=MaterialTheme.typography.titleMedium)
-                                Text(stringResource(R.string.device_model_and_address,model.internalModel,s.address.takeLast(5)),style=MaterialTheme.typography.bodySmall)
+                                Text(stringResource(R.string.device_model,model.internalModel),style=MaterialTheme.typography.bodySmall)
                                 Text(stringResource(if(s.verified)R.string.verified else R.string.unverified),color=c.primary)
                                 Row {TextButton(onClick={vm.select(s.id);navigate("home")}){Text(stringResource(if(s.verified)R.string.select_scale else R.string.finish_scale_setup))};TextButton(onClick={rename=s;name=displayName}){Text(stringResource(R.string.rename))}}
                                 Row {TextButton(onClick={replacing=s;bluetooth{vm.discover()}}){Text(stringResource(R.string.rebind))};TextButton(onClick={vm.unbind(s.id)}){Text(stringResource(R.string.remove))}}
@@ -150,7 +150,7 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                         }
                         if(state.discovering){LinearProgressIndicator(Modifier.fillMaxWidth());Text(stringResource(R.string.scanning));TextButton(onClick={vm.cancelWeighing()}){Text(stringResource(R.string.stop))}}
                         else Action(R.string.scan){bluetooth{vm.discover()}}
-                        state.candidates.forEach{(address,rssi)->OutlinedCard(onClick={candidate=address},modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(18.dp)){Text(modelName);Text(stringResource(R.string.signal,rssi,address.takeLast(5)),style=MaterialTheme.typography.bodySmall)}}}
+                        state.candidates.forEach{(address,rssi)->OutlinedCard(onClick={candidate=address},modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(18.dp)){Text(modelName);Text(stringResource(R.string.signal_without_address,rssi),style=MaterialTheme.typography.bodySmall)}}}
                     }
                     "home"->{
                         if(scale==null) {Text(stringResource(R.string.no_scale),style=MaterialTheme.typography.headlineMedium);Action(R.string.add_scale){navigate("devices")}}

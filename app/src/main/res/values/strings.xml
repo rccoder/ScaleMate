@@ -84,6 +84,7 @@
     <string name="stale_reading">No fresh weight data. Please weigh again.</string>
     <string name="open_error">Could not open this screen. Please check your system settings.</string>
     <string name="signal">Signal: %1$d dBm · %2$s</string>
+    <string name="signal_without_address">Signal: %1$d dBm</string>
     <string name="model_yunmai_smart_body_fat_scale_3_se">YUNMAI Smart Body Fat Scale 3 SE</string>
     <string name="done">Done</string>
     <string name="loading">Loading…</string>
@@ -94,7 +95,7 @@
     <string name="permission_denied">Weight permission was not granted. You can still save locally.</string>
     <string name="phase_saving">Saving locally…</string>
     <string name="retry_save">Retry local save</string>
-    <string name="device_model_and_address">Model: %1$s · %2$s</string>
+    <string name="device_model">Model: %1$s</string>
     <string name="listening_hint">Waiting for your scale. Step on to start automatically.</string>
     <string name="verify_title">Step 2: compare the readings</string>
     <string name="auto_needs_scale">Add a scale and complete a trial weigh-in before choosing how to save.</string>

@@ -13,8 +13,8 @@ android {
         applicationId = if (providers.gradleProperty("foodDev").isPresent) "app.scalemate.fooddev" else "app.scalemate"
         minSdk = 34
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.2.0"
+        versionCode = 5
+        versionName = "0.2.1"
         testApplicationId = "app.scalemate.test"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

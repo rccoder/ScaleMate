@@ -9,11 +9,13 @@ android {
     compileSdk = 36
     buildToolsVersion = "36.0.0"
     defaultConfig {
-        applicationId = "app.scalemate"
+        manifestPlaceholders["appLabel"] = if (providers.gradleProperty("foodDev").isPresent) "称伴 · 饮食开发版" else "@string/app_name"
+        applicationId = if (providers.gradleProperty("foodDev").isPresent) "app.scalemate.fooddev" else "app.scalemate"
         minSdk = 34
         targetSdk = 36
         versionCode = 3
         versionName = "0.1.1"
+        testApplicationId = "app.scalemate.test"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

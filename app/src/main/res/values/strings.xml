@@ -292,7 +292,7 @@
     <string name="settings_appearance">Appearance and language</string>
     <string name="settings_app">App information</string>
     <string name="settings_version">Version</string>
-    <string name="settings_dev_version">%1$s · Development</string>
+    <string name="settings_test_version">%1$s · Test build</string>
     <string name="settings_update_available">%1$s · Update available</string>
     <string name="settings_auto_save">Save automatically when stable</string>
     <string name="settings_auto_hint">Save after a 5-second countdown when stable. You can cancel during the countdown.</string>

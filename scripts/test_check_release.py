@@ -1,5 +1,6 @@
 """Regression tests for release gates, using synthetic non-secret tool output."""
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -64,6 +65,47 @@ class ReleaseChecksTest(unittest.TestCase):
         for value in (5, 6):
             with self.subTest(code=value), self.assertRaises(ValueError):
                 validate_next_code(value, 6)
+
+    def history_fixture(self, root):
+        def git(*args):
+            return subprocess.check_output(['git', '-C', str(root), *args], stderr=subprocess.DEVNULL)
+        git('init', '-q')
+        git('config', 'user.email', 'release-tests@example.invalid')
+        git('config', 'user.name', 'Release tests')
+        (root / 'app').mkdir()
+        (root / 'docs/releases').mkdir(parents=True)
+        (root / 'app/build.gradle.kts').write_text('versionName = "0.2.0"\nversionCode = 4\n')
+        (root / 'docs/releases/v0.2.0.md').write_text('Published release\n')
+        git('add', '.')
+        git('commit', '-qm', 'Release fixture')
+        git('tag', 'v0.2.0')
+        return git
+
+    def test_pending_tag_is_optional_but_missing_historical_preview_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.history_fixture(root)
+            (root / 'docs/releases/v0.3.0.md').write_text('Pending release\n')
+            self.assertEqual(4, previous_release_code(root, 'v0.3.0'))
+            (root / 'docs/releases/v0.3.0-preview.1.md').write_text('Published preview\n')
+            with self.assertRaisesRegex(ValueError, 'Missing release history for v0.3.0-preview.1'):
+                previous_release_code(root, 'v0.3.0')
+
+    def test_shallow_history_cannot_pass_release_gate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            git = self.history_fixture(root)
+            (root / '.git/shallow').write_bytes(git('rev-parse', 'HEAD'))
+            with self.assertRaisesRegex(ValueError, 'history is shallow'):
+                previous_release_code(root, 'v0.3.0')
+
+    def test_historical_tag_with_mismatched_version_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            git = self.history_fixture(root)
+            git('tag', 'v0.3.0-preview.1')
+            with self.assertRaisesRegex(ValueError, 'Invalid version metadata'):
+                previous_release_code(root, 'v0.3.0')
 
 
 if __name__ == '__main__':

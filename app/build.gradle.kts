@@ -1,4 +1,5 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id("org.jetbrains.kotlin.plugin.compose") }
+val isolatedTestApp = providers.gradleProperty("foodDev").isPresent
 val releaseKeystore = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull
 val releaseStorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
@@ -9,9 +10,9 @@ android {
     compileSdk = 36
     buildToolsVersion = "36.0.0"
     defaultConfig {
-        manifestPlaceholders["appLabel"] = if (providers.gradleProperty("foodDev").isPresent) "称伴 · 饮食开发版" else "@string/app_name"
-        manifestPlaceholders["appIcon"] = if (providers.gradleProperty("foodDev").isPresent) "@drawable/ic_scale_test" else "@drawable/ic_scale"
-        applicationId = if (providers.gradleProperty("foodDev").isPresent) "app.scalemate.fooddev" else "app.scalemate"
+        manifestPlaceholders["appLabel"] = if (isolatedTestApp) "称伴 · 测试版" else "@string/app_name"
+        manifestPlaceholders["appIcon"] = if (isolatedTestApp) "@drawable/ic_scale_test" else "@drawable/ic_scale"
+        applicationId = if (isolatedTestApp) "app.scalemate.fooddev" else "app.scalemate"
         minSdk = 34
         targetSdk = 36
         versionCode = 7
@@ -30,13 +31,13 @@ android {
     }
     buildTypes {
         getByName("debug") {
+            manifestPlaceholders["appLabel"] = "称伴 · 测试版"
             manifestPlaceholders["appIcon"] = "@drawable/ic_scale_test"
         }
         create("prototype") {
             initWith(getByName("debug"))
             applicationIdSuffix = ".prototype"
-            manifestPlaceholders["appIcon"] = "@drawable/ic_scale_test"
-            versionNameSuffix = "-ai-preview"
+            versionNameSuffix = "-health-design"
             matchingFallbacks += listOf("debug")
         }
         getByName("release") {

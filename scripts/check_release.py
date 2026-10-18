@@ -66,8 +66,8 @@ def latest_published_code(timeout=20, exclude_tag=None):
     return max(codes) if codes else None
 
 
-def checked_in_release_codes(root=ROOT):
-    """Read published versionCode values from checked-in Git tags."""
+def checked_in_release_codes(root=ROOT, exclude_tag=None):
+    """Require readable history for every known release except the pending tag."""
     result = {}
     root = Path(root)
     releases = root / 'docs/releases'
@@ -77,15 +77,23 @@ def checked_in_release_codes(root=ROOT):
     for notes in releases.glob('v*.md'):
         tags.add(notes.stem)
     try:
+        shallow = subprocess.check_output(
+            ['git', '-C', str(root), 'rev-parse', '--is-shallow-repository'],
+            text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+        if shallow == 'true':
+            raise ValueError('Release history is shallow; fetch full history and tags first')
         tags.update(subprocess.check_output(
             ['git', '-C', str(root), 'tag', '--list', 'v*'],
             text=True,
             stderr=subprocess.DEVNULL,
         ).splitlines())
-    except (OSError, subprocess.CalledProcessError):
-        pass
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise ValueError('Could not inspect local release tags') from error
     for tag in sorted(tags):
         if not re.fullmatch(r'v\d+\.\d+\.\d+(?:-preview\.\d+)?', tag):
+            continue
+        if tag == exclude_tag:
             continue
         try:
             source = subprocess.check_output(
@@ -93,12 +101,13 @@ def checked_in_release_codes(root=ROOT):
                 text=True,
                 stderr=subprocess.DEVNULL,
             )
-        except (OSError, subprocess.CalledProcessError):
-            continue
+        except (OSError, subprocess.CalledProcessError) as error:
+            raise ValueError(f'Missing release history for {tag}; fetch full history and tags first') from error
         name = re.search(r'versionName = "([^"]+)"', source)
         code = re.search(r'versionCode = (\d+)', source)
-        if name and code and tag == f'v{name.group(1)}':
-            result[name.group(1)] = int(code.group(1))
+        if not name or not code or tag != f'v{name.group(1)}':
+            raise ValueError(f'Invalid version metadata in historical tag {tag}')
+        result[name.group(1)] = int(code.group(1))
     return result
 
 
@@ -123,7 +132,7 @@ def previous_release_code(root=ROOT, tag=None):
     current_version = current_tag.removeprefix('v')
     codes = [
         code
-        for version, code in checked_in_release_codes(root).items()
+        for version, code in checked_in_release_codes(root, exclude_tag=current_tag).items()
         if version != current_version
     ]
     return max(codes) if codes else None

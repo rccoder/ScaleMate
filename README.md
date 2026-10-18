@@ -13,7 +13,7 @@
 **Android 14+ · 中英双语支持 · 无需注册 · 自选 AI 服务**
 
 <p align="center">
-  <a href="https://github.com/rccoder/ScaleMate/releases/latest/download/ScaleMate.apk"><strong>下载称伴体验版</strong></a>
+  <a href="https://github.com/rccoder/ScaleMate/releases/latest/download/ScaleMate.apk"><strong>下载称伴正式版</strong></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/rccoder/ScaleMate/releases">版本与更新记录</a>
 </p>
@@ -28,13 +28,13 @@
 
 常见早餐、常去的几家店，星标一次，下次从食物库直接添加。
 
-以下均为当前开发版实机界面，营养数值仅作功能展示。
+以下均为测试版实机界面（与当前正式版功能一致），营养数值仅作功能展示。
 
 1. **拍照后先确认**：多图识别、分食描述和营养编辑都在确认页完成。
 2. **看懂 AI 的依据**：可以展开查看它如何理解人数、食用比例和你的补充说明。
 3. **常吃的直接复用**：收藏过的食物会优先出现，下次不用重新录入。
 
-<img src="docs/screenshots/current/19-food-photo-nutrition.png" width="32%" alt="多张真实餐食照片与营养卡片，展示 AI 估算、编辑营养和食用建议"> <img src="design/food-flow-redesign/screenshots/108-direct-intake-details-native-icon.png" width="32%" alt="展开估算详情，查看分食描述、AI 理解和本人摄入"> <img src="design/food-flow-redesign/screenshots/69-rounded-library-images.png" width="32%" alt="可搜索的食物库，常吃食物优先，支持直接添加到这一餐">
+<img src="docs/screenshots/current/19-food-photo-nutrition.png" width="32%" alt="多张真实餐食照片与营养卡片，展示 AI 估算、编辑营养和食用建议"> <img src="docs/screenshots/current/24-food-intake-details.png" width="32%" alt="展开估算详情，查看分食描述、AI 理解和本人摄入"> <img src="docs/screenshots/current/25-food-library.png" width="32%" alt="可搜索的食物库，常吃食物优先，支持直接添加到这一餐">
 
 除了数字，还能看看 **“本次怎么吃”与“下次怎么选”**：这一餐怎么搭配、酱汁可以怎样少吃一点，下次又能换成什么做法。建议跟着这份食物走，确认权始终在你手里。
 
@@ -73,7 +73,7 @@
 在「设置 → 当前版本」检查更新，可选择下载线路并少量试读测速。正式版默认不接收预览版；尝鲜需主动切换通道，Android 安装前仍会请求确认。公共代理的速度与可用性不作保证。
 
 <p align="center">
-  <a href="https://github.com/rccoder/ScaleMate/releases/latest/download/ScaleMate.apk"><strong>下载称伴体验版</strong></a>
+  <a href="https://github.com/rccoder/ScaleMate/releases/latest/download/ScaleMate.apk"><strong>下载称伴正式版</strong></a>
 </p>
 
 ---

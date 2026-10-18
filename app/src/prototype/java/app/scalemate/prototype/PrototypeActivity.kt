@@ -33,7 +33,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
-/** UI-only preview: synthetic data, in-memory state, no health, camera, BLE or network calls. */
+/** Future health AI design only. Legacy food branches are context, not the production contract.
+ * Synthetic data and in-memory state; no health, camera, BLE or network calls. */
 class PrototypeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,7 +70,7 @@ private val DemoJson = """{
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable private fun Prototype() {
-    var route by remember { mutableStateOf("food") }
+    var route by remember { mutableStateOf("health") }
     var stack by remember { mutableStateOf(listOf<String>()) }
     fun go(next: String) { stack=stack+route; route=next }
     fun back() { route=stack.lastOrNull() ?: "food";stack=stack.dropLast(1) }

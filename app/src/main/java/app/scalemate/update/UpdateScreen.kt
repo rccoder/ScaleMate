@@ -50,7 +50,7 @@ fun UpdateScreen(
     val installed = state.installed
     val currentVersion = installed?.let {
         if (it.packageName == "app.scalemate.fooddev") {
-            stringResource(R.string.settings_dev_version, it.versionName)
+            stringResource(R.string.settings_test_version, it.versionName)
         } else {
             "${it.versionName} · ${stringResource(if (it.isPreview) R.string.update_preview else R.string.update_stable)}"
         }

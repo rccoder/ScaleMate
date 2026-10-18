@@ -293,7 +293,7 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                             SettingsDivider()
                             val version=remember {context.packageManager.getPackageInfo(context.packageName,0).versionName.orEmpty()}
                             val versionSummary=when {
-                                context.packageName.endsWith(".fooddev")->stringResource(R.string.settings_dev_version,version)
+                                context.packageName.endsWith(".fooddev")->stringResource(R.string.settings_test_version,version)
                                 updateState.hasUpdate->stringResource(R.string.settings_update_available,version)
                                 else->version
                             }

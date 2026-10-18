@@ -4,109 +4,99 @@
 
 # 称伴 · ScaleMate
 
-### 站上秤，让体重回到你的健康记录里。
+### 记下每一餐、每次体重，让健康记录连起来。
 
-喜欢用 Google Fit，却发现家里的体重秤无法同步？称伴为它们搭一座桥。连接体重秤，接收每次测量，把确认后的体重送到你常用的健康应用。
+称伴是一款 Android 饮食与体重记录工具。拍照估算一餐的营养，复用常吃的食物，上秤自动记录体重，再通过 **Health Connect** 将确认后的数据同步给 Google Fit 等健康应用。
 
-**目前支持云麦智能体脂秤 3 SE · Android 14+ · 中文 / English**
+从今天吃了什么，到最近的体重变化，都从「记录」首页开始。
 
-[下载体验版](https://github.com/rccoder/ScaleMate/releases/latest/download/ScaleMate.apk)
+**Android 14+ · 中文 / English · 无需注册 · 自选 AI 服务**
 
-当前工作区正在扩展为以「记录」为首页的饮食与体重记录工具，已接入图片 AI、手动记餐、常吃食物与营养同步。开发版功能、实机截图和验证边界见 [饮食功能实现与验收](docs/testing/饮食功能实现与验收.md)；以下称重介绍与截图对应原有 0.1.1 体验，开发中的功能尚未发布。
+[下载已发布体验版](https://github.com/rccoder/ScaleMate/releases/latest/download/ScaleMate.apk) · [版本与更新记录](https://github.com/rccoder/ScaleMate/releases)
 
-## 每天称重，少一步手动记录
+> 以下介绍当前源码已实现的能力。饮食 AI 与新版记录首页尚未随新版安装包发布；已发布体验版以称重功能为主，具体功能请以对应 Release 说明为准。希望体验最新功能，可以从源码构建开发版。
 
-打开称伴，站上当前选中的体重秤，APP 会自动接收新一轮测量并显示体重，无需点击“开始称重”。首次添加秤时，完成试称和读数核对，再选择手动保存或 **5 秒自动保存**。日常称重时，读数稳定后按所选方式保存。需要重测？倒计时内随时取消。
+## 一餐怎么吃，由你说明，AI 帮你记
 
-确认后的体重会先保存在手机，再通过 **Health Connect** 同步，供已授权的 Google Fit／Google Health 读取。每次测量的同步状态，都能在记录里查看；写入失败时，也可以重新尝试。
+拍照或从相册选择多张图片，把同一餐的菜品一起交给 AI。一个人吃、几个人均分、没吃蘸料、剩下多少，都可以通过标签和补充描述说明。AI 按你实际吃下的部分估算热量、蛋白质、碳水和脂肪，同一道菜的重复拍摄角度会合并识别。
 
-## 熟悉的秤，顺手的体验
+分析完成后，在当前页面确认食物、份量和营养，也可以直接修改。每份食物都有简短的 **AI 估算依据**，展开可查看它如何理解你的说明；食用建议则分别告诉你「本次怎么吃」与「下次怎么选」。确认后再加入这一餐，保存时汇总营养并记录用餐时间。
 
-- **连接你的秤**：唤醒设备，扫描发现，核对型号后添加。首次试称确认读数，再选择保存方式；支持管理多台秤和自定义名称。
-- **看清这次测量**：大字号实时体重，稳定后再确认，每次保存都由你掌握。
-- **留下每次记录**：体重、时间和同步状态集中呈现，方便回看。
-- **按你的习惯使用**：Material 3 界面，中英文切换、深色模式与壁纸配色。
+- **不拍照也能记**：支持手动录入，无需配置 AI。
+- **常吃的，直接复用**：历史食物统一收进食物库，星标收藏后优先展示，常用的食物更容易找到。
+- **记录由你确认**：AI 结果可以编辑，确认保存后才成为正式记录。营养数值属于估算，不能替代精确称量或专业评估。
 
-称伴无需注册账号。暂时不连接健康应用，也可以先把体重保存在本地。
+## 上秤，留下这次体重
 
-## 从第一次连接，到每天称重
+在「称重」中添加体重秤，完成首次试称与读数核对。以后保持 App 在前台，站上秤即可接收测量，无需手动点击开始。
 
-以下为 2026-10-17 当前源码构建在 Android 手机上的实际界面，从清空应用数据后的首次使用开始拍摄。先展示首次设置，再展示日常称重与记录。健康连接按步骤说明操作；添加秤后，首次试称、读数核对和保存方式选择一起完成设备设置。截图中的应用名称为“称伴”，试称页面展示实秤读数。已发布安装包的界面可能与当前源码存在差异。
+支持 **稳定后 5 秒自动保存** 或每次手动保存，倒计时内可以取消；也可以管理多台秤并为它们命名。
 
-### 第一次设置
-
-<table>
-  <tr><th>首次进入</th><th>连接健康应用</th><th>开启健康应用读取</th></tr>
-  <tr>
-    <td><img src="docs/screenshots/current/01-welcome.png" width="250" alt="称伴首次使用欢迎页"></td>
-    <td><img src="docs/screenshots/current/02-health-steps.png" width="250" alt="按步骤准备健康应用并授权称伴写入体重"></td>
-    <td><img src="docs/screenshots/current/03-health-read.png" width="250" alt="继续在健康应用中开启体重读取并进入设备添加"></td>
-  </tr>
-  <tr><th>发现体重秤</th><th>确认型号</th><th>首次试称</th></tr>
-  <tr>
-    <td><img src="docs/screenshots/current/05-discover-scale.png" width="250" alt="发现云麦智能体脂秤 3 SE"></td>
-    <td><img src="docs/screenshots/current/06-confirm-scale.png" width="250" alt="确认秤底部型号后添加并开始试称"></td>
-    <td><img src="docs/screenshots/current/07-trial-setup.png" width="250" alt="首次试称引导，明确提示本次仅用于设置且不保存体重"></td>
-  </tr>
-  <tr><th>核对实秤读数</th><th>选择日常保存方式</th><th>设备设置完成</th></tr>
-  <tr>
-    <td><img src="docs/screenshots/current/08-verify-reading.png" width="250" alt="首次试称稳定后对照手机与秤屏幕，确认读数一致"></td>
-    <td><img src="docs/screenshots/current/09-save-mode.png" width="250" alt="核对后选择 5 秒自动保存或每次手动保存"></td>
-    <td><img src="docs/screenshots/current/10-ready.png" width="250" alt="设备设置完成后进入日常称重，等待下一次体重秤测量"></td>
-  </tr>
-</table>
-
-### 每天称重与查看记录
-
-完成设置后，保持 App 在前台，直接上秤即可自动接收体重。下面展示同一次实秤测量的倒计时、保存结果，以及授权后写入 Health Connect 的记录。保存结果图拍摄于授权之前，因此显示“已本地保存 · 待授权”；后续记录页显示实际写入成功状态。
-
-<table>
-  <tr><th>日常称重首页</th><th>稳定后倒计时</th><th>本次已保存</th></tr>
-  <tr>
-    <td><img src="docs/screenshots/current/18-daily-home.png" width="250" alt="日常首页等待新测量，同时展示最近一次已同步的体重记录"></td>
-    <td><img src="docs/screenshots/current/13-countdown.png" width="250" alt="实秤读数稳定后开始 5 秒自动保存倒计时，可随时取消"></td>
-    <td><img src="docs/screenshots/current/14-saved.png" width="250" alt="倒计时结束后体重保存在本地，尚未授权时提示待授权"></td>
-  </tr>
-  <tr><th>历史记录与同步状态</th><th>单次称重详情</th><th>设备管理</th></tr>
-  <tr>
-    <td><img src="docs/screenshots/current/15-records.png" width="250" alt="记录列表展示体重、测量时间及已写入 Health Connect 的状态"></td>
-    <td><img src="docs/screenshots/current/16-record-detail.png" width="250" alt="称重详情展示来源设备、体重、时间、同步状态与删除入口"></td>
-    <td><img src="docs/screenshots/current/17-devices.png" width="250" alt="管理已完成设置的体重秤，可切换、重命名和重新识别"></td>
-  </tr>
-</table>
-
-保存方式和外观可随时在设置中调整：
-
-<img src="docs/screenshots/current/11-settings.png" width="250" alt="设置页显示自动保存开关、设备就绪状态与外观选项">
-
-## 从设置到日常称重
-
-1. **连接健康应用**：按页面步骤准备 Google Fit／Google Health，授权称伴写入体重，再到健康应用开启 Health Connect 连接及体重读取权限。暂时不连接也可先使用本地记录。
-2. **添加体重秤**：允许附近设备权限，轻踩唤醒秤，扫描并确认底部型号为 YMBS-M263。无需在系统蓝牙设置里配对。
-3. **完成首次试称**：下秤，等秤归零后重新站上去。读数稳定时，对照手机与秤屏幕，点击“读数一致，继续”。这次仅用于设置，不保存体重记录。
-4. **选择保存方式**：选择“5 秒自动保存”或“每次手动保存”，完成设备设置。以后可在设置中修改；中途退出的设备显示“待完成设置”，可以稍后继续。
-5. **开始日常称重**：下秤后开启新一轮测量，保持 App 在前台，直接上秤即可。选择自动保存时，稳定后倒计时 5 秒，期间可取消；完成设置的秤无需每天核对。
-
-重新绑定设备后需要重新试称和核对。保存方式是应用内统一设置，各台秤都需先完成自己的首次设置。
-
-## 从一台秤开始
-
-当前版本专注于 **云麦智能体脂秤 3 SE 的体重同步**，真实称重与 Google 健康应用同步流程已完成实测。未来希望连接更多体重秤与健康应用。
-
-| 产品名称 | 英文界面名称 | 底部／内部型号 |
+| 已支持的体重秤 | 型号 | 当前读取数据 |
 | --- | --- | --- |
-| 云麦智能体脂秤 3 SE | YUNMAI Smart Body Fat Scale 3 SE | `YMBS-M263` |
+| 云麦智能体脂秤 3 SE | `YMBS-M263` | 体重 |
 
-添加秤时显示好记的产品名称，确认页面同时提供内部型号，方便核对。你仍然可以为每台秤取自己的名字。更多型号会逐步加入这张对照表。
+称重期间需保持 App 在前台。锁屏或离开称重页面会取消尚未确认的读数。
 
-现在提供的是 **体验版**，由 GitHub CI 构建并使用固定发布密钥签名，需要 Android 14 或更新版本。称重期间请保持 App 在前台，锁屏、离开 App 或切换页面会取消待确认的读数；App 在前台时会继续等待下一轮测量。Google 健康应用需获得体重读取权限，显示可能稍有延迟。
+## 先记在手机，再同步到健康应用
 
-[下载称伴体验版](https://github.com/rccoder/ScaleMate/releases/latest/download/ScaleMate.apk) · [版本与更新记录](https://github.com/rccoder/ScaleMate/releases)
+「记录」首页汇总当天已记录的饮食、体重和待同步状态。数据先保存在本地，暂时不连接 Health Connect，也能开始记录。
+
+体重与饮食分别授权，确认后的记录可写入 Health Connect。同步状态可以回看，失败后可以重试。Google Fit 等应用在开启 Health Connect 连接、获得对应数据的读取权限后，可读取其支持的记录；写入成功不代表目标应用会立即显示。
+
+## AI 服务，你自己选
+
+使用自己的 API 密钥接入服务，支持 **OpenAI 兼容格式**和 **Anthropic 兼容格式**。可保存多个服务、复制现有配置，并分别设置默认图片模型与文本模型。
+
+模型 ID 可以手动填写；服务支持模型列表查询时，也能直接查询、搜索和选择。拍照分析需要支持图片的模型，未配置时会在使用入口提示，手动记录仍然可用。AI 调用费用由所选服务决定。
+
+记录保存在手机本地，API 密钥使用 Android Keystore 加密保护。使用图片分析时，餐食照片与补充描述会发送给你选择的 AI 服务；上传前会处理图片并移除 EXIF 信息。Health Connect 的写入权限独立管理。
+
+## 界面预览
+
+以下为开发版实机截图，营养数值仅作功能展示。界面会随迭代调整。
+
+<table>
+  <tr><th>确认食物与营养</th><th>自动记录体重</th><th>按能力管理设置</th></tr>
+  <tr>
+    <td><img src="design/food-flow-redesign/screenshots/107-direct-personal-intake-summary.png" width="250" alt="食物卡片支持编辑营养、收藏、查看 AI 估算依据和食用建议"></td>
+    <td><img src="docs/screenshots/current/13-countdown.png" width="250" alt="体重稳定后开始 5 秒自动保存倒计时"></td>
+    <td><img src="design/settings-redesign/screenshots/01-settings-top.png" width="250" alt="设置按 AI 服务、健康数据同步、称重及外观分类"></td>
+  </tr>
+</table>
+
+## 开始使用
+
+1. **先选你要记录的内容**：饮食可直接手动录入或选择已有食物；拍照分析时再配置图片 AI。称重则在「称重」中添加设备并完成首次试称。
+2. **需要同步时再连接**：在设置中授权 Health Connect 写入饮食或体重，并在 Google Fit 等目标应用中开启对应读取权限。
+3. **从记录首页回看**：查看今天的记录与同步状态，继续添加下一餐或下一次体重。
+
+支持中英文、深色模式与壁纸配色。AI 生成的食物名称与说明遵循应用语言，默认跟随系统；也可在设置中切换中英文。
+
+## 接下来：健康 AI 分析
+
+计划结合 Health Connect 中的运动、睡眠、心率等数据，提供常见问题入口、日常对话与主动提醒；也计划支持导出 **JSON 数据与问询 Prompt**，方便带到其他 AI 中分析。
+
+这些能力仍处于规划阶段，尚未在当前 App 中实现。具体方向见 [健康 AI 分析 PRD](docs/称伴健康%20AI%20分析产品需求文档.md)。
+
+## 从源码构建
+
+使用 JDK 17、Android SDK 36，并在 `local.properties` 配置 `sdk.dir`：
+
+```sh
+# 构建当前源码
+./gradlew :app:assembleDebug
+
+# 构建可与正式版共存的饮食开发版，数据相互独立
+./gradlew -PfoodDev :app:assembleDebug
+```
+
+APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。应用使用 Kotlin、Jetpack Compose 与 Material 3，主要代码在 `app/`。
+
+[开发指南](docs/开发指南.md) · [发布指南](docs/发布指南.md) · [饮食功能实现与验收](docs/testing/饮食功能实现与验收.md) · [称重实现与测试](docs/实现与测试.md)
+
+产品与设计：[功能规划总述](docs/称伴%20AI%20功能规划总述.md) · [食物 AI 记录 PRD](docs/称伴食物%20AI%20记录产品需求文档.md) · [健康 AI 分析 PRD](docs/称伴健康%20AI%20分析产品需求文档.md) · [原型与设计](design/)
 
 ## 致谢
 
-感谢 [openScale](https://github.com/oliexdev/openScale) 项目及其贡献者。项目公开的蓝牙体重秤协议解析实现，为称伴理解设备报文、实现体重读取提供了重要参考。感谢他们让更多体重秤能够与开放的健康生态连接。
-
----
-
-了解项目：[产品需求](docs/ScaleMate%20产品需求文档（首版）.md) · [开发指南](docs/开发指南.md) · [发布指南](docs/发布指南.md) · [实现与测试记录](docs/实现与测试.md)
+感谢 [openScale](https://github.com/oliexdev/openScale) 项目及其贡献者。公开的蓝牙体重秤协议解析实现，为称伴理解设备报文、实现体重读取提供了重要参考。

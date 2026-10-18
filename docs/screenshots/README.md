@@ -15,4 +15,4 @@
 
 公开食物样例：[Boiled egg with rice](https://commons.wikimedia.org/wiki/File:Boiled_egg_with_rice.jpg)，Roderick Suñaz Sumalinog，许可 [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)。含该照片的截图中照片部分沿用其许可；用户授权截图仅用于已确认的项目展示，不将私人照片变成通用测试夹具。
 
-更新页的真实发布／安装证据独立保存在 [更新验收](../testing/13-2026-10-18-应用更新双通道发布与升级验收.md)，不混入对外功能截图组。
+更新页的真实发布／安装证据独立保存在 [更新验收](../testing/2026-10-18-02-应用更新双通道发布与升级验收.md)，不混入对外功能截图组。

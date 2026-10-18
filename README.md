@@ -14,7 +14,7 @@
 
 [下载已发布体验版](https://github.com/rccoder/ScaleMate/releases/latest/download/ScaleMate.apk) · [版本与更新记录](https://github.com/rccoder/ScaleMate/releases)
 
-> 以下介绍当前源码已实现的能力。饮食 AI 与新版记录首页尚未随新版安装包发布；已发布体验版以称重功能为主，具体功能请以对应 Release 说明为准。希望体验最新功能，可以从源码构建开发版。
+> 0.2.0 新增饮食 AI 与记录首页。请下载 0.2.0 或更新版本体验以下功能；旧版本的功能以对应 Release 说明为准。
 
 ## 一餐怎么吃，由你说明，AI 帮你记
 

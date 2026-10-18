@@ -33,18 +33,12 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          python3 - <<'PY'
-          import os, re
-          from pathlib import Path
-          tag = os.environ['RELEASE_TAG']
-          version = re.search(r'versionName = "([^"]+)"', Path('app/build.gradle.kts').read_text()).group(1)
-          assert re.fullmatch(r'v\d+\.\d+\.\d+', tag), 'Use a vX.Y.Z version tag'
-          assert tag == 'v' + version, 'Tag must match versionName'
-          PY
+          python3 scripts/check_release.py --tag "$RELEASE_TAG"
       - name: Install Android SDK packages
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"'
       - name: Validate before signing
         run: |
+          python3 -m unittest discover -s scripts -p 'test_*.py'
           python3 scripts/check_i18n.py
           ./gradlew :app:testDebugUnitTest :app:lintDebug --console=plain
       - name: Build signed release
@@ -66,14 +60,8 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk dist/ScaleMate.apk
       - name: Verify signature and package
         run: |
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs dist/ScaleMate.apk > dist/signing-certificate.txt
-          expected_certificate=$(cat gradle/release-certificate.sha256)
-          grep -Fq "Signer #1 certificate SHA-256 digest: $expected_certificate" dist/signing-certificate.txt
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/ScaleMate.apk > "$RUNNER_TEMP/apk-badging.txt"
-          if grep -q '^application-debuggable' "$RUNNER_TEMP/apk-badging.txt"; then
-            echo 'Release must not be debuggable' >&2
-            exit 1
-          fi
+          python3 scripts/check_release.py --tag "${{ github.ref_name }}" \
+            --apk dist/ScaleMate.apk --certificate-output dist/signing-certificate.txt
           cd dist
           sha256sum ScaleMate.apk > SHA256SUMS
       - name: Publish download
@@ -81,19 +69,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          称伴 · ScaleMate，支持云麦智能体脂秤 3 SE（YMBS-M263） 与 Health Connect 体重同步。
-
-          - Android 14 及以上；中文与英文界面。
-          - 稳定体重确认、5 秒自动保存、本地记录与同步状态。
-          - 本包为固定发布密钥签名的 release APK，后续同签名版本可覆盖升级。
-
-          下载 **ScaleMate.apk**；SHA256SUMS 可用于核对文件完整性。
-          当前为早期版本，称重时请保持 App 在前台。
-          已安装旧 debug 版的用户不能直接覆盖安装此包，请先保留需要的记录再安排迁移；卸载旧版会删除它的本地记录。
-          NOTES
-          if [ -f "docs/releases/$RELEASE_TAG.md" ]; then
-            cp "docs/releases/$RELEASE_TAG.md" "$RUNNER_TEMP/release-notes.md"
-          fi
           gh release create "$RELEASE_TAG" dist/ScaleMate.apk dist/SHA256SUMS dist/signing-certificate.txt \
-            --verify-tag --title "称伴 · ScaleMate ${RELEASE_TAG#v}" --notes-file "$RUNNER_TEMP/release-notes.md"
+            --verify-tag --title "称伴 · ScaleMate ${RELEASE_TAG#v}" --notes-file "docs/releases/$RELEASE_TAG.md"

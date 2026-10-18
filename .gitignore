@@ -2,7 +2,7 @@
 **/build/
 local.properties
 *.keystore
-releases/
+/releases/
 .kotlin/
 **/.gradle/
 **/.kotlin/

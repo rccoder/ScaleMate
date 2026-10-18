@@ -93,7 +93,7 @@
 
 APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。应用使用 Kotlin、Jetpack Compose 与 Material 3，主要代码在 `app/`。
 
-[开发指南](docs/开发指南.md) · [发布指南](docs/发布指南.md) · [饮食功能实现与验收](docs/testing/饮食功能实现与验收.md) · [称重实现与测试](docs/实现与测试.md)
+[开发指南](docs/开发指南.md) · [测试与验收](docs/测试与验收指南.md) · [发布指南](docs/发布指南.md) · [饮食功能实现与验收](docs/testing/饮食功能实现与验收.md) · [称重实现与测试](docs/实现与测试.md)
 
 产品与设计：[功能规划总述](docs/称伴%20AI%20功能规划总述.md) · [食物 AI 记录 PRD](docs/称伴食物%20AI%20记录产品需求文档.md) · [健康 AI 分析 PRD](docs/称伴健康%20AI%20分析产品需求文档.md) · [原型与设计](design/)
 

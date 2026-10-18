@@ -28,6 +28,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
       - name: Install Android SDK packages
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"'
+      - name: Check release metadata and validation gates
+        run: |
+          python3 scripts/check_release.py
+          python3 -m unittest discover -s scripts -p 'test_*.py'
       - name: Check translations
         run: python3 scripts/check_i18n.py
       - name: Test, lint and build

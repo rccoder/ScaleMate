@@ -1,0 +1,55 @@
+{
+  "tag": "v0.3.0-preview.1",
+  "asset": "ScaleMate.apk",
+  "sha256": "b4d0db07bc56f2a331e9ed4031304ae973bf147ea2fe635560562a2f424211e6",
+  "sizeBytes": 23751918,
+  "sources": [
+    {
+      "source": "github-official",
+      "url": "https://github.com/rccoder/ScaleMate/releases/download/v0.3.0-preview.1/ScaleMate.apk",
+      "ok": true,
+      "sizeBytes": 23751918,
+      "elapsedSeconds": 4.5,
+      "contentLength": 23751918
+    },
+    {
+      "source": "gh-proxy-com",
+      "url": "https://gh-proxy.com/https://github.com/rccoder/ScaleMate/releases/download/v0.3.0-preview.1/ScaleMate.apk",
+      "ok": true,
+      "sizeBytes": 23751918,
+      "elapsedSeconds": 4.7,
+      "contentLength": 23751918
+    },
+    {
+      "source": "ghfast-top",
+      "url": "https://ghfast.top/https://github.com/rccoder/ScaleMate/releases/download/v0.3.0-preview.1/ScaleMate.apk",
+      "ok": false,
+      "elapsedSeconds": 182.6,
+      "error": "TimeoutError: Total route deadline exceeded (180.0s)"
+    },
+    {
+      "source": "ghproxy-net",
+      "url": "https://ghproxy.net/https://github.com/rccoder/ScaleMate/releases/download/v0.3.0-preview.1/ScaleMate.apk",
+      "ok": true,
+      "sizeBytes": 23751918,
+      "elapsedSeconds": 132.7,
+      "contentLength": 23751918
+    },
+    {
+      "source": "gh-llkk-cc",
+      "url": "https://gh.llkk.cc/https://github.com/rccoder/ScaleMate/releases/download/v0.3.0-preview.1/ScaleMate.apk",
+      "ok": true,
+      "sizeBytes": 23751918,
+      "elapsedSeconds": 3.5,
+      "contentLength": 23751918
+    },
+    {
+      "source": "gh-proxy-org",
+      "url": "https://gh-proxy.org/https://github.com/rccoder/ScaleMate/releases/download/v0.3.0-preview.1/ScaleMate.apk",
+      "ok": true,
+      "sizeBytes": 23751918,
+      "elapsedSeconds": 2.8,
+      "contentLength": 23751918
+    }
+  ]
+}

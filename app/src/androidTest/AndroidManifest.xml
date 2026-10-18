@@ -1,3 +1,3 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
-    <application android:label="ScaleMate Tests" android:testOnly="false" tools:replace="android:testOnly" />
+    <application android:label="ScaleMate Tests" android:icon="@drawable/ic_scale_test" android:testOnly="false" tools:replace="android:testOnly" />
 </manifest>

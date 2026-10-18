@@ -8,7 +8,7 @@
     <uses-permission android:name="android.permission.health.WRITE_NUTRITION" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <queries><package android:name="com.google.android.apps.fitness"/><package android:name="com.fitbit.FitbitMobile"/></queries>
-    <application android:usesCleartextTraffic="true" android:label="${appLabel}" android:icon="@drawable/ic_scale" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false" android:supportsRtl="true" android:localeConfig="@xml/locales_config">
+    <application android:usesCleartextTraffic="true" android:label="${appLabel}" android:icon="${appIcon}" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false" android:supportsRtl="true" android:localeConfig="@xml/locales_config">
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.foodphotos" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/food_photo_paths" />
         </provider>

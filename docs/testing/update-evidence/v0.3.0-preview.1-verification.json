@@ -1,0 +1,32 @@
+{
+  "tag": "v0.3.0-preview.1",
+  "url": "https://github.com/rccoder/ScaleMate/releases/tag/v0.3.0-preview.1",
+  "prerelease": true,
+  "versionCode": 6,
+  "sha256": "b4d0db07bc56f2a331e9ed4031304ae973bf147ea2fe635560562a2f424211e6",
+  "sizeBytes": 23751918,
+  "verifiedAssets": [
+    "SHA256SUMS",
+    "ScaleMate.apk",
+    "releases.json",
+    "releases.json.sig",
+    "signing-certificate.txt",
+    "update.json",
+    "update.json.sig"
+  ],
+  "fixedSigner": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5",
+  "commit": "d1a784a5c7dc589b07be36129e5bc1b5b7985023",
+  "ciRun": "https://github.com/rccoder/ScaleMate/actions/runs/39129901261",
+  "releaseRun": "https://github.com/rccoder/ScaleMate/actions/runs/39130147069",
+  "phoneUpgrade": {
+    "fromVersion": "0.2.1 local updater build",
+    "fromVersionCode": 5,
+    "toVersion": "0.3.0-preview.1",
+    "toVersionCode": 6,
+    "selectedSource": "gh-proxy-com",
+    "systemInstaller": true,
+    "cancelAndRetryVerified": true,
+    "installedApkMatchesRelease": true,
+    "privateDataDigestComparison": "passed; no original records or credentials exported"
+  }
+}

@@ -104,8 +104,10 @@ open class UpdateTransport {
 
     private fun open(url: String, download: Boolean = false): HttpURLConnection {
         val connection = URI(url).toURL().openConnection() as HttpURLConnection
-        connection.connectTimeout = 12_000
-        connection.readTimeout = if (download) 35_000 else 18_000
+        connection.connectTimeout = if (download) 8_000 else 12_000
+        // A download route must produce bytes promptly. The existing 35 s
+        // first-byte wait made one stalled proxy look like a frozen update.
+        connection.readTimeout = if (download) 10_000 else 18_000
         connection.requestMethod = "GET"
         connection.setRequestProperty("Accept", "application/json, application/octet-stream, text/plain")
         connection.setRequestProperty("User-Agent", "ScaleMate-Android-Updater/1")

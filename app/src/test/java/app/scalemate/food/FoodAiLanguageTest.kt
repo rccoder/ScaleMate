@@ -21,7 +21,7 @@ class FoodAiLanguageTest {
     }
     @Test fun localePolicyCoversAllTextButPreservesTheNumericContract() {
         val policy=FoodAiLanguage.instruction("en-GB")
-        listOf("name, personalPortion, intakeSummary, assumptions, contextInterpretation, contextWarning, eatingAdvice, nextTimeAdvice and positiveFeedback","MUST NOT change the target language","calculationMode personal","kcal/g").forEach {assertTrue(policy.contains(it))}
+        listOf("name, personalPortion, intakeSummary, assumptions, contextInterpretation, contextWarning, eatingAdvice, nextTimeAdvice, positiveFeedback, mealAdvice.healthiness, mealAdvice.balance, mealAdvice.nextTime and mealAdvice.note","MUST NOT change the target language","calculationMode personal","kcal/g").forEach {assertTrue(policy.contains(it))}
         assertTrue(FoodAiLanguage.instruction("und").contains("English (en)"))
     }
     @Test fun followSystemUsesSystemLanguageUnlessApplicationWasExplicitlyOverridden() {

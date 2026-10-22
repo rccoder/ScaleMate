@@ -5,6 +5,9 @@ import org.json.JSONObject
 
 /** Provider wire formats; callers supply only app-built messages, never arbitrary remote URLs. */
 object AiWire {
+    class IncompleteResponse:Exception()
+    class EmptyResponse:Exception()
+
     fun body(service:AiService,messages:JSONArray,maxTokens:Int):JSONObject {
         require(service.format in listOf("openai","anthropic"))
         if(service.format=="openai")return JSONObject().put("model",service.model).put("messages",messages).put("stream",false)
@@ -35,16 +38,23 @@ object AiWire {
     }
     fun text(format:String,response:JSONObject):String {
         val result=if(format=="anthropic") {
-            require(response.optString("stop_reason")!="max_tokens")
+            if(response.optString("stop_reason")=="max_tokens")throw IncompleteResponse()
             val blocks=response.getJSONArray("content")
             (0 until blocks.length()).map {blocks.getJSONObject(it)}.filter {it.optString("type")=="text"}.joinToString("\n"){it.getString("text")}
         } else {
             require(format=="openai")
             val choice=response.getJSONArray("choices").getJSONObject(0)
-            require(choice.optString("finish_reason")!="length")
-            choice.getJSONObject("message").getString("content")
+            if(choice.optString("finish_reason")=="length")throw IncompleteResponse()
+            when(val content=choice.getJSONObject("message").opt("content")) {
+                is String -> content
+                is JSONArray -> (0 until content.length()).mapNotNull {index->
+                    val block=content.optJSONObject(index) ?: return@mapNotNull null
+                    if(block.optString("type") in listOf("text","output_text"))block.optString("text").takeIf {it.isNotBlank()} else null
+                }.joinToString("\n")
+                else -> ""
+            }
         }
-        require(result.isNotBlank())
+        if(result.isBlank())throw EmptyResponse()
         return result
     }
 }

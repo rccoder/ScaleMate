@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -55,9 +56,17 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalLayoutApi::class,ExperimentalMaterial3Api::class)
-@Composable fun FoodScreen(vm:FoodViewModel,authorize:()->Unit,initialPage:String="home",initialMealId:String?=null,resetScroll:()->Unit={},initialSelector:String="") {
+@Composable fun FoodScreen(
+    vm:FoodViewModel,
+    authorize:()->Unit,
+    initialPage:String="home",
+    initialMealId:String?=null,
+    resetScroll:()->Unit={},
+    initialSelector:String=""
+) {
     val s by vm.state.collectAsStateWithLifecycle()
     val context=LocalContext.current
     var page by rememberSaveable(initialPage){mutableStateOf(initialPage)}
@@ -103,7 +112,7 @@ import java.time.format.DateTimeFormatter
     fun goBack() {
         vm.cancelAi();vm.clearMessage()
         when(page) {
-            "photo" -> {if(draft?.batch?.results?.isNotEmpty()==true)abandon=true else {vm.abandonBatch();page="editor"}}
+            "photo" -> {if(draft?.batch?.results?.isNotEmpty()==true)abandon=true else page=initialPage}
             "review" -> {if(draft?.batch?.kind=="manual"){vm.abandonBatch();page=manualReturn}else {vm.abandonBatch();page=if(draft?.batch?.kind=="edit")"editor" else "picker"}}
             "picker" -> page="editor"
             "editor" -> {if(draft?.isEmpty()==true)vm.discard();page=initialPage}
@@ -115,20 +124,28 @@ import java.time.format.DateTimeFormatter
     DisposableEffect(Unit){onDispose{vm.cancelAi()}}
     LaunchedEffect(page){resetScroll()}
     LaunchedEffect(draft?.batch?.status){if(page=="photo"&&draft?.batch?.status=="review")resetScroll()}
-    if(serviceEditor==null)Column(verticalArrangement=Arrangement.spacedBy(16.dp)) {
+    LaunchedEffect(draft==null,initialPage){if(draft==null)page=initialPage}
+    if(serviceEditor==null)Column(
+        modifier=Modifier.padding(bottom=if(page in listOf("editor","review","photo")&&draft!=null)92.dp else 0.dp),
+        verticalArrangement=Arrangement.spacedBy(16.dp)
+    ) {
         if(page!=initialPage) TextButton(onClick={goBack()}){Text("‹ "+stringResource(R.string.back_food))}
         s.error?.let {resource->FoodCard {Text(stringResource(resource),color=MaterialTheme.colorScheme.error);TextButton(onClick=vm::clearMessage){Text(stringResource(R.string.done))}}}
-        s.message?.let {Text(stringResource(it),color=MaterialTheme.colorScheme.primary)}
-        if(s.busy){LinearProgressIndicator(Modifier.fillMaxWidth());TextButton(onClick=vm::cancelAi){Text(stringResource(R.string.cancel))}}
+        s.message?.let {if(it==R.string.food_analysis_ready)FoodAnalysisReady() else Text(stringResource(it),color=MaterialTheme.colorScheme.primary)}
+        if(s.busy)FoodAnalysisStatus(s.analysisStage,s.analysisAttempt,s.analysisStartedAt,vm::cancelAi)
         when(page) {
             "home" -> {
                 Text(stringResource(R.string.food_today),style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.SemiBold)
                 TextButton(onClick={val day=LocalDate.parse(date);DatePickerDialog(context,{_,y,m,d->date=LocalDate.of(y,m+1,d).toString()},day.year,day.monthValue-1,day.dayOfMonth).show()}){Text(date)}
                 val meals=s.meals.filter {!it.deleted && Instant.ofEpochMilli(it.time).atZone(ZoneId.systemDefault()).toLocalDate().toString()==date}
                 val totals=Nutrients.sum(meals.map {it.nutrients})
+                val hasDraft=draft?.isEmpty()==false
                 FoodCard(color=MaterialTheme.colorScheme.primaryContainer){Text("${fmt(totals.kcal)} kcal",fontSize=42.sp,fontWeight=FontWeight.Light);NutritionRow(totals);Text(stringResource(R.string.food_day_incomplete),style=MaterialTheme.typography.bodySmall)}
-                Button(onClick={if(draft!=null){page=if(draft.batch?.kind=="photo")"photo" else if(draft.batch!=null)"review" else "editor"}else {vm.newMeal();page="editor"}},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Icon(Icons.Default.Add,null);Text(stringResource(R.string.food_add))}
-                if(draft!=null) {TextButton(onClick={page=if(draft.batch?.kind=="photo")"photo" else if(draft.batch!=null)"review" else "editor"}){Text(stringResource(R.string.food_resume))};TextButton(onClick={discardDialog=true}){Text(stringResource(R.string.food_discard))}}
+                Button(onClick={if(hasDraft){page=if(draft?.batch?.kind=="photo")"photo" else if(draft?.batch!=null)"review" else "editor"}else {vm.newMeal();page="editor"}},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Icon(Icons.Default.Add,null);Text(stringResource(R.string.food_add))}
+                if(hasDraft) {
+                    TextButton(onClick={page=if(draft.batch?.status=="review"||draft.batch?.kind in listOf("manual","library","edit"))"review" else if(draft.batch?.kind=="photo")"photo" else "editor"}){Text(stringResource(R.string.food_resume))}
+                    TextButton(onClick={discardDialog=true}){Text(stringResource(R.string.food_discard))}
+                }
                 if(meals.isEmpty())Text(stringResource(R.string.food_empty),color=MaterialTheme.colorScheme.onSurfaceVariant)
                 meals.forEach {meal->MealRow(meal,dateFormatter.format(Instant.ofEpochMilli(meal.time))){selectedMeal=meal.id}}
                 s.meals.filter {it.deleted}.forEach {meal->FoodCard {Text(meal.title);Text(stringResource(R.string.status_delete_failed),color=MaterialTheme.colorScheme.error);TextButton(onClick={if(s.permitted)vm.retry(meal.id) else authorize()}){Text(stringResource(if(s.permitted)R.string.retry else R.string.food_nutrition_authorize))}}}
@@ -142,20 +159,22 @@ import java.time.format.DateTimeFormatter
             }
             "editor" -> if(draft!=null) {
                 Text(stringResource(R.string.food_add),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold)
-                MealTime(draft.meal){m->vm.updateDraft {it.copy(meal=m)}}
+                var editingTime by rememberSaveable(draft.meal.id){mutableStateOf(draft.meal.items.isEmpty()&&draft.batch==null)}
+                if(editingTime)MealTime(draft.meal){m->vm.updateDraft {it.copy(meal=m)}}
+                else TextButton(enabled=!s.busy&&!s.saving,onClick={editingTime=true}){Text(mealTimeLabel(draft.meal))}
                 if(draft.batch!=null) {
-                    OutlinedButton(onClick={page=if(draft.batch.kind=="photo")"photo" else "review"},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.food_pending_addition))}
+                    OutlinedButton(onClick={page=if(draft.batch.status=="review"||draft.batch.kind in listOf("manual","library","edit"))"review" else "photo"},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.food_pending_addition))}
                     TextButton(onClick=vm::abandonBatch){Text(stringResource(R.string.food_discard_addition))}
                 } else {
                     Button(enabled=!s.busy&&!s.saving,onClick={addChooser=true},modifier=Modifier.fillMaxWidth().heightIn(min=56.dp)){Icon(Icons.Default.Add,null);Spacer(Modifier.width(8.dp));Text(stringResource(R.string.food_add_food))}
                 }
+                if(draft.meal.advice.hasContent)MealAdviceCard(draft.meal.advice,draft.meal.usage,draft.meal.analysisMs)
                 draft.meal.items.forEach {food->key(food.id){
                     FoodItemCard(food=food,favorite=s.library.any {it.favorite&&FoodLibraryRules.nameKey(it.item.name)==FoodLibraryRules.nameKey(food.name)},
                         enabled=!s.busy&&!s.saving,editEnabled=draft.batch==null&&!s.busy&&!s.saving,
                         onFavorite={vm.favorite(food,it)},onEdit={vm.reviewItem(food);page="review"},onRemove={vm.removeItem(food.id)})
                 }}
                 if(draft.meal.items.isNotEmpty())FoodCard(color=MaterialTheme.colorScheme.secondaryContainer){Text(stringResource(R.string.food_meal_total),fontWeight=FontWeight.SemiBold);Text("${fmt(draft.meal.nutrients.kcal)} kcal",style=MaterialTheme.typography.headlineMedium);NutritionRow(draft.meal.nutrients);if(listOf(draft.meal.nutrients.kcal,draft.meal.nutrients.protein,draft.meal.nutrients.carbs,draft.meal.nutrients.fat).any {it==null})Text(stringResource(R.string.food_nutrition_partial),style=MaterialTheme.typography.bodySmall)}
-                Button(enabled=!s.busy&&!s.saving&&draft.batch==null&&draft.meal.items.isNotEmpty(),onClick={vm.save {page="home";syncGuide=!s.permitted || !s.healthAvailable}},modifier=Modifier.fillMaxWidth().heightIn(min=54.dp)){Text(stringResource(if(s.saving)R.string.loading else R.string.food_save))}
                 Text(stringResource(R.string.food_draft_note),style=MaterialTheme.typography.bodySmall)
                 TextButton(enabled=!s.saving,onClick={discardDialog=true}){Text(stringResource(R.string.food_discard))}
             } else TextButton(onClick={vm.newMeal()}){Text(stringResource(R.string.food_add))}
@@ -201,11 +220,11 @@ import java.time.format.DateTimeFormatter
                         OutlinedTextField(enabled=!s.busy,value=batch.description,onValueChange={v->vm.updateBatch {it.copy(description=v.take(2000))}},label={Text(stringResource(R.string.food_description))},placeholder={Text(stringResource(R.string.food_description_hint))},minLines=3,modifier=Modifier.fillMaxWidth())
                         Text(stringResource(R.string.food_personal_rule),style=MaterialTheme.typography.bodySmall)
                         if(batch.status=="interrupted")Text(stringResource(R.string.food_analysis_interrupted),color=MaterialTheme.colorScheme.error)
-                        if(s.busy)Text(stringResource(R.string.food_analyzing),color=MaterialTheme.colorScheme.primary)
                         Button(enabled=!s.busy&&batch.photos.isNotEmpty(),onClick={analyze()},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.food_analyze))}
                     }
                 }
                 if(batch.status=="review") {
+                    if(batch.advice.hasContent)MealAdviceCard(batch.advice,batch.usage,batch.analysisMs)
                     Text(stringResource(R.string.food_personal_results),color=MaterialTheme.colorScheme.primary)
                     if(batch.kind=="photo"&&batch.results.any {it.estimateContext?.resultMode!="personal"})Text(stringResource(R.string.food_portion_old_result),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     batch.results.forEach {food->key(food.id){
@@ -215,7 +234,6 @@ import java.time.format.DateTimeFormatter
                             onFavorite={vm.favorite(food,it)},onEdit={expanded=!expanded},onRemove={vm.removeResult(food.id);if(batch.results.size==1)page="editor"},
                             editor={FoodFields(food,enabled=!s.busy,onChange=vm::updateResult)})
                     }}
-                    Button(enabled=!s.busy&&batch.results.isNotEmpty(),onClick={if(vm.confirmBatch())page="editor"},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Text(stringResource(if(batch.editingItemId!=null)R.string.food_confirm_changes else R.string.food_confirm_addition))}
                     if(batch.kind=="photo")TextButton(onClick={reanalyze=true}){Text(stringResource(R.string.food_change_context))}
                 }
             }
@@ -300,7 +318,9 @@ import java.time.format.DateTimeFormatter
     selectedMeal?.let {id->s.meals.find {it.id==id}?.let {meal->
         var deleting by remember(id){mutableStateOf(false)}
         AlertDialog(onDismissRequest={selectedMeal=null},title={Text(stringResource(if(deleting)R.string.food_delete_title else R.string.food_view_details))},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
-            Text(meal.title);Text(dateFormatter.format(Instant.ofEpochMilli(meal.time)));NutritionRow(meal.nutrients);Text(stringResource(foodStatus(meal.status)))
+            Text(meal.title)
+            if(meal.advice.hasContent)MealAdviceCard(meal.advice,meal.usage,meal.analysisMs)
+            Text(dateFormatter.format(Instant.ofEpochMilli(meal.time)));NutritionRow(meal.nutrients);Text(stringResource(foodStatus(meal.status)))
             if(deleting){Text(stringResource(R.string.food_delete_note));TextButton(onClick={vm.delete(meal,false);selectedMeal=null}){Text(stringResource(R.string.food_delete_local))};TextButton(onClick={vm.delete(meal,true);selectedMeal=null}){Text(stringResource(R.string.food_delete_both))}}
             else {
                 TextButton(onClick={selectedMeal=null;if(draft!=null){draftConflict=meal;conflictRepeat=true}else{vm.repeat(meal);page="editor"}}){Text(stringResource(R.string.food_repeat))}
@@ -358,6 +378,85 @@ private val FoodImageShape=RoundedCornerShape(12.dp)
 }
 @Composable private fun FoodSuggestion(label:Int,text:String) {
     Text(stringResource(label)+"　"+text,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+}
+@Composable private fun MealAdviceCard(advice:MealAdvice,usage:AiUsage,analysisMs:Long?) {
+    if(!advice.hasContent&&!usage.hasContent&&analysisMs==null)return
+    Surface(
+        shape=FoodCardShape,
+        color=MaterialTheme.colorScheme.primaryContainer.copy(alpha=.58f),
+        contentColor=MaterialTheme.colorScheme.onPrimaryContainer,
+        modifier=Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(horizontal=18.dp,vertical=20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Default.Favorite,null,Modifier.size(20.dp),tint=MaterialTheme.colorScheme.primary)
+                Text(stringResource(R.string.food_meal_advice),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.SemiBold)
+            }
+            if(advice.healthiness.isNotBlank())Text(advice.healthiness,style=MaterialTheme.typography.bodyLarge,lineHeight=25.sp)
+            if(advice.balance.isNotBlank())Text(advice.balance,style=MaterialTheme.typography.bodyLarge,lineHeight=25.sp)
+            if(advice.nextTime.isNotBlank()) {
+                HorizontalDivider(color=MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=.14f))
+                Text(advice.nextTime,style=MaterialTheme.typography.bodyMedium,lineHeight=22.sp)
+            }
+            if(advice.note.isNotBlank())Text(advice.note,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=.72f))
+            if(usage.hasContent||analysisMs!=null) {
+                HorizontalDivider(color=MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=.14f))
+                FoodAnalysisUsage(usage,analysisMs)
+            }
+            Text(stringResource(R.string.food_meal_advice_note),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=.65f))
+        }
+    }
+}
+@Composable private fun FoodAnalysisReady() {
+    Surface(shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.secondaryContainer,modifier=Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal=16.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+            Icon(Icons.Default.CheckCircle,null,Modifier.size(20.dp),tint=MaterialTheme.colorScheme.primary)
+            Text(stringResource(R.string.food_analysis_ready),style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSecondaryContainer)
+        }
+    }
+}
+@Composable private fun FoodAnalysisUsage(usage:AiUsage,analysisMs:Long?) {
+    if(!usage.hasContent&&analysisMs==null)return
+    val seconds=analysisMs?.let {(it/1000.0).coerceAtLeast(0.1)}
+    val tokens=listOfNotNull(
+        usage.inputTokens?.let {stringResource(R.string.food_usage_input,it)},
+        usage.outputTokens?.let {stringResource(R.string.food_usage_output,it)},
+        usage.totalTokens?.let {stringResource(R.string.food_usage_total,it)}
+    )
+    Text(
+        listOfNotNull(seconds?.let {stringResource(R.string.food_analysis_time,it)},tokens.takeIf {it.isNotEmpty()}?.joinToString(" · "))
+            .joinToString(" · "),
+        style=MaterialTheme.typography.labelSmall,
+        color=MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+@Composable private fun FoodAnalysisStatus(stageValue:String,attempt:Int,startedAt:Long,cancel:()->Unit) {
+    val stage=when(stageValue) {
+            "encoding"->R.string.food_analysis_encoding
+            "uploading"->R.string.food_analysis_uploading
+            "waiting"->R.string.food_analysis_waiting
+            "parsing"->R.string.food_analysis_parsing
+            "retrying"->R.string.food_analysis_retrying
+            "ready"->R.string.food_analysis_ready
+            else->R.string.food_analyzing
+    }
+    var elapsed by remember(startedAt){mutableLongStateOf(if(startedAt>0)(System.currentTimeMillis()-startedAt)/1000 else 0L)}
+    val seconds=elapsed.toInt()
+    LaunchedEffect(startedAt){
+        while(startedAt>0&&elapsed<600) {
+            delay(1000)
+            elapsed=(System.currentTimeMillis()-startedAt)/1000
+        }
+    }
+    FoodCard {
+        LinearProgressIndicator(Modifier.fillMaxWidth())
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+            Text(if(stageValue=="retrying")stringResource(stage,attempt-1,3) else stringResource(stage),style=MaterialTheme.typography.titleMedium,modifier=Modifier.weight(1f))
+            if(seconds>0)Text(stringResource(R.string.food_analysis_elapsed,seconds),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text(stringResource(R.string.food_analysis_stage_hint),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick=cancel,contentPadding=PaddingValues(0.dp)){Text(stringResource(R.string.cancel))}
+    }
 }
 private fun estimateRatio(value:Double,number:NumberFormat):String {
     for(denominator in 2..12)for(numerator in 1 until denominator) {
@@ -445,6 +544,12 @@ private fun foodStatus(status:String)=when(status){"synced"->R.string.status_syn
     Text(t.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")))
     Row {TextButton(onClick={DatePickerDialog(context,{_,y,m,d->val updated=t.withDayOfMonth(1).withYear(y).withMonth(m+1).withDayOfMonth(d);change(meal.copy(time=updated.toInstant().toEpochMilli(),offset=updated.offset.totalSeconds))},t.year,t.monthValue-1,t.dayOfMonth).show()}){Text(stringResource(R.string.food_choose_date))};TextButton(onClick={TimePickerDialog(context,{_,hour,minute->val updated=t.withHour(hour).withMinute(minute);change(meal.copy(time=updated.toInstant().toEpochMilli(),offset=updated.offset.totalSeconds))},t.hour,t.minute,true).show()}){Text(stringResource(R.string.food_choose_time))}}
     FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf(1 to R.string.food_breakfast,2 to R.string.food_lunch,3 to R.string.food_dinner,4 to R.string.food_snack,0 to R.string.food_unspecified).forEach {(type,label)->FilterChip(selected=meal.mealType==type,onClick={change(meal.copy(mealType=type))},label={Text(stringResource(label))})}}
+}
+
+@Composable private fun mealTimeLabel(meal:Meal):String {
+    val time=Instant.ofEpochMilli(meal.time).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+    val type=when(meal.mealType){1->R.string.food_breakfast;2->R.string.food_lunch;3->R.string.food_dinner;4->R.string.food_snack;else->R.string.food_unspecified}
+    return "$time · ${stringResource(type)}"
 }
 
 @Composable private fun FoodFields(original:FoodItem,enabled:Boolean=true,onChange:(FoodItem)->Unit) {

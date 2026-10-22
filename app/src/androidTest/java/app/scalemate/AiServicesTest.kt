@@ -80,6 +80,14 @@ class AiServicesTest {
             api.check();assertTrue(api.requests.single().first().startsWith("POST /v1/chat/completions "))
         }
     }
+    @Test fun recognitionParsesMealAdviceAndProviderUsage()=runBlocking {
+        LocalApi(listOf(Reply("""{"choices":[{"finish_reason":"stop","message":{"content":"{\"calculationMode\":\"personal\",\"foods\":[{\"name\":\"Curry pork rice\",\"personalNutrients\":{\"kcal\":360}}],\"mealAdvice\":{\"healthiness\":\"A grain-and-protein meal.\",\"balance\":\"Add vegetables.\",\"nextTime\":\"Choose a less oily main.\",\"note\":\"Oil is uncertain.\"}}"}}],"usage":{"prompt_tokens":1234,"completion_tokens":321,"total_tokens":1555}}"""))).use {api->
+            val configured=service(api.base+"/v1","openai").copy(images=true,model="local-model")
+            val result=withTimeout(10000){AiClient().recognizeDetailed(configured,listOf(byteArrayOf(1)),"",emptySet(),1,outputLanguage="en-US")}
+            assertEquals("Add vegetables.",result.advice.balance)
+            assertEquals(1234L,result.usage.inputTokens);assertEquals(321L,result.usage.outputTokens);assertEquals(1555L,result.usage.totalTokens)
+        }
+    }
     @Test fun copiedCredentialsHaveIndependentIdentityAndDoNotReplaceDefaults() {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
         val database="test-ai-services-copy.db";context.deleteDatabase(database)

@@ -28,6 +28,26 @@ class FoodStoreTest {
         Store(context,name).use {db->assertEquals(71.2,db.records().single().kg,0.001);assertTrue(db.scales().single().verified)
             val food=FoodStore(db);food.save(Meal(items=listOf(FoodItem(name="rice",base=Nutrients(100.0)))));assertEquals(1,food.meals().size)}
     }
+    @Test fun developmentHealthSchemaDoesNotDowngradeDatabase() {
+        context.deleteDatabase(name)
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(name),null).use {db->
+            db.execSQL("CREATE TABLE scales(id TEXT PRIMARY KEY,name TEXT NOT NULL,address TEXT UNIQUE NOT NULL,verified INTEGER NOT NULL)")
+            db.execSQL("CREATE TABLE measurements(id TEXT PRIMARY KEY,deviceId TEXT NOT NULL,source TEXT NOT NULL,kg REAL NOT NULL,time INTEGER NOT NULL,offset INTEGER NOT NULL,status TEXT NOT NULL,platformId TEXT NOT NULL,attempts INTEGER NOT NULL)")
+            db.execSQL("CREATE TABLE health_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
+            db.execSQL("INSERT INTO scales VALUES('scale','home','A',1)")
+            db.execSQL("INSERT INTO measurements VALUES('weight','scale','home',71.2,1000,28800,'synced','platform',1)")
+            db.execSQL("INSERT INTO health_settings VALUES('sentinel','kept')")
+            db.version=5
+        }
+        Store(context,name).use {db->
+            assertEquals(71.2,db.records().single().kg,0.001)
+            db.readableDatabase.rawQuery("SELECT value FROM health_settings WHERE key='sentinel'",null).use {
+                assertTrue(it.moveToFirst());assertEquals("kept",it.getString(0))
+            }
+            FoodStore(db).save(Meal(items=listOf(FoodItem(name="rice",base=Nutrients(100.0)))))
+            assertEquals(1,FoodStore(db).meals().size)
+        }
+    }
     @Test fun pendingEditAndDeleteSurviveRestart() {
         context.deleteDatabase(name)
         val meal=Meal(items=listOf(FoodItem(name="rice",base=Nutrients(100.0))))
@@ -97,6 +117,26 @@ class FoodStoreTest {
         val feedback=item.copy(eatingAdvice="",nextTimeAdvice="",positiveFeedback="搭配包含主食与蛋白质。")
         assertEquals(feedback,FoodJson.item(FoodJson.item(feedback)))
     }
+    @Test fun mealAdviceAndProviderUsageSurviveRecognitionDraftAndSavedMeal() {
+        context.deleteDatabase(name)
+        val raw="""{"calculationMode":"personal","foods":[{"name":"咖喱猪排饭","personalGrams":260,"personalNutrients":{"kcal":650},"eatingAdvice":"酱汁可以按需蘸取。"}],"mealAdvice":{"healthiness":"以主食和蛋白质为主，蔬菜偏少。","balance":"先吃蔬菜，酱汁按需蘸取。","nextTime":"下次搭配一份深色蔬菜。","note":"蔬菜被遮挡，实际份量可能更多。"},"usage":{"prompt_tokens":1200,"completion_tokens":240,"total_tokens":1440}}"""
+        val recognized=FoodJson.recognition(raw,1)
+        assertEquals("先吃蔬菜，酱汁按需蘸取。",recognized.advice.balance)
+        val usage=FoodJson.usage(raw)
+        assertEquals(1200L,usage.inputTokens);assertEquals(240L,usage.outputTokens);assertEquals(1440L,usage.totalTokens)
+        val batch=FoodBatch(results=recognized.items,status="review",advice=recognized.advice,usage=usage,analysisMs=12_345)
+        val draft=FoodDraft(batch=batch)
+        assertEquals(draft,FoodJson.draft(FoodJson.draft(draft)))
+        val committed=draft.commitBatch()
+        assertEquals(batch.advice,committed.meal.advice)
+        assertEquals(12_345L,committed.meal.analysisMs)
+        val meal=committed.meal
+        Store(context,name).use {db->FoodStore(db).save(meal)}
+        Store(context,name).use {db->
+            val restored=FoodStore(db).meals().single()
+            assertEquals(recognized.advice,restored.advice);assertEquals(usage,restored.usage);assertEquals(12_345L,restored.analysisMs)
+        }
+    }
     @Test fun libraryCountsNewMealsOnlyAndFavoritesKeepBaseline() {
         context.deleteDatabase(name)
         Store(context,name).use {db->val food=FoodStore(db)
@@ -146,6 +186,13 @@ class FoodStoreTest {
         val draft=FoodDraft(batch=FoodBatch(photos=listOf("a","b"),status="analyzing",description="两人均分",shareCount=2))
         val restored=FoodJson.draft(FoodJson.draft(draft))
         assertEquals("interrupted",restored.batch!!.status);assertEquals(listOf("a","b"),restored.batch!!.photos);assertTrue(restored.meal.items.isEmpty())
+    }
+    @Test fun pendingAiResultsKeepFullFoodDataWhenRestoringLegacySplitDraft() {
+        val food=FoodJson.recognitionPersonal("""{"calculationMode":"personal","foods":[{"name":"咖喱猪排饭","personalGrams":260,"personalNutrients":{"kcal":650},"assumptions":"按可见份量估算。","eatingAdvice":"酱汁按需蘸取。","nextAdvice":"下次搭配蔬菜。","contextWarning":"油量不确定。"}],"mealAdvice":{"healthiness":"主食充足。"}}""",1).single()
+        val original=Meal(items=listOf(food.copy(needsPortionReview=true)))
+        val restored=FoodJson.draft(JSONObject().put("meal",FoodJson.meal(original)).put("batch",JSONObject.NULL).put("editing",false).put("updatedAt",System.currentTimeMillis()).toString())
+        assertEquals(original.items.single(),restored.batch!!.results.single())
+        assertEquals(original.advice,restored.batch!!.advice)
     }
 
     @Test fun libraryCapRetainsFavoritesAcrossSaveAndRestart() {

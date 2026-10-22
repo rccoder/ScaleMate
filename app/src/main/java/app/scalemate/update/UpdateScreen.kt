@@ -117,6 +117,7 @@ fun UpdateScreen(
 
         when (state.phase) {
             UpdatePhase.AVAILABLE,
+            UpdatePhase.PREPARING,
             UpdatePhase.DOWNLOADING,
             UpdatePhase.VERIFYING,
             UpdatePhase.WAITING_INSTALL,
@@ -161,6 +162,7 @@ fun UpdateScreen(
             onClick = vm::check,
             enabled = state.phase !in listOf(
                 UpdatePhase.CHECKING,
+                UpdatePhase.PREPARING,
                 UpdatePhase.DOWNLOADING,
                 UpdatePhase.VERIFYING,
                 UpdatePhase.INSTALLING
@@ -252,6 +254,7 @@ fun UpdateScreen(
 
         if (!state.canInstallPackages && state.phase in listOf(
                 UpdatePhase.AVAILABLE,
+                UpdatePhase.PREPARING,
                 UpdatePhase.DOWNLOADING,
                 UpdatePhase.WAITING_INSTALL
             )
@@ -288,7 +291,8 @@ fun UpdateScreen(
                             modifier = Modifier.weight(1f),
                             onClick = vm::probeRoutes,
                             enabled = !state.probingRoutes && state.phase !in listOf(
-                                UpdatePhase.DOWNLOADING, UpdatePhase.VERIFYING, UpdatePhase.INSTALLING)
+                                UpdatePhase.PREPARING, UpdatePhase.DOWNLOADING,
+                                UpdatePhase.VERIFYING, UpdatePhase.INSTALLING)
                         ) {
                             Text(stringResource(if (state.routeProbes.isEmpty())
                                 R.string.update_probe_start else R.string.update_probe_again))
@@ -435,7 +439,10 @@ private fun UpdateAvailableCard(
                     )
                 }
             }
-            if (state.phase == UpdatePhase.VERIFYING) {
+            if (state.phase == UpdatePhase.PREPARING) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text(stringResource(R.string.update_preparing))
+            } else if (state.phase == UpdatePhase.VERIFYING) {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
                 Text(stringResource(R.string.update_verifying))
             } else if (state.phase == UpdatePhase.DOWNLOADING) {
@@ -443,6 +450,32 @@ private fun UpdateAvailableCard(
                     progress = { state.progress },
                     modifier = Modifier.fillMaxWidth()
                 )
+                Text(
+                    stringResource(
+                        R.string.update_download_route,
+                        updateSourceSummary(state.activeSourceId)
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(Modifier.fillMaxWidth()) {
+                    Text(
+                        stringResource(
+                            R.string.update_download_speed,
+                            state.downloadSpeedBytesPerSecond / 1024
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    state.remainingSeconds?.let { seconds ->
+                        Text(
+                            stringResource(R.string.update_download_remaining, seconds),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 Text(
                     stringResource(
                         R.string.update_download_progress,

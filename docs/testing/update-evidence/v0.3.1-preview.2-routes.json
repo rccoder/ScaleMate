@@ -1,0 +1,16 @@
+{
+  "tag": "v0.3.1-preview.2",
+  "asset": "ScaleMate.apk",
+  "sha256": "3de9a45620c2bb663e27ea2610dcaf53c9a62a4c032cc848e2dcfcd889f97347",
+  "sizeBytes": 23832270,
+  "sources": [
+    {
+      "source": "gh-proxy-com",
+      "url": "https://gh-proxy.com/https://github.com/rccoder/ScaleMate/releases/download/v0.3.1-preview.2/ScaleMate.apk",
+      "ok": true,
+      "sizeBytes": 23832270,
+      "elapsedSeconds": 3.4,
+      "contentLength": 23832270
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "tag": "v0.3.1-preview.2",
+  "url": "https://github.com/rccoder/ScaleMate/releases/tag/v0.3.1-preview.2",
+  "prerelease": true,
+  "versionName": "0.3.1-preview.2",
+  "versionCode": 9,
+  "sha256": "3de9a45620c2bb663e27ea2610dcaf53c9a62a4c032cc848e2dcfcd889f97347",
+  "sizeBytes": 23832270,
+  "verifiedAssets": [
+    "SHA256SUMS",
+    "ScaleMate.apk",
+    "releases.json",
+    "releases.json.sig",
+    "signing-certificate.txt",
+    "update.json",
+    "update.json.sig"
+  ],
+  "fixedSigner": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5",
+  "commit": "44ec60eb1911070a5183de2e52951e350d7f6c3b",
+  "ciRun": "https://github.com/rccoder/ScaleMate/actions/runs/39820051613",
+  "releaseRun": "https://github.com/rccoder/ScaleMate/actions/runs/39820627371",
+  "checks": {
+    "remoteVersionCodeOrder": "passed",
+    "updateManifest": "passed",
+    "updateJsonSignature": "passed",
+    "releasesJsonSignature": "passed",
+    "apkPackage": "app.scalemate",
+    "debuggable": false
+  },
+  "proxyCheck": {
+    "source": "gh-proxy-com",
+    "url": "https://gh-proxy.com/https://github.com/rccoder/ScaleMate/releases/download/v0.3.1-preview.2/ScaleMate.apk",
+    "fullDownload": true,
+    "sizeBytes": 23832270,
+    "sha256": "3de9a45620c2bb663e27ea2610dcaf53c9a62a4c032cc848e2dcfcd889f97347",
+    "elapsedSeconds": 3.4
+  },
+  "phoneUpgrade": {
+    "fromVersion": "0.3.1-preview.1",
+    "fromVersionCode": 8,
+    "toVersion": "0.3.1-preview.2",
+    "toVersionCode": 9,
+    "channel": "preview",
+    "selectedSource": "automatic",
+    "method": "in-app download and Android system installer",
+    "systemInstaller": true,
+    "installedApkMatchesRelease": true,
+    "firstInstallTimePreserved": true,
+    "visibleDataPreserved": [
+      "existing meals and weight records",
+      "configured AI service and default models",
+      "verified scale",
+      "Health Connect weight and nutrition permissions",
+      "non-update settings"
+    ],
+    "instrumentedDigestComparison": "not run; wireless ADB disconnected after installation"
+  },
+  "installedPackages": [
+    "app.scalemate",
+    "app.scalemate.fooddev"
+  ]
+}

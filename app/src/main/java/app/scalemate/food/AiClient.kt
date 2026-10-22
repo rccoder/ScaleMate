@@ -64,7 +64,12 @@ object AiEndpoint {
 }
 
 class AiClient(private val secrets: AiSecrets=AiSecrets()) {
-    companion object { private val executor=Executors.newFixedThreadPool(2) }
+    companion object {
+        private val executor=Executors.newFixedThreadPool(2)
+        private const val CONNECT_TIMEOUT_MS=20_000
+        internal const val RESPONSE_TIMEOUT_MS=120_000
+        private const val MAX_RESPONSE_BYTES=1024*1024
+    }
     suspend fun test(service: AiService) {request(service,JSONArray().put(JSONObject().put("role","user").put("content","Reply with OK. This is a synthetic connectivity test.")))}
     suspend fun recognize(service:AiService,photo:ByteArray,description:String,tags:Set<String>,outputLanguage:String=java.util.Locale.getDefault().toLanguageTag()):List<FoodItem> = recognize(service,listOf(photo),description,tags,1,outputLanguage=outputLanguage)
     suspend fun recognize(service:AiService,photos:List<ByteArray>,description:String,tags:Set<String>,sharing:Int,paths:List<String> = emptyList(),outputLanguage:String=java.util.Locale.getDefault().toLanguageTag()):List<FoodItem> {
@@ -87,7 +92,7 @@ class AiClient(private val secrets: AiSecrets=AiSecrets()) {
         photos.forEach {photo->content.put(JSONObject().put("type","image_url").put("image_url",JSONObject().put("url","data:image/jpeg;base64,"+Base64.encodeToString(photo,Base64.NO_WRAP))))}
         content.put(JSONObject().put("type","text").put("text","Application output requirement (not food context):\n"+FoodAiLanguage.instruction(outputLanguage)))
         val messages=JSONArray().put(JSONObject().put("role","system").put("content",instructions)).put(JSONObject().put("role","user").put("content",content))
-        val raw=request(service,messages,4096)
+        val raw=request(service,messages,4096,RESPONSE_TIMEOUT_MS)
         return try {FoodJson.recognitionPersonal(raw,sharing,paths,tags,description)}catch(_:Exception){throw FoodFailure(R.string.food_ai_invalid)}
     }
     suspend fun listModels(service:AiService):AiModelCatalog {
@@ -111,11 +116,17 @@ class AiClient(private val secrets: AiSecrets=AiSecrets()) {
         }
         return AiModelCatalog(models.values.sortedBy {it.id},true)
     }
-    private suspend fun request(service:AiService,messages:JSONArray,maxTokens:Int=256):String {
-        val response=exchange(service,AiEndpoint.requestUrl(service.baseUrl,service.format),AiWire.body(service,messages,maxTokens))
+    private suspend fun request(service:AiService,messages:JSONArray,maxTokens:Int=256,timeoutMs:Int=45_000):String {
+        val response=exchange(service,AiEndpoint.requestUrl(service.baseUrl,service.format),AiWire.body(service,messages,maxTokens),timeoutMs=timeoutMs)
         return try {AiWire.text(service.format,response)}catch(_:Exception){throw FoodFailure(R.string.food_ai_invalid)}
     }
-    private suspend fun exchange(service:AiService,url:String,payload:JSONObject?,listing:Boolean=false):JSONObject = suspendCancellableCoroutine { continuation ->
+    private suspend fun exchange(
+        service:AiService,
+        url:String,
+        payload:JSONObject?,
+        listing:Boolean=false,
+        timeoutMs:Int=RESPONSE_TIMEOUT_MS
+    ):JSONObject = suspendCancellableCoroutine { continuation ->
         val connection=AtomicReference<HttpURLConnection?>()
         continuation.invokeOnCancellation {connection.get()?.disconnect()}
         executor.execute {
@@ -125,7 +136,7 @@ class AiClient(private val secrets: AiSecrets=AiSecrets()) {
                 val conn=URI(url).toURL().openConnection() as HttpURLConnection
                 connection.set(conn)
                 if(!continuation.isActive){conn.disconnect();return@execute}
-                conn.apply {requestMethod=if(payload==null)"GET" else "POST";instanceFollowRedirects=false;connectTimeout=15000;readTimeout=45000;doOutput=payload!=null
+                conn.apply {requestMethod=if(payload==null)"GET" else "POST";instanceFollowRedirects=false;connectTimeout=CONNECT_TIMEOUT_MS;readTimeout=timeoutMs;doOutput=payload!=null
                     setRequestProperty("Accept","application/json")
                     if(payload!=null)setRequestProperty("Content-Type","application/json")
                     if(service.format=="anthropic") {setRequestProperty("x-api-key",key);setRequestProperty("anthropic-version","2023-06-01")}
@@ -137,7 +148,7 @@ class AiClient(private val secrets: AiSecrets=AiSecrets()) {
                 val code=conn.responseCode
                 if(code !in 200..299)throw FoodFailure(when(code){401,403->R.string.food_ai_auth;429->R.string.food_ai_limit;404,405,501->if(listing)R.string.ai_models_unsupported else R.string.food_ai_http;in 300..399->R.string.food_ai_redirect;else->R.string.food_ai_http})
                 val bytes=conn.inputStream.use {input->val out=ByteArrayOutputStream();val buffer=ByteArray(8192);var total=0
-                    while(true){if(!continuation.isActive)return@execute;val n=input.read(buffer);if(n<0)break;total+=n;if(total>1024*1024)throw FoodFailure(if(listing)R.string.ai_models_invalid else R.string.food_ai_invalid);out.write(buffer,0,n)};out.toByteArray()}
+                    while(true){if(!continuation.isActive)return@execute;val n=input.read(buffer);if(n<0)break;total+=n;if(total>MAX_RESPONSE_BYTES)throw FoodFailure(if(listing)R.string.ai_models_invalid else R.string.food_ai_response_too_large);out.write(buffer,0,n)};out.toByteArray()}
                 val result=try {JSONObject(bytes.toString(Charsets.UTF_8))}catch(_:Exception){throw FoodFailure(if(listing)R.string.ai_models_invalid else R.string.food_ai_invalid)}
                 if(continuation.isActive)continuation.resume(result)
             } catch(e:Exception) {

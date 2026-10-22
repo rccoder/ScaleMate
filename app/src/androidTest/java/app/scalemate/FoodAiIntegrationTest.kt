@@ -26,7 +26,7 @@ class FoodAiIntegrationTest {
             val cfg=JSONObject(fixture.readText())
             val secrets=AiSecrets()
             processed=FoodImages.import(context,Uri.fromFile(photo))
-            assertTrue(processed!!.length() in 1..4_000_000)
+            assertTrue(processed!!.length() in 1..FoodImages.MAX_IMAGE_BYTES)
             for(format in listOf("openai","anthropic")) {
                 val base=if(format=="anthropic")cfg.getString("baseUrl").trimEnd('/').removeSuffix("/v1") else cfg.getString("baseUrl")
                 val service=AiService(id="integration-$format",name="Private validation",baseUrl=base,model="codex/gpt-6-luna",images=true,format=format)

@@ -109,12 +109,12 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
         val requestId=newFoodId();activeRequest=requestId
         mutable.update {it.copy(busy=true,error=null,draft=it.draft?.copy(batch=batch.copy(status="analyzing")))};persistDraft()
         aiJob=viewModelScope.launch {try {
-            val bytes=withContext(Dispatchers.IO){batch.photos.map {File(it).readBytes().also {bytes->require(bytes.size<=4_000_000)}}}
+            val bytes=withContext(Dispatchers.IO){batch.photos.map {File(it).readBytes().also {bytes->require(bytes.size<=FoodImages.MAX_IMAGE_BYTES)}}}
             val items=ai.recognize(service,bytes,batch.description,batch.tags,batch.shareCount,batch.photos,outputLanguage=outputLanguage)
             if(activeRequest==requestId&&mutable.value.draft?.batch?.id==batch.id) {
                 mutable.update {it.copy(draft=it.draft?.let {d->d.copy(batch=d.batch?.copy(results=items,status="review"),updatedAt=System.currentTimeMillis())})};persistDraft()
             }
-        }catch(e:CancellationException){throw e}catch(e:FoodFailure){if(activeRequest==requestId)fail(e.resource)}catch(_:Exception){if(activeRequest==requestId)fail(R.string.food_ai_invalid)}finally {
+        }catch(e:CancellationException){throw e}catch(e:FoodFailure){if(activeRequest==requestId)fail(e.resource)}catch(_:Exception){if(activeRequest==requestId)fail(R.string.food_ai_request_error)}finally {
             if(activeRequest==requestId){activeRequest=null;mutable.update {it.copy(busy=false,draft=it.draft?.let {d->if(d.batch?.status=="analyzing")d.copy(batch=d.batch.copy(status="interrupted")) else d})};persistDraft()}
         }}
     }

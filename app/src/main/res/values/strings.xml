@@ -216,6 +216,8 @@
     <string name="food_key_error">Could not decrypt this API key. Enter it again.</string>
     <string name="food_connection_ok">Service responded. This does not verify image support or recognition quality.</string>
     <string name="food_ai_invalid">AI returned no usable food data. Add context and retry, or enter it manually.</string>
+    <string name="food_ai_response_too_large">The AI response was too large to process. Retry with fewer photos.</string>
+    <string name="food_ai_request_error">Could not complete the AI request. Your draft was kept; retry or enter it manually.</string>
     <string name="food_ai_auth">AI service denied access. Check the key, model and permissions.</string>
     <string name="food_ai_limit">AI service is rate-limited or out of quota. Retry later or choose another service.</string>
     <string name="food_ai_redirect">Redirect blocked to protect your key. Check the Base URL.</string>

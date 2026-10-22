@@ -216,6 +216,8 @@
     <string name="food_key_error">无法解密此服务的密钥，请重新填写。</string>
     <string name="food_connection_ok">已收到服务响应。连接可用不代表图片能力或识别准确度已验证。</string>
     <string name="food_ai_invalid">AI 没有返回可用的食物数据。可补充描述后重试，或手动录入。</string>
+    <string name="food_ai_response_too_large">AI 返回内容过大，已停止处理。请减少照片后重试。</string>
+    <string name="food_ai_request_error">AI 请求未能完成，草稿已保留。可重试或手动录入。</string>
     <string name="food_ai_auth">AI 服务拒绝授权，请检查密钥、模型和访问权限。</string>
     <string name="food_ai_limit">AI 服务限流或额度不足，请稍后再试或手动选择另一服务。</string>
     <string name="food_ai_redirect">服务返回重定向，为保护密钥已停止，请检查 Base URL。</string>

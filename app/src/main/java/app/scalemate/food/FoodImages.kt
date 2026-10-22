@@ -29,7 +29,7 @@ object FoodImages {
     const val MAX_PHOTOS=6
     const val MAX_IMAGE_BYTES=1_500_000L
     // Bound the encoded request, not only the sum of JPEG files. Base64 adds roughly one third.
-    const val MAX_UPLOAD_BYTES=9_000_000L
+    const val MAX_UPLOAD_BYTES=8_000_000L
     internal fun encodedRequestApproximation(bytes:Long)=((bytes+2)/3)*4
     fun thumbnail(context:Context,path:String):String {
         val source=File(path);if(source.parentFile?.name=="food_thumbs")return path

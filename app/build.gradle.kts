@@ -15,8 +15,8 @@ android {
         applicationId = if (isolatedTestApp) "app.scalemate.fooddev" else "app.scalemate"
         minSdk = 34
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.3.0"
+        versionCode = 8
+        versionName = "0.3.1-preview.1"
         buildConfigField("String", "UPDATE_PUBLIC_KEY_BASE64", "\"MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAtf6kkga/AnvxC0Cf9EMX/J+KZKPU5G4Uu1nW7U/jNMqAT1n+F+QM+FG10v8nTWlAud9K8DgoQyKqTtZ8r78QE02VD0ZC5lBzNxzjiZQK5Bm0VeERXcLDwKRzCCMwwVjV0QupPgikRUpzBTGUkkv66oCy8EpISQubbRK/aTm8HIGms0P0MpsOKapQwkDc+Ud41JCVEBNqA2YLlESmiNedS3/VM0f40di/Z5Ap68wXHp6dNnUXp3tTXXT0zq6VVCp11LIU4A1VhBm14cpxNkiU8nkFsjiikbD1R1wTZA7D16vpoB0zaFfsnL0pMlZbUqVSsR153c6nL53/L/bpNXMnCp70PfUj1ZsQF/3x+lEPJJ2mEC3CeyXRcakarKk47DvEbhVjqNVCLxvL4+56pYp3J3eoKTf7boxtDt5wHe6kuBKGJtGUl4SwEmcEIMH2QC6pDIvWC9QmcquM3vPIXy459yab3gXZ9gnYtMWTcl4BH3cX6aQbkQnWOpacIbkbv2QBAgMBAAE=\"")
         testApplicationId = "app.scalemate.test"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

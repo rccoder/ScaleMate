@@ -4,7 +4,65 @@
     <uses-permission android:name="android.permission.health.WRITE_WEIGHT" tools:node="remove" />
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
     <uses-permission android:name="android.permission.health.WRITE_NUTRITION" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_ACTIVITY_INTENSITY" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_BASAL_BODY_TEMPERATURE" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_BASAL_METABOLIC_RATE" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_BLOOD_GLUCOSE" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_BLOOD_PRESSURE" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_BODY_FAT" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_BODY_TEMPERATURE" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_BODY_WATER_MASS" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_BONE_MASS" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_CERVICAL_MUCUS" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_DISTANCE" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_ELEVATION_GAINED" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_EXERCISE" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_FLOORS_CLIMBED" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_HEIGHT" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_HYDRATION" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_INTERMENSTRUAL_BLEEDING" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_LEAN_BODY_MASS" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_ALLERGIES_INTOLERANCES" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_CONDITIONS" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_LABORATORY_RESULTS" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_MEDICATIONS" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_PERSONAL_DETAILS" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_PRACTITIONER_DETAILS" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_PREGNANCY" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_PROCEDURES" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_SOCIAL_HISTORY" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_VACCINES" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_VISITS" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_VITAL_SIGNS" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_MENSTRUATION" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_MINDFULNESS" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_NUTRITION" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_OVULATION_TEST" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_OXYGEN_SATURATION" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_PLANNED_EXERCISE" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_POWER" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_RESPIRATORY_RATE" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_SEXUAL_ACTIVITY" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_SKIN_TEMPERATURE" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_SPEED" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_STEPS" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_VO2_MAX" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_WEIGHT" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_WHEELCHAIR_PUSHES" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" tools:node="remove" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" tools:node="remove" />
+    <uses-permission android:name="android.permission.health.READ_EXERCISE_ROUTES" tools:node="remove" />
     <application android:label="称伴健康 AI 设计" tools:replace="android:label">
+        <provider android:name="androidx.startup.InitializationProvider" tools:node="remove" />
         <activity android:name="app.scalemate.MainActivity" tools:node="remove" />
         <activity android:name="app.scalemate.PrivacyActivity" tools:node="remove" />
         <activity-alias android:name="app.scalemate.PermissionUsage" tools:node="remove" />

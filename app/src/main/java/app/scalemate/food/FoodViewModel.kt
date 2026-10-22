@@ -44,6 +44,7 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
     }
     private fun fail(resource: Int){mutable.update {it.copy(error=resource)}}
     fun showError(resource:Int){fail(resource)}
+    fun refreshServices(){task {reload()}}
     fun clearMessage(){mutable.update {it.copy(error=null,message=null)}}
     private fun task(block: suspend ()->Unit){viewModelScope.launch {try {block()}catch(e:CancellationException){throw e}catch(e:FoodFailure){fail(e.resource)}catch(_:Exception){fail(R.string.food_storage_error)}}}
     private fun persistDraft() {task {draftLock.withLock {

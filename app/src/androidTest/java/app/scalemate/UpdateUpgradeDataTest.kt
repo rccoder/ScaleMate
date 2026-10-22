@@ -20,7 +20,9 @@ class UpdateUpgradeDataTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val mode = InstrumentationRegistry.getArguments().getString("upgradeSnapshotMode")
-        assumeTrue(context.packageName == UPDATE_PACKAGE_NAME && mode in setOf("capture", "verify", "cleanup"))
+        val expectedPackage = InstrumentationRegistry.getArguments().getString("upgradeSnapshotPackage") ?: UPDATE_PACKAGE_NAME
+        assumeTrue(expectedPackage in setOf(UPDATE_PACKAGE_NAME, "app.scalemate.fooddev") &&
+            context.packageName == expectedPackage && mode in setOf("capture", "verify", "cleanup"))
         val baseline = File(context.filesDir, "upgrade-validation-digests.json")
         if (mode == "cleanup") {
             baseline.delete()

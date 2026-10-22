@@ -14,11 +14,18 @@ import app.scalemate.platform.HealthOutput
 import app.scalemate.food.FoodViewModel
 import app.scalemate.food.NutritionOutput
 import app.scalemate.update.UpdateViewModel
+import app.scalemate.health.HealthViewModel
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 
 class MainActivity: ComponentActivity() {
     private lateinit var model: ScaleViewModel
     private lateinit var foodModel: FoodViewModel
     private lateinit var updateModel: UpdateViewModel
+    private lateinit var healthModel: HealthViewModel
+    private var healthEntry by mutableStateOf("")
+    private val healthReadPermissions=registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){healthModel.reload()}
     private val nutritionPermission=registerForActivityResult(ActivityResultContracts.RequestPermission()){foodModel.refreshPermissions()}
     private var afterBluetooth: (() -> Unit)? = null
     private val bluetoothPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -33,7 +40,9 @@ class MainActivity: ComponentActivity() {
         model=ViewModelProvider(this)[ScaleViewModel::class.java]
         foodModel=ViewModelProvider(this)[FoodViewModel::class.java]
         updateModel=ViewModelProvider(this)[UpdateViewModel::class.java]
-        setContent { ScaleMateApp(model,foodModel,updateModel,authorizeNutrition={nutritionPermission.launch(NutritionOutput.WRITE)},
+        healthModel=ViewModelProvider(this)[HealthViewModel::class.java]
+        healthEntry=intent.getStringExtra("healthReminderId").orEmpty()
+        setContent { ScaleMateApp(model,foodModel,updateModel,healthModel,healthEntry,consumeHealthEntry={healthEntry=""},authorizeHealth={permissions->if(permissions.isNotEmpty())healthReadPermissions.launch(permissions.toTypedArray())},authorizeNutrition={nutritionPermission.launch(NutritionOutput.WRITE)},
             bluetooth = { action ->
                 val permissions=arrayOf("android.permission.BLUETOOTH_SCAN","android.permission.BLUETOOTH_CONNECT")
                 if(permissions.all { checkSelfPermission(it)==android.content.pm.PackageManager.PERMISSION_GRANTED }) action()
@@ -55,6 +64,7 @@ class MainActivity: ComponentActivity() {
             model.refreshPermissions()
             model.foreground(true)
             foodModel.refreshPermissions()
+            healthModel.reload()
             if (!packageName.endsWith(".fooddev")) {
                 updateModel.refreshInstallPermission()
                 updateModel.foreground()
@@ -62,4 +72,5 @@ class MainActivity: ComponentActivity() {
         }
     }
     override fun onPause() {if(::model.isInitialized)model.foreground(false);super.onPause()}
+    override fun onNewIntent(intent:Intent){super.onNewIntent(intent);setIntent(intent);healthEntry=intent.getStringExtra("healthReminderId").orEmpty()}
 }

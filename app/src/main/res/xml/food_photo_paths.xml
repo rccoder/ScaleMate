@@ -1,1 +1,1 @@
-<paths xmlns:android="http://schemas.android.com/apk/res/android"><cache-path name="food_capture" path="food_capture/" /><files-path name="updates" path="updates/" /></paths>
+<paths xmlns:android="http://schemas.android.com/apk/res/android"><cache-path name="food_capture" path="food_capture/" /><cache-path name="health_exports" path="health_exports/" /><files-path name="updates" path="updates/" /></paths>

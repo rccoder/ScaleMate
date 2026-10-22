@@ -1,0 +1,103 @@
+package app.scalemate.health
+
+import org.junit.Assert.*
+import org.junit.Test
+import java.time.Instant
+import java.time.ZoneId
+
+class HealthMetricsTest {
+    private val zone=ZoneId.of("Asia/Shanghai")
+    private fun at(s:String)=Instant.parse(s).toEpochMilli()
+    private val start=at("2026-10-16T16:00:00Z")
+    private val end=start+8*3600000
+    private fun sleep(stages:List<HealthStage>)=HealthRecord("sleep","SleepSession","watch",start,end,stages=stages)
+    @Test fun awakeStagesAreNotSleepAndUnspecifiedSleepIsIncluded() {
+        val s=sleep(listOf(HealthStage(start,start+30*60000,1),HealthStage(start+30*60000,end,2)))
+        assertEquals(450.0,HealthMetrics.sleep(s).getValue("sleepMinutes"),0.0)
+    }
+    @Test fun noStagesOnlyReportsSessionDuration() {
+        val stats=HealthMetrics.sleep(sleep(emptyList()))
+        assertEquals(480.0,stats.getValue("sessionMinutes"),0.0);assertFalse(stats.containsKey("sleepMinutes"))
+    }
+    @Test fun unknownStagesAndGapsAreNotFilledAsSleep() {
+        val stats=HealthMetrics.sleep(sleep(listOf(HealthStage(start,start+4*3600000,4),HealthStage(start+4*3600000,end,0))))
+        assertFalse(stats.containsKey("sleepMinutes"));assertEquals(.5,stats.getValue("stageCoverage"),0.0)
+    }
+    @Test fun overlappingStagesCannotDoubleCountSleep() {
+        val stats=HealthMetrics.sleep(sleep(listOf(HealthStage(start,end,4),HealthStage(start+3600000,end,5))))
+        assertFalse(stats.containsKey("sleepMinutes"));assertEquals(1.0,stats.getValue("overlap"),0.0)
+    }
+    @Test fun intervalUnionHandlesNestedAdjacentAndDisjointIntervals() {assertEquals(35,HealthMetrics.unionMillis(listOf(0L to 10L,5L to 20L,20L to 30L,32L to 37L,8L to 9L)))}
+    @Test fun duplicatesAreDeduplicatedAndNapsAreSeparate() {
+        val night=sleep(listOf(HealthStage(start,end,4)))
+        val nap=night.copy(id="nap",start=end+3600000,end=end+7200000,stages=emptyList())
+        val rows=HealthMetrics.compute(listOf(night,night,nap),zone,end+86400000)
+        assertEquals(480.0,rows.single {it.field=="sleepMinutes"}.value,0.0)
+        assertEquals(60.0,rows.single {it.field=="additionalSessionMinutes"}.value,0.0)
+        assertEquals("2026-10-17",rows.single {it.field=="sleepMinutes"}.date)
+    }
+    @Test fun duplicateSleepSessionsSuppressUnsupportedActualSleepConclusion() {
+        val a=sleep(listOf(HealthStage(start,end,4)))
+        val rows=HealthMetrics.compute(listOf(a,a.copy(id="overlap",start=start+1000)),zone,end+86400000)
+        assertFalse(rows.any {it.field=="sleepMinutes"})
+    }
+    @Test fun minuteMediansDoNotGiveDenseMinutesExtraWeight() {
+        val hr=HealthRecord("hr","HeartRate","watch",start,end,points=listOf(HealthPoint(start,60.0,"bpm"),HealthPoint(start+60000,100.0,"bpm")))
+        val dense=hr.copy(points=hr.points+List(100){HealthPoint(start+it+1,60.0,"bpm")})
+        fun value(record:HealthRecord)=HealthMetrics.compute(listOf(record),zone,end+86400000).single {it.field=="bpm"}.value
+        assertEquals(value(hr),value(dense),0.0)
+    }
+    @Test fun explicitHeartSourceAndSleepStageIntervalsAreRespected() {
+        val night=sleep(listOf(HealthStage(start,start+3600000,1),HealthStage(start+3600000,end,4)))
+        val hr=HealthRecord("hr","HeartRate","chosen",start,end,points=listOf(HealthPoint(start+5000,180.0,"bpm"),HealthPoint(start+3600000,60.0,"bpm")))
+        val other=hr.copy(id="other",source="other",points=listOf(HealthPoint(start+3600000,150.0,"bpm")))
+        val rows=HealthMetrics.compute(listOf(night,hr,other),zone,end+86400000,mapOf("HeartRate" to "chosen"))
+        assertEquals(60.0,rows.single {it.field=="sleepBpm"}.value,0.0)
+    }
+    @Test fun sparseHrvRemainsVisibleButIsNotReminderEligible() {
+        val night=sleep(listOf(HealthStage(start,end,4)))
+        val hrv=HealthRecord("hrv","HeartRateVariabilityRmssd","watch",start+3600000,values=mapOf("heartRateVariabilityMillis" to HealthValue(40.0,"ms")))
+        val result=HealthMetrics.compute(listOf(night,hrv),zone,end+86400000).single {it.field=="nightRmssd"}
+        assertEquals(0.0,result.coverage!!,0.0)
+    }
+    @Test fun categoricalCodesAreCountedNotAveraged() {
+        val a=HealthRecord("a","ExerciseSession","watch",start,values=mapOf("exerciseType" to HealthValue(1.0,"enum")))
+        val b=a.copy(id="b",values=mapOf("exerciseType" to HealthValue(3.0,"enum")))
+        val rows=HealthMetrics.compute(listOf(a,b),zone,end+86400000)
+        assertFalse(rows.any {it.field=="exerciseType"});assertTrue(rows.any {it.field=="exerciseType.code1.count"&&it.value==1.0})
+    }
+    @Test fun stepsUsePlatformTotalRatherThanSummingRawOrigins() {
+        val a=HealthRecord("a","Steps","watch",start,values=emptyMap())
+        val total=a.copy(id="aggregate:Steps",source="Health Connect",values=mapOf("count" to HealthValue(7000.0,"steps")))
+        val rows=HealthMetrics.compute(listOf(a,a.copy(id="b",source="phone"),total),zone,end+86400000)
+        assertEquals(7000.0,rows.single {it.field=="count"}.value,0.0)
+        assertEquals("platform-aggregate-v1",rows.single {it.field=="count"}.algorithm)
+        assertFalse(rows.any {it.field=="recordCount"&&it.source=="Health Connect"})
+    }
+    @Test fun todayIsMarkedPartialAndTimeZoneControlsDate() {
+        val r=HealthRecord("w","Weight","scale",at("2026-10-16T17:00:00Z"),values=mapOf("weight" to HealthValue(71000.0,"g")))
+        val rows=HealthMetrics.compute(listOf(r),zone,r.start+1000)
+        assertTrue(rows.all {it.partial&&it.date=="2026-10-17"})
+    }
+    @Test fun completedSleepThisMorningIsAvailableForMorningReminders() {
+        val night=sleep(listOf(HealthStage(start,end,2)))
+        val rows=HealthMetrics.compute(listOf(night),zone,end+3600000)
+        val completed=rows.single {it.field=="sleepMinutes"}
+        assertFalse(completed.partial)
+        assertEquals("analysis",completed.period(HealthWindow("2026-10-10","2026-10-17",zone.id)))
+    }
+    @Test fun dayRangesUseCalendarDaysAcrossDst() {
+        val w=HealthWindow.recent(7,Instant.parse("2026-03-10T12:00:00Z"),ZoneId.of("America/New_York"))
+        assertEquals("2026-03-03",w.start);assertEquals("2026-03-10",w.end)
+        assertEquals(167,java.time.Duration.between(w.startInstant,w.endInstant).toHours())
+    }
+    @Test fun platformAggregateSlicesFollowReportingZoneAcrossDst() {
+        val z=ZoneId.of("America/New_York")
+        val begin=java.time.LocalDate.of(2026,3,7).atStartOfDay(z).toInstant()
+        val finish=java.time.LocalDate.of(2026,3,10).atStartOfDay(z).toInstant()
+        val slices=healthDaySlices(begin,finish,z)
+        assertEquals(listOf(24L,23L,24L),slices.map {java.time.Duration.between(it.first,it.second).toHours()})
+        assertEquals(begin,slices.first().first);assertEquals(finish,slices.last().second)
+        assertTrue(slices.zipWithNext().all {(a,b)->a.second==b.first})
+    }
+}

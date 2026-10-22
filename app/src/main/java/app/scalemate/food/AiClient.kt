@@ -3,6 +3,7 @@ package app.scalemate.food
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import android.util.Log
 import app.scalemate.R
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONArray
@@ -23,7 +24,9 @@ import kotlin.coroutines.resumeWithException
 
 class FoodFailure(val resource: Int): Exception()
 
-class AiSecrets {
+fun interface AiCredentialProvider {fun decrypt(service:AiService):String}
+
+class AiSecrets:AiCredentialProvider {
     private fun key(): SecretKey {
         val store=KeyStore.getInstance("AndroidKeyStore").apply {load(null)}
         (store.getKey("scalemate.ai.credentials",null) as? SecretKey)?.let {return it}
@@ -40,7 +43,7 @@ class AiSecrets {
         val id=newFoodId()
         return service.copy(id=id,name=name,encryptedKey=encrypt(id,decrypt(service)),version=1,consentVersion=0)
     }
-    fun decrypt(service: AiService): String {
+    override fun decrypt(service: AiService): String {
         val parts=service.encryptedKey.split(":");require(parts.size==2)
         val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.DECRYPT_MODE,key(),GCMParameterSpec(128,Base64.decode(parts[0],Base64.NO_WRAP)));cipher.updateAAD(service.id.toByteArray())
         return cipher.doFinal(Base64.decode(parts[1],Base64.NO_WRAP)).toString(Charsets.UTF_8)
@@ -63,9 +66,68 @@ object AiEndpoint {
     }
 }
 
-class AiClient(private val secrets: AiSecrets=AiSecrets()) {
-    companion object { private val executor=Executors.newFixedThreadPool(2) }
+class AiClient(private val secrets: AiCredentialProvider=AiSecrets()) {
+    companion object {
+        private val executor=Executors.newFixedThreadPool(2);private const val TAG="ScaleMateAi"
+        private fun logWarning(message:String) {runCatching {Log.w(TAG,message)}}
+    }
     suspend fun test(service: AiService) {request(service,JSONArray().put(JSONObject().put("role","user").put("content","Reply with OK. This is a synthetic connectivity test.")))}
+    suspend fun streamText(service:AiService,messages:JSONArray,onText:(String)->Unit):String = suspendCancellableCoroutine {c->
+        val connection=AtomicReference<HttpURLConnection?>()
+        c.invokeOnCancellation {connection.get()?.disconnect()}
+        executor.execute {
+            var phase="start";var eventCount=0;var textEvents=0;var finishedEvent=false
+            try {
+                if(!c.isActive)return@execute
+                phase="credential"
+                val key=try {secrets.decrypt(service)}catch(_:Exception){throw FoodFailure(R.string.food_key_error)}
+                phase="connect"
+                val url=AiEndpoint.requestUrl(service.baseUrl,service.format)
+                val conn=URI(url).toURL().openConnection() as HttpURLConnection;connection.set(conn)
+                if(!c.isActive){conn.disconnect();return@execute}
+                conn.apply {requestMethod="POST";instanceFollowRedirects=false;connectTimeout=15000;readTimeout=45000;doOutput=true
+                    setRequestProperty("Content-Type","application/json");setRequestProperty("Accept","text/event-stream")
+                    if(service.format=="anthropic"){setRequestProperty("x-api-key",key);setRequestProperty("anthropic-version","2023-06-01")}else setRequestProperty("Authorization","Bearer $key")}
+                val payload=AiWire.body(service,messages,4096).put("stream",true).apply {if(service.format=="openai")put("max_tokens",4096)}.toString().toByteArray()
+                conn.setFixedLengthStreamingMode(payload.size);conn.outputStream.use {it.write(payload)}
+                phase="response"
+                if(conn.responseCode !in 200..299)throw FoodFailure(when(conn.responseCode){401,403->R.string.food_ai_auth;429->R.string.food_ai_limit;in 300..399->R.string.food_ai_redirect;else->R.string.food_ai_http})
+                val output=StringBuilder();var total=0;var finished=false
+                if(conn.contentType.orEmpty().contains("application/json")) {
+                    phase="json-body"
+                    val bytes=conn.inputStream.use {it.readNBytes(262145)};require(bytes.size<=262144)
+                    output.append(AiWire.text(service.format,JSONObject(bytes.toString(Charsets.UTF_8))));onText(output.toString());finished=true
+                } else conn.inputStream.bufferedReader().use {reader->
+                    phase="event-stream"
+                    val data=StringBuilder()
+                    while(c.isActive) {
+                        val line=reader.readLine() ?: break
+                        total+=line.length;require(total<=1048576&&line.length<=262144)
+                        if(line.startsWith("data:")){if(data.isNotEmpty())data.append('\n');data.append(line.removePrefix("data:").trimStart())}
+                        if(line.isEmpty()&&data.isNotEmpty()) {
+                            eventCount++
+                            val delta=AiStream.decode(service.format,data.toString());data.setLength(0)
+                            output.append(delta.text);require(output.length<=65536)
+                            if(delta.text.isNotEmpty()){textEvents++;onText(output.toString())}
+                            if(delta.finished){finished=true;finishedEvent=true;break}
+                        }
+                    }
+                }
+                if(!finished||output.isBlank())logWarning("stream incomplete: phase=$phase events=$eventCount textEvents=$textEvents finishedEvent=$finishedEvent output=${output.length}")
+                require(finished&&output.isNotBlank())
+                if(c.isActive)c.resume(output.toString())
+            }catch(e:Exception){
+                logWarning("stream failed: phase=$phase events=$eventCount textEvents=$textEvents finishedEvent=$finishedEvent type=${e.javaClass.simpleName}")
+                if(c.isActive)c.resumeWithException(when(e){
+                    is FoodFailure->e
+                    is SocketTimeoutException->FoodFailure(R.string.food_ai_timeout)
+                    is java.net.SocketException,is java.io.IOException->FoodFailure(R.string.food_ai_network)
+                    else->FoodFailure(R.string.food_ai_invalid)
+                })
+            }
+            finally {connection.getAndSet(null)?.disconnect()}
+        }
+    }
     suspend fun recognize(service:AiService,photo:ByteArray,description:String,tags:Set<String>,outputLanguage:String=java.util.Locale.getDefault().toLanguageTag()):List<FoodItem> = recognize(service,listOf(photo),description,tags,1,outputLanguage=outputLanguage)
     suspend fun recognize(service:AiService,photos:List<ByteArray>,description:String,tags:Set<String>,sharing:Int,paths:List<String> = emptyList(),outputLanguage:String=java.util.Locale.getDefault().toLanguageTag()):List<FoodItem> {
         if(!service.images)throw FoodFailure(R.string.food_no_visual)

@@ -86,11 +86,11 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         viewModelScope.launch {
-            repository.initializeChannel()
             if (getApplication<Application>().packageName.endsWith(".fooddev")) {
                 mutable.value = UpdateUiState(loaded = true)
                 return@launch
             }
+            repository.initializeChannel()
             val installed = repository.installedApp()
             val channel = repository.selectedChannel()
             val cached = repository.cachedEntry()

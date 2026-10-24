@@ -87,7 +87,7 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
     val dates=remember(locale) {DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(locale).withZone(ZoneId.systemDefault())}
     val actualPage=if(!state.loaded)"loading" else if(!state.onboarded && !welcomeDone)"welcome" else page
     LaunchedEffect(actualPage){mainScroll.scrollTo(0)}
-    LaunchedEffect(actualPage){vm.foodPage(actualPage.startsWith("food") || actualPage=="records")}
+    LaunchedEffect(actualPage){vm.foodPage(pausesScaleListening(actualPage))}
     LaunchedEffect(state.loaded,state.records) {
         if(state.loaded){val ids=state.records.map {it.id}.toSet();val baseline=weightBaseline;if(baseline!=null && (ids-baseline).isNotEmpty() && !state.healthAllowed)weightSyncGuide=true;weightBaseline=(baseline ?: emptySet())+ids}
     }
@@ -103,7 +103,7 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
             }
         }
     }
-    fun navigate(next: String) {if(next=="devices")devicesReturn=if(page=="settings")"settings" else "home";if(page=="devices"&&next!="devices")vm.stop();vm.foodPage(next.startsWith("food"));if(next!=page && state.weighing)vm.cancelWeighing();page=next}
+    fun navigate(next: String) {if(next=="devices")devicesReturn=if(page=="settings")"settings" else "home";if(page=="devices"&&next!="devices")vm.stop();vm.foodPage(pausesScaleListening(next));if(next!=page && state.weighing)vm.cancelWeighing();page=next}
     fun openFoodDraft() {
         val draft=foodState.draft
         foodStartPage=when {

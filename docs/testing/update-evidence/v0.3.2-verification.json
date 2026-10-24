@@ -1,0 +1,61 @@
+{
+  "tag": "v0.3.2",
+  "url": "https://github.com/rccoder/ScaleMate/releases/tag/v0.3.2",
+  "prerelease": false,
+  "draft": false,
+  "versionName": "0.3.2",
+  "versionCode": 12,
+  "sha256": "da2194826cd977c7ba9c0701544bf7abd3a485a7bc854e3905afb4e081e80e09",
+  "sizeBytes": 23925722,
+  "verifiedAssets": [
+    "SHA256SUMS",
+    "ScaleMate.apk",
+    "releases.json",
+    "releases.json.sig",
+    "signing-certificate.txt",
+    "update.json",
+    "update.json.sig"
+  ],
+  "fixedSigner": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5",
+  "commit": "1e9976a4876db0fa0f18818c2946f15487f2db6e",
+  "ciRun": "https://github.com/rccoder/ScaleMate/actions/runs/40066933905",
+  "releaseRun": "https://github.com/rccoder/ScaleMate/actions/runs/40067168489",
+  "assetSha256": {
+    "SHA256SUMS": "d8f02d6ebae503dbb0ad8bd64513673400ea2d9b8fb23a157d8e754e69ea3483",
+    "ScaleMate.apk": "da2194826cd977c7ba9c0701544bf7abd3a485a7bc854e3905afb4e081e80e09",
+    "releases.json": "0ca9057c1df4a5749c3a8234701b9ff25da2f1fa285ef208c341386e77636b88",
+    "releases.json.sig": "659e06ada2c3872c10f006299003da9c1a7ef79a0b8d0ad6bf696b80870a1a21",
+    "signing-certificate.txt": "7101d592bccd52f047dac7d1687cdf67aad27ae799e9fc0c4eaca182aa13f846",
+    "update.json": "50ac1be292d0c8588d1c94835c655fb0a94f286b7a8e5c8a18f3056b4f1a0d98",
+    "update.json.sig": "e03a04566fb75cda55b1ecd0a94a61218564ceb1c7586f1ca2ce04e08e64ed48"
+  },
+  "checks": {
+    "latestTag": "v0.3.2",
+    "globalVersionCodeOrder": "passed",
+    "releaseNotesMatch": "passed",
+    "updateManifest": "passed",
+    "updateIndex": "passed",
+    "updateJsonSignature": "passed",
+    "releasesJsonSignature": "passed",
+    "apkPackage": "app.scalemate",
+    "debuggable": false,
+    "latestDownload": {
+      "httpStatus": 200,
+      "sizeBytes": 23925722,
+      "sha256Matches": true
+    }
+  },
+  "phoneUpgrade": {
+    "toVersion": "0.3.2",
+    "toVersionCode": 12,
+    "status": "pending",
+    "reason": "Published at the user explicit request. No phone upgrade or independent test result was verified in this release session; in-app installation and data preservation remain pending."
+  },
+  "proxyChecks": {
+    "report": "v0.3.2-routes.json",
+    "fullApkDownload": true,
+    "passedSources": 6,
+    "totalSources": 6,
+    "network": "Development computer; not a guarantee for user networks."
+  }
+}

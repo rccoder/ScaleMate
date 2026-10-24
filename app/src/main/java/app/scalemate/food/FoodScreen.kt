@@ -11,12 +11,15 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -24,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -32,13 +36,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -57,6 +69,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class,ExperimentalMaterial3Api::class)
 @Composable fun FoodScreen(
@@ -65,11 +78,19 @@ import kotlinx.coroutines.delay
     initialPage:String="home",
     initialMealId:String?=null,
     resetScroll:()->Unit={},
-    initialSelector:String=""
+    initialSelector:String="",
+    editorPanel:Boolean=false,
+    onStartMeal:()->Unit={},
+    onOpenEditor:(String)->Unit={},
+    onCloseEditor:()->Unit={},
+    onMealSaved:()->Unit={}
 ) {
     val s by vm.state.collectAsStateWithLifecycle()
     val context=LocalContext.current
     var page by rememberSaveable(initialPage){mutableStateOf(initialPage)}
+    val panelScroll=rememberScrollState()
+    val panelScope=rememberCoroutineScope()
+    fun resetContentScroll(){if(editorPanel)panelScope.launch {panelScroll.scrollTo(0)}else resetScroll()}
     var date by rememberSaveable {mutableStateOf(LocalDate.now().toString())}
     var pendingCamera by rememberSaveable {mutableStateOf<String?>(null)}
     var libraryEditing by remember {mutableStateOf<FoodLibraryEntry?>(null)}
@@ -79,8 +100,6 @@ import kotlinx.coroutines.delay
     var reanalyze by remember {mutableStateOf(false)}
     var abandon by remember {mutableStateOf(false)}
     var manualReturn by rememberSaveable {mutableStateOf("picker")}
-    var draftConflict by remember {mutableStateOf<Meal?>(null)}
-    var conflictRepeat by remember {mutableStateOf(false)}
     var selectedMeal by remember {mutableStateOf<String?>(initialMealId)}
     var selector by remember(initialSelector){mutableStateOf(initialSelector)}
     var serviceEditor by remember {mutableStateOf<AiService?>(null)}
@@ -107,181 +126,215 @@ import kotlinx.coroutines.delay
     fun openHealth(){try {context.startActivity(Intent("android.health.connect.action.HEALTH_HOME_SETTINGS"))}catch(_:Exception){vm.showError(R.string.open_error)}}
     fun analyze(){val service=s.services.find {it.id==s.selectedService && it.images};if(service==null)noVisualGuide=true
         else if(service.consentVersion!=service.version)consent=service else vm.analyze()}
-    BackHandler(serviceEditor!=null){vm.cancelAi();vm.clearMessage();serviceEditor=null}
-    LaunchedEffect(serviceEditor?.id){resetScroll()}
-    fun goBack() {
+    BackHandler(!editorPanel&&serviceEditor!=null){vm.cancelAi();vm.clearMessage();serviceEditor=null}
+    LaunchedEffect(serviceEditor?.id){resetContentScroll()}
+    fun closeEditor() {
+        if(s.saving)return
+        if(!s.loaded){onCloseEditor();return}
         vm.cancelAi();vm.clearMessage()
-        when(page) {
-            "photo" -> {if(draft?.batch?.results?.isNotEmpty()==true)abandon=true else page=initialPage}
-            "review" -> {if(draft?.batch?.kind=="manual"){vm.abandonBatch();page=manualReturn}else {vm.abandonBatch();page=if(draft?.batch?.kind=="edit")"editor" else "picker"}}
-            "picker" -> page="editor"
-            "editor" -> {if(draft?.isEmpty()==true)vm.discard();page=initialPage}
-            "services" -> page=servicesReturn
-            else -> page=initialPage
+        if(vm.state.value.draft?.isEmpty()==true)vm.discard()
+        onCloseEditor()
+    }
+    fun goBack() {
+        if(s.saving)return
+        if(!s.loaded){onCloseEditor();return}
+        if(serviceEditor!=null){vm.cancelAi();vm.clearMessage();serviceEditor=null;return}
+        vm.cancelAi();vm.clearMessage()
+        val action=foodBackAction(page,draft?.batch,manualReturn,servicesReturn)
+        when {
+            action.confirmDiscard->abandon=true
+            action.page==null->closeEditor()
+            else->{if(action.discardBatch)vm.abandonBatch();page=action.page}
         }
     }
-    BackHandler(serviceEditor==null&&page!=initialPage){goBack()}
-    DisposableEffect(Unit){onDispose{vm.cancelAi()}}
-    LaunchedEffect(page){resetScroll()}
-    LaunchedEffect(draft?.batch?.status){if(page=="photo"&&draft?.batch?.status=="review")resetScroll()}
-    LaunchedEffect(draft==null,initialPage){if(draft==null)page=initialPage}
-    if(serviceEditor==null)Column(
-        modifier=Modifier.padding(bottom=if(page in listOf("editor","review","photo")&&draft!=null)92.dp else 0.dp),
-        verticalArrangement=Arrangement.spacedBy(16.dp)
-    ) {
-        if(page!=initialPage) TextButton(onClick={goBack()}){Text("‹ "+stringResource(R.string.back_food))}
-        s.error?.let {resource->FoodCard {Text(stringResource(resource),color=MaterialTheme.colorScheme.error);TextButton(onClick=vm::clearMessage){Text(stringResource(R.string.done))}}}
-        s.message?.let {if(it==R.string.food_analysis_ready)FoodAnalysisReady() else Text(stringResource(it),color=MaterialTheme.colorScheme.primary)}
-        if(s.busy)FoodAnalysisStatus(s.analysisStage,s.analysisAttempt,s.analysisStartedAt,vm::cancelAi)
-        when(page) {
-            "home" -> {
-                Text(stringResource(R.string.food_today),style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.SemiBold)
-                TextButton(onClick={val day=LocalDate.parse(date);DatePickerDialog(context,{_,y,m,d->date=LocalDate.of(y,m+1,d).toString()},day.year,day.monthValue-1,day.dayOfMonth).show()}){Text(date)}
-                val meals=s.meals.filter {!it.deleted && Instant.ofEpochMilli(it.time).atZone(ZoneId.systemDefault()).toLocalDate().toString()==date}
-                val totals=Nutrients.sum(meals.map {it.nutrients})
-                val hasDraft=draft?.isEmpty()==false
-                FoodCard(color=MaterialTheme.colorScheme.primaryContainer){Text("${fmt(totals.kcal)} kcal",fontSize=42.sp,fontWeight=FontWeight.Light);NutritionRow(totals);Text(stringResource(R.string.food_day_incomplete),style=MaterialTheme.typography.bodySmall)}
-                Button(onClick={if(hasDraft){page=if(draft?.batch?.kind=="photo")"photo" else if(draft?.batch!=null)"review" else "editor"}else {vm.newMeal();page="editor"}},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Icon(Icons.Default.Add,null);Text(stringResource(R.string.food_add))}
-                if(hasDraft) {
-                    TextButton(onClick={page=if(draft.batch?.status=="review"||draft.batch?.kind in listOf("manual","library","edit"))"review" else if(draft.batch?.kind=="photo")"photo" else "editor"}){Text(stringResource(R.string.food_resume))}
-                    TextButton(onClick={discardDialog=true}){Text(stringResource(R.string.food_discard))}
-                }
-                if(meals.isEmpty())Text(stringResource(R.string.food_empty),color=MaterialTheme.colorScheme.onSurfaceVariant)
-                meals.forEach {meal->MealRow(meal,dateFormatter.format(Instant.ofEpochMilli(meal.time))){selectedMeal=meal.id}}
-                s.meals.filter {it.deleted}.forEach {meal->FoodCard {Text(meal.title);Text(stringResource(R.string.status_delete_failed),color=MaterialTheme.colorScheme.error);TextButton(onClick={if(s.permitted)vm.retry(meal.id) else authorize()}){Text(stringResource(if(s.permitted)R.string.retry else R.string.food_nutrition_authorize))}}}
-                if(!s.permitted||!s.healthAvailable)NutritionConnectionCard(s.healthAvailable,s.permitted,authorize){openHealth()}
-                Text(stringResource(R.string.food_nutrition_note),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            "mealHistory" -> {
-                Text(stringResource(R.string.all_records),style=MaterialTheme.typography.headlineSmall)
-                if(s.meals.none {!it.deleted})Text(stringResource(R.string.food_empty))
-                s.meals.filter {!it.deleted}.forEach {meal->MealRow(meal,dateFormatter.format(Instant.ofEpochMilli(meal.time))){selectedMeal=meal.id}}
-            }
-            "editor" -> if(draft!=null) {
-                Text(stringResource(R.string.food_add),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold)
-                var editingTime by rememberSaveable(draft.meal.id){mutableStateOf(draft.meal.items.isEmpty()&&draft.batch==null)}
-                if(editingTime)MealTime(draft.meal){m->vm.updateDraft {it.copy(meal=m)}}
-                else TextButton(enabled=!s.busy&&!s.saving,onClick={editingTime=true}){Text(mealTimeLabel(draft.meal))}
-                if(draft.batch!=null) {
-                    OutlinedButton(onClick={page=if(draft.batch.status=="review"||draft.batch.kind in listOf("manual","library","edit"))"review" else "photo"},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.food_pending_addition))}
-                    TextButton(onClick=vm::abandonBatch){Text(stringResource(R.string.food_discard_addition))}
-                } else {
-                    Button(enabled=!s.busy&&!s.saving,onClick={addChooser=true},modifier=Modifier.fillMaxWidth().heightIn(min=56.dp)){Icon(Icons.Default.Add,null);Spacer(Modifier.width(8.dp));Text(stringResource(R.string.food_add_food))}
-                }
-                if(draft.meal.advice.hasContent)MealAdviceCard(draft.meal.advice,draft.meal.usage,draft.meal.analysisMs)
-                draft.meal.items.forEach {food->key(food.id){
-                    FoodItemCard(food=food,favorite=s.library.any {it.favorite&&FoodLibraryRules.nameKey(it.item.name)==FoodLibraryRules.nameKey(food.name)},
-                        enabled=!s.busy&&!s.saving,editEnabled=draft.batch==null&&!s.busy&&!s.saving,
-                        onFavorite={vm.favorite(food,it)},onEdit={vm.reviewItem(food);page="review"},onRemove={vm.removeItem(food.id)})
-                }}
-                if(draft.meal.items.isNotEmpty())FoodCard(color=MaterialTheme.colorScheme.secondaryContainer){Text(stringResource(R.string.food_meal_total),fontWeight=FontWeight.SemiBold);Text("${fmt(draft.meal.nutrients.kcal)} kcal",style=MaterialTheme.typography.headlineMedium);NutritionRow(draft.meal.nutrients);if(listOf(draft.meal.nutrients.kcal,draft.meal.nutrients.protein,draft.meal.nutrients.carbs,draft.meal.nutrients.fat).any {it==null})Text(stringResource(R.string.food_nutrition_partial),style=MaterialTheme.typography.bodySmall)}
-                Text(stringResource(R.string.food_draft_note),style=MaterialTheme.typography.bodySmall)
-                TextButton(enabled=!s.saving,onClick={discardDialog=true}){Text(stringResource(R.string.food_discard))}
-            } else TextButton(onClick={vm.newMeal()}){Text(stringResource(R.string.food_add))}
-            "photo", "review" -> draft?.batch?.let {batch->
-                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                    Text(stringResource(if(batch.kind=="manual")R.string.food_manual_action else if(batch.status=="review")R.string.food_review_results else R.string.food_add_photos),Modifier.weight(1f),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold)
-                    if(batch.kind=="photo") {
-                        val service=s.services.find {it.id==s.selectedService}
-                        Text(stringResource(R.string.food_powered_by,service?.name ?: stringResource(R.string.food_service_none)),modifier=Modifier.weight(.8f).clickable(enabled=!s.busy){selector="vision-current"}.padding(vertical=8.dp),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    BackHandler(!editorPanel&&serviceEditor==null&&page!=initialPage){goBack()}
+    DisposableEffect(Unit){onDispose{if(editorPanel&&vm.state.value.loaded)vm.cancelAi()}}
+    LaunchedEffect(page){resetContentScroll()}
+    LaunchedEffect(draft?.batch?.status){if(page=="photo"&&draft?.batch?.status=="review")resetContentScroll()}
+    LaunchedEffect(s.loaded,draft==null,s.saving){if(editorPanel&&s.loaded&&draft==null&&!s.saving)onCloseEditor()}
+    val screenContent:@Composable ()->Unit = {
+        if(serviceEditor==null)Column(
+            verticalArrangement=Arrangement.spacedBy(16.dp)
+        ) {
+            if(!editorPanel&&page!=initialPage)IconButton(onClick={goBack()}){Icon(Icons.AutoMirrored.Filled.ArrowBack,stringResource(R.string.back_food))}
+            s.error?.let {resource->FoodCard {Text(stringResource(resource),color=MaterialTheme.colorScheme.error);TextButton(onClick=vm::clearMessage){Text(stringResource(R.string.done))}}}
+            s.message?.let {if(it==R.string.food_analysis_ready)FoodAnalysisReady() else Text(stringResource(it),color=MaterialTheme.colorScheme.primary)}
+            if(s.busy)FoodAnalysisStatus(s.analysisStage,s.analysisAttempt,s.analysisStartedAt,vm::cancelAi)
+            when(page) {
+                "home" -> {
+                    Text(stringResource(R.string.food_today),style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.SemiBold)
+                    TextButton(onClick={val day=LocalDate.parse(date);DatePickerDialog(context,{_,y,m,d->date=LocalDate.of(y,m+1,d).toString()},day.year,day.monthValue-1,day.dayOfMonth).show()}){Text(date)}
+                    val meals=s.meals.filter {!it.deleted && Instant.ofEpochMilli(it.time).atZone(ZoneId.systemDefault()).toLocalDate().toString()==date}
+                    val totals=Nutrients.sum(meals.map {it.nutrients})
+                    val hasDraft=draft?.isEmpty()==false
+                    FoodCard(color=MaterialTheme.colorScheme.primaryContainer){Text("${fmt(totals.kcal)} kcal",fontSize=42.sp,fontWeight=FontWeight.Light);NutritionRow(totals);Text(stringResource(R.string.food_day_incomplete),style=MaterialTheme.typography.bodySmall)}
+                    Button(enabled=s.loaded,onClick=onStartMeal,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Icon(Icons.Default.Add,null);Text(stringResource(R.string.food_add))}
+                    if(hasDraft) {
+                        TextButton(onClick={onOpenEditor(foodDraftPage(draft))}){Text(stringResource(R.string.food_resume))}
+                        TextButton(onClick={discardDialog=true}){Text(stringResource(R.string.food_discard))}
                     }
+                    if(meals.isEmpty())Text(stringResource(R.string.food_empty),color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    meals.forEach {meal->MealRow(meal,dateFormatter.format(Instant.ofEpochMilli(meal.time))){selectedMeal=meal.id}}
+                    s.meals.filter {it.deleted}.forEach {meal->FoodCard {Text(meal.title);Text(stringResource(R.string.status_delete_failed),color=MaterialTheme.colorScheme.error);TextButton(onClick={if(s.permitted)vm.retry(meal.id) else authorize()}){Text(stringResource(if(s.permitted)R.string.retry else R.string.food_nutrition_authorize))}}}
+                    if(!s.permitted||!s.healthAvailable)NutritionConnectionCard(s.healthAvailable,s.permitted,authorize){openHealth()}
+                    Text(stringResource(R.string.food_nutrition_note),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if(batch.kind=="manual") {
-                    FilledTonalButton(onClick={vm.abandonBatch();page="picker"},modifier=Modifier.fillMaxWidth().heightIn(min=72.dp),shape=FoodCardShape){
-                        Icon(Icons.Default.List,null,Modifier.size(26.dp));Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(stringResource(R.string.food_choose_library),style=MaterialTheme.typography.titleMedium);Text(stringResource(R.string.food_library_shortcut_hint),style=MaterialTheme.typography.bodySmall)};Text("›",style=MaterialTheme.typography.headlineSmall)
+                "mealHistory" -> {
+                    Text(stringResource(R.string.all_records),style=MaterialTheme.typography.headlineSmall)
+                    if(s.meals.none {!it.deleted})Text(stringResource(R.string.food_empty))
+                    s.meals.filter {!it.deleted}.forEach {meal->MealRow(meal,dateFormatter.format(Instant.ofEpochMilli(meal.time))){selectedMeal=meal.id}}
+                }
+                "editor" -> if(draft!=null) {
+                    if(!editorPanel)Text(stringResource(R.string.food_add),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold)
+                    var editingTime by rememberSaveable(draft.meal.id){mutableStateOf(draft.meal.items.isEmpty()&&draft.batch==null)}
+                    if(editingTime)MealTime(draft.meal){m->vm.updateDraft {it.copy(meal=m)}}
+                    else TextButton(enabled=!s.busy&&!s.saving,onClick={editingTime=true}){Text(mealTimeLabel(draft.meal))}
+                    if(draft.batch!=null) {
+                        OutlinedButton(onClick={page=if(draft.batch.status=="review"||draft.batch.kind in listOf("manual","library","edit"))"review" else "photo"},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.food_pending_addition))}
+                        TextButton(onClick=vm::abandonBatch){Text(stringResource(R.string.food_discard_addition))}
+                    } else {
+                        Button(enabled=!s.busy&&!s.saving,onClick={addChooser=true},modifier=Modifier.fillMaxWidth().heightIn(min=56.dp)){Icon(Icons.Default.Add,null);Spacer(Modifier.width(8.dp));Text(stringResource(R.string.food_add_food))}
                     }
-                    Text(stringResource(R.string.food_or_enter_manually),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                if(batch.photos.isNotEmpty()||batch.kind=="photo"&&batch.status!="review")FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {batch.photos.forEachIndexed {index,path->
-                    Box(Modifier.width(96.dp)){
-                        PhotoPreview(path,compact=true)
-                        if(batch.kind=="photo"&&batch.status!="review")IconButton(enabled=!s.busy,onClick={vm.removePhoto(path)},modifier=Modifier.align(Alignment.TopEnd).size(40.dp)){
-                            Surface(shape=RoundedCornerShape(50),color=androidx.compose.ui.graphics.Color.Black.copy(alpha=.55f),modifier=Modifier.size(24.dp)){
-                                Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Icon(Icons.Default.Close,contentDescription=stringResource(R.string.food_remove_photo,index+1),modifier=Modifier.size(14.dp),tint=androidx.compose.ui.graphics.Color.White)}
+                    if(draft.meal.advice.hasContent||draft.meal.usage.hasContent||draft.meal.analysisMs!=null)MealAdviceCard(draft.meal.advice,draft.meal.nutrients,draft.meal.usage,draft.meal.analysisMs)
+                    draft.meal.items.forEach {food->key(food.id){
+                        FoodItemCard(food=food,favorite=s.library.any {it.favorite&&FoodLibraryRules.nameKey(it.item.name)==FoodLibraryRules.nameKey(food.name)},
+                            enabled=!s.busy&&!s.saving,editEnabled=draft.batch==null&&!s.busy&&!s.saving,
+                            onFavorite={vm.favorite(food,it)},onEdit={vm.reviewItem(food);page="review"},onRemove={vm.removeItem(food.id)})
+                    }}
+                    if(draft.meal.items.isNotEmpty())FoodCard(color=MaterialTheme.colorScheme.secondaryContainer){Text(stringResource(R.string.food_meal_total),fontWeight=FontWeight.SemiBold);Text("${fmt(draft.meal.nutrients.kcal)} kcal",style=MaterialTheme.typography.headlineMedium);NutritionRow(draft.meal.nutrients);if(listOf(draft.meal.nutrients.kcal,draft.meal.nutrients.protein,draft.meal.nutrients.carbs,draft.meal.nutrients.fat).any {it==null})Text(stringResource(R.string.food_nutrition_partial),style=MaterialTheme.typography.bodySmall)}
+                    Text(stringResource(R.string.food_draft_note),style=MaterialTheme.typography.bodySmall)
+                    TextButton(enabled=!s.saving,onClick={discardDialog=true}){Text(stringResource(R.string.food_discard))}
+                } else TextButton(onClick={vm.newMeal()}){Text(stringResource(R.string.food_add))}
+                "photo", "review" -> draft?.batch?.let {batch->
+                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                        if(!editorPanel)Text(stringResource(if(batch.kind=="manual")R.string.food_manual_action else if(batch.status=="review")R.string.food_review_results else R.string.food_add_photos),Modifier.weight(1f),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold)
+                        if(batch.kind=="photo") {
+                            val service=s.services.find {it.id==s.selectedService}
+                            Text(stringResource(R.string.food_powered_by,service?.name ?: stringResource(R.string.food_service_none)),modifier=Modifier.weight(.8f).clickable(enabled=!s.busy){selector="vision-current"}.padding(vertical=8.dp),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    if(batch.kind=="manual") {
+                        FilledTonalButton(onClick={vm.abandonBatch();page="picker"},modifier=Modifier.fillMaxWidth().heightIn(min=72.dp),shape=FoodCardShape){
+                            Icon(Icons.Default.List,null,Modifier.size(26.dp));Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(stringResource(R.string.food_choose_library),style=MaterialTheme.typography.titleMedium);Text(stringResource(R.string.food_library_shortcut_hint),style=MaterialTheme.typography.bodySmall)};Text("›",style=MaterialTheme.typography.headlineSmall)
+                        }
+                        Text(stringResource(R.string.food_or_enter_manually),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if(batch.photos.isNotEmpty()||batch.kind=="photo"&&batch.status!="review")FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {batch.photos.forEachIndexed {index,path->
+                        Box(Modifier.width(96.dp)){
+                            PhotoPreview(path,compact=true)
+                            if(batch.kind=="photo"&&batch.status!="review")IconButton(enabled=!s.busy,onClick={vm.removePhoto(path)},modifier=Modifier.align(Alignment.TopEnd).size(40.dp)){
+                                Surface(shape=RoundedCornerShape(50),color=androidx.compose.ui.graphics.Color.Black.copy(alpha=.55f),modifier=Modifier.size(24.dp)){
+                                    Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Icon(Icons.Default.Close,contentDescription=stringResource(R.string.food_remove_photo,index+1),modifier=Modifier.size(14.dp),tint=androidx.compose.ui.graphics.Color.White)}
+                                }
                             }
                         }
                     }
-                }
-                    if(batch.kind=="photo"&&batch.status!="review"&&batch.photos.size<FoodImages.MAX_PHOTOS)Surface(onClick={imageChooser=true},enabled=!s.busy,shape=FoodImageShape,color=MaterialTheme.colorScheme.surfaceContainerHigh,modifier=Modifier.width(96.dp).height(88.dp)){
-                        Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Icon(Icons.Default.Add,contentDescription=stringResource(R.string.food_add_images),modifier=Modifier.size(36.dp),tint=MaterialTheme.colorScheme.primary)}
-                    }
-                }
-                if(batch.kind=="photo") {
-                    if(batch.status!="review") {
-                        Text(stringResource(R.string.food_multi_photo_hint),style=MaterialTheme.typography.bodySmall)
-                        var sharingDialog by remember(batch.id){mutableStateOf(false)}
-                        if(sharingDialog)SharingCountDialog(batch.shareCount,onDismiss={sharingDialog=false}){count->vm.updateBatch {it.copy(shareCount=count)};sharingDialog=false}
-                        Text(stringResource(R.string.food_sharing_mode),style=MaterialTheme.typography.labelLarge)
-                        FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                            listOf(1 to R.string.food_tag_solo,2 to R.string.food_tag_two,3 to R.string.food_tag_three).forEach {(count,label)->FilterChip(enabled=!s.busy,selected=batch.shareCount==count,onClick={vm.updateBatch {it.copy(shareCount=count)}},label={Text(stringResource(label))})}
-                            FilterChip(enabled=!s.busy,selected=batch.shareCount>3,onClick={sharingDialog=true},label={Text(if(batch.shareCount>3)stringResource(R.string.food_context_shared,batch.shareCount) else stringResource(R.string.food_sharing_other))})
-                        }
-                        FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){(listOf(R.string.food_tag_oil,R.string.food_tag_sauce,R.string.food_tag_soup,R.string.food_tag_no_dip)).forEach {label->val tag=stringResource(label);FilterChip(enabled=!s.busy,selected=tag in batch.tags,onClick={vm.updateBatch {it.copy(tags=if(tag in it.tags)it.tags-tag else it.tags+tag)}},label={Text(tag)})}}
-                        OutlinedTextField(enabled=!s.busy,value=batch.description,onValueChange={v->vm.updateBatch {it.copy(description=v.take(2000))}},label={Text(stringResource(R.string.food_description))},placeholder={Text(stringResource(R.string.food_description_hint))},minLines=3,modifier=Modifier.fillMaxWidth())
-                        Text(stringResource(R.string.food_personal_rule),style=MaterialTheme.typography.bodySmall)
-                        if(batch.status=="interrupted")Text(stringResource(R.string.food_analysis_interrupted),color=MaterialTheme.colorScheme.error)
-                        Button(enabled=!s.busy&&batch.photos.isNotEmpty(),onClick={analyze()},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.food_analyze))}
-                    }
-                }
-                if(batch.status=="review") {
-                    if(batch.advice.hasContent)MealAdviceCard(batch.advice,batch.usage,batch.analysisMs)
-                    Text(stringResource(R.string.food_personal_results),color=MaterialTheme.colorScheme.primary)
-                    if(batch.kind=="photo"&&batch.results.any {it.estimateContext?.resultMode!="personal"})Text(stringResource(R.string.food_portion_old_result),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    batch.results.forEach {food->key(food.id){
-                        var expanded by rememberSaveable(batch.id,food.id){mutableStateOf(batch.kind in listOf("manual","edit"))}
-                        FoodItemCard(food=food,favorite=s.library.any {it.favorite&&FoodLibraryRules.nameKey(it.item.name)==FoodLibraryRules.nameKey(food.name)},
-                            enabled=!s.busy,expanded=expanded,showHeader=batch.kind!="manual"||food.name.isNotBlank(),
-                            onFavorite={vm.favorite(food,it)},onEdit={expanded=!expanded},onRemove={vm.removeResult(food.id);if(batch.results.size==1)page="editor"},
-                            editor={FoodFields(food,enabled=!s.busy,onChange=vm::updateResult)})
-                    }}
-                    if(batch.kind=="photo")TextButton(onClick={reanalyze=true}){Text(stringResource(R.string.food_change_context))}
-                }
-            }
-            "picker" -> {
-                Text(stringResource(R.string.food_library),style=MaterialTheme.typography.headlineSmall)
-                OutlinedTextField(search,{search=it;libraryPage=0},label={Text(stringResource(R.string.food_search))},singleLine=true,modifier=Modifier.fillMaxWidth())
-                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){FilterChip(selected=pickerTab=="all",onClick={pickerTab="all";libraryPage=0},label={Text(stringResource(R.string.food_library_all))});FilterChip(selected=pickerTab=="favorites",onClick={pickerTab="favorites";libraryPage=0},label={Text(stringResource(R.string.food_favorites))})}
-                OutlinedButton(onClick={manualReturn="picker";vm.beginManual();page="review"},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.food_add_manual))}
-                Text(stringResource(R.string.food_library_rules),style=MaterialTheme.typography.bodySmall)
-                val entries=s.library.filter {(pickerTab!="favorites"||it.favorite)&&it.item.name.contains(search,true)}
-                LaunchedEffect(entries.size){libraryPage=libraryPage.coerceAtMost(((entries.size-1)/20).coerceAtLeast(0))}
-                if(entries.isEmpty())Text(stringResource(R.string.food_library_empty))
-                entries.drop(libraryPage*20).take(20).forEach {entry->key(entry.id){FoodCard {
-                    Row(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically){entry.item.photos.firstOrNull()?.let {path->Box(Modifier.width(72.dp)){PhotoPreview(path,compact=true)}};Column(Modifier.weight(1f)){Text(entry.item.name,style=MaterialTheme.typography.titleLarge);Text("${fmt(entry.item.nutrients.kcal)} kcal · ${entry.item.portion}");Text(stringResource(R.string.food_usage_count,entry.useCount),style=MaterialTheme.typography.labelSmall)}}
-                    Row {TextButton(onClick={vm.beginLibrary(entry);page="review"}){Text(stringResource(R.string.food_add_to_meal))};TextButton(onClick={vm.favorite(entry.item,!entry.favorite)}){Text(stringResource(if(entry.favorite)R.string.food_unfavorite else R.string.food_to_favorites))};TextButton(onClick={libraryEditing=entry}){Text(stringResource(R.string.food_edit))}}
-                }}}
-                if(entries.size>20)Row(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically){
-                    TextButton(enabled=libraryPage>0,onClick={libraryPage--;resetScroll()}){Text(stringResource(R.string.food_previous_page))}
-                    Text("${libraryPage+1} / ${(entries.size+19)/20}",style=MaterialTheme.typography.labelSmall)
-                    TextButton(enabled=(libraryPage+1)*20<entries.size,onClick={libraryPage++;resetScroll()}){Text(stringResource(R.string.food_next_page))}
-                }
-            }
-            "services" -> {
-                Text(stringResource(R.string.food_service_hint),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                if(s.services.isNotEmpty())SettingsGroup(stringResource(R.string.settings_ai_manage)) {
-                    s.services.forEachIndexed {index,service->
-                        if(index>0)SettingsDivider()
-                        val badges=listOfNotNull(if(service.id==s.defaultVision)stringResource(R.string.ai_default_image_badge) else null,if(service.id==s.defaultText)stringResource(R.string.ai_default_text_badge) else null)
-                        val detail=listOf(stringResource(if(service.format=="anthropic")R.string.ai_anthropic else R.string.ai_openai),service.model,stringResource(if(service.images)R.string.food_service_vision else R.string.food_service_text_only))+badges
-                        val copyName=stringResource(R.string.ai_service_copy_name,service.name.take(64))
-                        Row(verticalAlignment=Alignment.CenterVertically) {
-                            Box(Modifier.weight(1f)){SettingsRow(service.name,detail.joinToString(" · ")){vm.clearMessage();serviceEditor=service}}
-                            TextButton(enabled=!s.busy,onClick={vm.copyService(service,copyName){serviceEditor=it}},modifier=Modifier.padding(end=8.dp)){Text(stringResource(R.string.ai_service_copy))}
+                        if(batch.kind=="photo"&&batch.status!="review"&&batch.photos.size<FoodImages.MAX_PHOTOS)Surface(onClick={imageChooser=true},enabled=!s.busy,shape=FoodImageShape,color=MaterialTheme.colorScheme.surfaceContainerHigh,modifier=Modifier.width(96.dp).height(88.dp)){
+                            Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Icon(Icons.Default.Add,contentDescription=stringResource(R.string.food_add_images),modifier=Modifier.size(36.dp),tint=MaterialTheme.colorScheme.primary)}
                         }
                     }
+                    if(batch.kind=="photo") {
+                        if(batch.status!="review") {
+                            Text(stringResource(R.string.food_multi_photo_hint),style=MaterialTheme.typography.bodySmall)
+                            var sharingDialog by remember(batch.id){mutableStateOf(false)}
+                            if(sharingDialog)SharingCountDialog(batch.shareCount,onDismiss={sharingDialog=false}){count->vm.updateBatch {it.copy(shareCount=count)};sharingDialog=false}
+                            Text(stringResource(R.string.food_sharing_mode),style=MaterialTheme.typography.labelLarge)
+                            FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                                listOf(1 to R.string.food_tag_solo,2 to R.string.food_tag_two,3 to R.string.food_tag_three).forEach {(count,label)->FilterChip(enabled=!s.busy,selected=batch.shareCount==count,onClick={vm.updateBatch {it.copy(shareCount=count)}},label={Text(stringResource(label))})}
+                                FilterChip(enabled=!s.busy,selected=batch.shareCount>3,onClick={sharingDialog=true},label={Text(if(batch.shareCount>3)stringResource(R.string.food_context_shared,batch.shareCount) else stringResource(R.string.food_sharing_other))})
+                            }
+                            FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){(listOf(R.string.food_tag_oil,R.string.food_tag_sauce,R.string.food_tag_soup,R.string.food_tag_no_dip)).forEach {label->val tag=stringResource(label);FilterChip(enabled=!s.busy,selected=tag in batch.tags,onClick={vm.updateBatch {it.copy(tags=if(tag in it.tags)it.tags-tag else it.tags+tag)}},label={Text(tag)})}}
+                            OutlinedTextField(enabled=!s.busy,value=batch.description,onValueChange={v->vm.updateBatch {it.copy(description=v.take(2000))}},label={Text(stringResource(R.string.food_description))},placeholder={Text(stringResource(R.string.food_description_hint))},minLines=3,modifier=Modifier.fillMaxWidth())
+                            Text(stringResource(R.string.food_personal_rule),style=MaterialTheme.typography.bodySmall)
+                            if(batch.status=="interrupted")Text(stringResource(R.string.food_analysis_interrupted),color=MaterialTheme.colorScheme.error)
+                            Button(enabled=!s.busy&&batch.photos.isNotEmpty(),onClick={analyze()},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.food_analyze))}
+                        }
+                    }
+                    if(batch.status=="review") {
+                        if(batch.kind=="photo"||batch.advice.hasContent||batch.usage.hasContent)MealAdviceCard(batch.advice,Nutrients.sum(batch.results.map {it.nutrients}),batch.usage,batch.analysisMs)
+                        Text(stringResource(R.string.food_personal_results),color=MaterialTheme.colorScheme.primary)
+                        if(batch.kind=="photo"&&batch.results.any {it.estimateContext?.resultMode!="personal"})Text(stringResource(R.string.food_portion_old_result),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        batch.results.forEach {food->key(food.id){
+                            var expanded by rememberSaveable(batch.id,food.id){mutableStateOf(batch.kind in listOf("manual","edit"))}
+                            FoodItemCard(food=food,favorite=s.library.any {it.favorite&&FoodLibraryRules.nameKey(it.item.name)==FoodLibraryRules.nameKey(food.name)},
+                                enabled=!s.busy,expanded=expanded,showHeader=batch.kind!="manual"||food.name.isNotBlank(),
+                                onFavorite={vm.favorite(food,it)},onEdit={expanded=!expanded},onRemove={vm.removeResult(food.id);if(batch.results.size==1)page="editor"},
+                                editor={FoodFields(food,enabled=!s.busy,onChange=vm::updateResult)})
+                        }}
+                        if(batch.kind=="photo")TextButton(onClick={reanalyze=true}){Text(stringResource(R.string.food_change_context))}
+                    }
                 }
-                else Text(stringResource(R.string.food_ai_unconfigured))
-                OutlinedButton(onClick={vm.clearMessage();serviceEditor=AiService()},modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.Add,null);Text(stringResource(R.string.food_service_add))}
-                SettingsGroup(stringResource(R.string.food_services)) {
-                    SettingsRow(stringResource(R.string.settings_image_default),s.services.find {it.id==s.defaultVision}?.let {it.name+" · "+it.model} ?: stringResource(R.string.food_not_set)){selector="vision-default"}
-                    SettingsDivider()
-                    SettingsRow(stringResource(R.string.settings_text_default),s.services.find {it.id==s.defaultText}?.let {it.name+" · "+it.model} ?: stringResource(R.string.food_not_set)){selector="text-default"}
+                "picker" -> {
+                    if(!editorPanel)Text(stringResource(R.string.food_library),style=MaterialTheme.typography.headlineSmall)
+                    OutlinedTextField(search,{search=it;libraryPage=0},label={Text(stringResource(R.string.food_search))},singleLine=true,modifier=Modifier.fillMaxWidth())
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){FilterChip(selected=pickerTab=="all",onClick={pickerTab="all";libraryPage=0},label={Text(stringResource(R.string.food_library_all))});FilterChip(selected=pickerTab=="favorites",onClick={pickerTab="favorites";libraryPage=0},label={Text(stringResource(R.string.food_favorites))})}
+                    OutlinedButton(onClick={manualReturn="picker";vm.beginManual();page="review"},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.food_add_manual))}
+                    Text(stringResource(R.string.food_library_rules),style=MaterialTheme.typography.bodySmall)
+                    val entries=s.library.filter {(pickerTab!="favorites"||it.favorite)&&it.item.name.contains(search,true)}
+                    LaunchedEffect(entries.size){libraryPage=libraryPage.coerceAtMost(((entries.size-1)/20).coerceAtLeast(0))}
+                    if(entries.isEmpty())Text(stringResource(R.string.food_library_empty))
+                    entries.drop(libraryPage*20).take(20).forEach {entry->key(entry.id){FoodCard {
+                        Row(horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically){entry.item.photos.firstOrNull()?.let {path->Box(Modifier.width(72.dp)){PhotoPreview(path,compact=true)}};Column(Modifier.weight(1f)){Text(entry.item.name,style=MaterialTheme.typography.titleLarge);Text("${fmt(entry.item.nutrients.kcal)} kcal · ${entry.item.portion}");Text(stringResource(R.string.food_usage_count,entry.useCount),style=MaterialTheme.typography.labelSmall)}}
+                        Row {TextButton(onClick={vm.beginLibrary(entry);page="review"}){Text(stringResource(R.string.food_add_to_meal))};TextButton(onClick={vm.favorite(entry.item,!entry.favorite)}){Text(stringResource(if(entry.favorite)R.string.food_unfavorite else R.string.food_to_favorites))};TextButton(onClick={libraryEditing=entry}){Text(stringResource(R.string.food_edit))}}
+                    }}}
+                    if(entries.size>20)Row(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically){
+                        TextButton(enabled=libraryPage>0,onClick={libraryPage--;resetScroll()}){Text(stringResource(R.string.food_previous_page))}
+                        Text("${libraryPage+1} / ${(entries.size+19)/20}",style=MaterialTheme.typography.labelSmall)
+                        TextButton(enabled=(libraryPage+1)*20<entries.size,onClick={libraryPage++;resetScroll()}){Text(stringResource(R.string.food_next_page))}
+                    }
                 }
-                Text(stringResource(R.string.food_test_note),style=MaterialTheme.typography.bodySmall)
+                "services" -> {
+                    Text(stringResource(R.string.food_service_hint),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    if(s.services.isNotEmpty())SettingsGroup(stringResource(R.string.settings_ai_manage)) {
+                        s.services.forEachIndexed {index,service->
+                            if(index>0)SettingsDivider()
+                            val badges=listOfNotNull(if(service.id==s.defaultVision)stringResource(R.string.ai_default_image_badge) else null,if(service.id==s.defaultText)stringResource(R.string.ai_default_text_badge) else null)
+                            val detail=listOf(stringResource(if(service.format=="anthropic")R.string.ai_anthropic else R.string.ai_openai),service.model,stringResource(if(service.images)R.string.food_service_vision else R.string.food_service_text_only))+badges
+                            val copyName=stringResource(R.string.ai_service_copy_name,service.name.take(64))
+                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                Box(Modifier.weight(1f)){SettingsRow(service.name,detail.joinToString(" · ")){vm.clearMessage();serviceEditor=service}}
+                                TextButton(enabled=!s.busy,onClick={vm.copyService(service,copyName){serviceEditor=it}},modifier=Modifier.padding(end=8.dp)){Text(stringResource(R.string.ai_service_copy))}
+                            }
+                        }
+                    }
+                    else Text(stringResource(R.string.food_ai_unconfigured))
+                    OutlinedButton(onClick={vm.clearMessage();serviceEditor=AiService()},modifier=Modifier.fillMaxWidth()){Icon(Icons.Default.Add,null);Text(stringResource(R.string.food_service_add))}
+                    SettingsGroup(stringResource(R.string.food_services)) {
+                        SettingsRow(stringResource(R.string.settings_image_default),s.services.find {it.id==s.defaultVision}?.let {it.name+" · "+it.model} ?: stringResource(R.string.food_not_set)){selector="vision-default"}
+                        SettingsDivider()
+                        SettingsRow(stringResource(R.string.settings_text_default),s.services.find {it.id==s.defaultText}?.let {it.name+" · "+it.model} ?: stringResource(R.string.food_not_set)){selector="text-default"}
+                    }
+                    Text(stringResource(R.string.food_test_note),style=MaterialTheme.typography.bodySmall)
 
+                }
             }
         }
+        else serviceEditor?.let {service->ServiceEditPage(service,s.services.any {it.id==service.id},s.error,s.message,s.busy,showNavigation=!editorPanel,onChanged=vm::clearMessage,onDismiss={vm.cancelAi();vm.clearMessage();serviceEditor=null},onTest={input,key->vm.testService(input,key)},onModels=vm::fetchModels,onCancelModels={vm.cancelAi();vm.clearMessage()},onDelete={serviceEditor=null;confirmServiceDelete=service}){input,key->vm.saveService(input,key){serviceEditor=null}}}
     }
+    if(editorPanel) {
+        FoodPanel(onDismiss={goBack()},onOutside={closeEditor()}) {
+            Row(Modifier.fillMaxWidth().padding(start=12.dp,end=12.dp,bottom=12.dp),verticalAlignment=Alignment.CenterVertically) {
+                if(page!="editor"||serviceEditor!=null)IconButton(enabled=!s.saving,onClick={goBack()}){Icon(Icons.AutoMirrored.Filled.ArrowBack,stringResource(R.string.back_food))}
+                val title=when {
+                    serviceEditor!=null->if(s.services.any {it.id==serviceEditor?.id})R.string.food_edit_service else R.string.food_service_add
+                    page=="picker"->R.string.food_library
+                    page=="services"->R.string.food_services
+                    page=="review"&&draft?.batch?.kind=="manual"->R.string.food_manual_action
+                    page in listOf("photo","review")&&draft?.batch?.status=="review"->R.string.food_review_results
+                    page=="photo"->R.string.food_add_photos
+                    else->R.string.food_add
+                }
+                Text(stringResource(title),Modifier.weight(1f).padding(start=if(page=="editor")12.dp else 0.dp),style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.SemiBold)
+                IconButton(enabled=!s.saving,onClick={closeEditor()}){Icon(Icons.Default.Close,stringResource(R.string.food_close_keep_draft))}
+            }
+            Box(Modifier.weight(1f).fillMaxWidth().imePadding()) {
+                val hasSave=s.loaded&&serviceEditor==null&&foodSaveAction(page,draft,s.busy,s.saving)!=null
+                Column(Modifier.fillMaxSize().verticalScroll(panelScroll).padding(horizontal=24.dp).padding(bottom=if(hasSave)160.dp else 24.dp)) {screenContent()}
+                if(serviceEditor==null)FoodSaveButton(vm,s,page,panelScroll,onMealSaved,Modifier.align(Alignment.BottomEnd).padding(horizontal=24.dp,vertical=18.dp))
+                if(s.saving)CircularProgressIndicator(Modifier.align(Alignment.BottomEnd).padding(24.dp))
+            }
+        }
+    } else screenContent()
     if(addChooser||imageChooser)ModalBottomSheet(onDismissRequest={addChooser=false;imageChooser=false},containerColor=MaterialTheme.colorScheme.surfaceContainerLow,tonalElevation=0.dp){
         val rowColors=ListItemDefaults.colors(containerColor=MaterialTheme.colorScheme.surfaceContainerLow)
         Text(stringResource(if(imageChooser)R.string.food_add_images else R.string.food_add_food),Modifier.padding(horizontal=24.dp,vertical=12.dp),style=MaterialTheme.typography.titleLarge)
@@ -291,11 +344,10 @@ import kotlinx.coroutines.delay
         Spacer(Modifier.height(24.dp))
     }
     if(noVisualGuide)AlertDialog(onDismissRequest={noVisualGuide=false},title={Text(stringResource(R.string.food_no_visual_title))},text={Text(stringResource(R.string.food_no_visual))},confirmButton={TextButton(onClick={noVisualGuide=false;servicesReturn=page;page="services"}){Text(stringResource(R.string.food_configure_ai))}},dismissButton={TextButton(onClick={noVisualGuide=false}){Text(stringResource(R.string.cancel))}})
-    if(reanalyze)AlertDialog(onDismissRequest={reanalyze=false},title={Text(stringResource(R.string.food_change_context))},text={Text(stringResource(R.string.food_reanalysis_replace))},confirmButton={TextButton(onClick={reanalyze=false;vm.updateBatch {it.copy(status="idle")};resetScroll()}){Text(stringResource(R.string.food_edit_analysis_context))}},dismissButton={TextButton(onClick={reanalyze=false}){Text(stringResource(R.string.cancel))}})
+    if(reanalyze)AlertDialog(onDismissRequest={reanalyze=false},title={Text(stringResource(R.string.food_change_context))},text={Text(stringResource(R.string.food_reanalysis_replace))},confirmButton={TextButton(onClick={reanalyze=false;vm.updateBatch {it.copy(status="idle")};resetContentScroll()}){Text(stringResource(R.string.food_edit_analysis_context))}},dismissButton={TextButton(onClick={reanalyze=false}){Text(stringResource(R.string.cancel))}})
     if(abandon)AlertDialog(onDismissRequest={abandon=false},title={Text(stringResource(R.string.food_discard_addition))},text={Text(stringResource(R.string.food_pending_note))},confirmButton={TextButton(onClick={vm.abandonBatch();abandon=false;page="editor"}){Text(stringResource(R.string.food_discard_addition))}},dismissButton={TextButton(onClick={abandon=false}){Text(stringResource(R.string.cancel))}})
     libraryEditing?.let {entry->FoodEditDialog(entry.item,onDismiss={libraryEditing=null}){vm.updateLibrary(entry.id,it);libraryEditing=null}}
     if(syncGuide)AlertDialog(onDismissRequest={syncGuide=false},title={Text(stringResource(R.string.food_local_saved_title))},text={Text(stringResource(if(s.healthAvailable)R.string.food_sync_guide else R.string.food_health_unavailable))},confirmButton={TextButton(onClick={syncGuide=false;if(s.healthAvailable)authorize() else openHealth()}){Text(stringResource(if(s.healthAvailable)R.string.food_nutrition_authorize else R.string.health_settings))}},dismissButton={TextButton(onClick={syncGuide=false}){Text(stringResource(R.string.food_continue_local))}})
-    draftConflict?.let {meal->AlertDialog(onDismissRequest={draftConflict=null},title={Text(stringResource(R.string.food_draft_exists))},text={Text(stringResource(R.string.food_draft_note))},confirmButton={TextButton(onClick={if(conflictRepeat)vm.repeat(meal) else vm.edit(meal);draftConflict=null;page="editor"}){Text(stringResource(R.string.food_new_anyway))}},dismissButton={TextButton(onClick={draftConflict=null;page="editor"}){Text(stringResource(R.string.food_resume))}})}
     if(discardDialog)AlertDialog(onDismissRequest={discardDialog=false},title={Text(stringResource(R.string.food_discard))},text={Text(stringResource(R.string.food_draft_note))},confirmButton={TextButton(onClick={vm.discard();discardDialog=false;page="home"}){Text(stringResource(R.string.food_discard))}},dismissButton={TextButton(onClick={discardDialog=false}){Text(stringResource(R.string.cancel))}})
     if(selector.isNotEmpty()) {
         var default by remember(selector){mutableStateOf(false)}
@@ -313,23 +365,46 @@ import kotlinx.coroutines.delay
         }},confirmButton={TextButton(onClick={selector=""}){Text(stringResource(R.string.cancel))}})
     }
     consent?.let {service->AlertDialog(onDismissRequest={consent=null},title={Text(stringResource(R.string.food_ai_consent_title))},text={Column(verticalArrangement=Arrangement.spacedBy(12.dp)){Text(service.name+"\n"+service.baseUrl);Text(stringResource(R.string.food_ai_consent_note))}},confirmButton={TextButton(onClick={consent=null;vm.consent(service){vm.analyze()}}){Text(stringResource(R.string.food_send_agree))}},dismissButton={TextButton(onClick={consent=null}){Text(stringResource(R.string.cancel))}})}
-    serviceEditor?.let {service->ServiceEditPage(service,s.services.any {it.id==service.id},s.error,s.message,s.busy,onChanged=vm::clearMessage,onDismiss={vm.cancelAi();vm.clearMessage();serviceEditor=null},onTest={input,key->vm.testService(input,key)},onModels=vm::fetchModels,onCancelModels={vm.cancelAi();vm.clearMessage()},onDelete={serviceEditor=null;confirmServiceDelete=service}){input,key->vm.saveService(input,key){serviceEditor=null}}}
     confirmServiceDelete?.let {service->AlertDialog(onDismissRequest={confirmServiceDelete=null},title={Text(stringResource(R.string.food_service_delete))},text={Text(service.name+"\n"+stringResource(R.string.food_delete_service_confirm))},confirmButton={TextButton(onClick={vm.deleteService(service.id);confirmServiceDelete=null}){Text(stringResource(R.string.food_service_delete))}},dismissButton={TextButton(onClick={confirmServiceDelete=null}){Text(stringResource(R.string.cancel))}})}
-    selectedMeal?.let {id->s.meals.find {it.id==id}?.let {meal->
-        var deleting by remember(id){mutableStateOf(false)}
-        AlertDialog(onDismissRequest={selectedMeal=null},title={Text(stringResource(if(deleting)R.string.food_delete_title else R.string.food_view_details))},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
-            Text(meal.title)
-            if(meal.advice.hasContent)MealAdviceCard(meal.advice,meal.usage,meal.analysisMs)
-            Text(dateFormatter.format(Instant.ofEpochMilli(meal.time)));NutritionRow(meal.nutrients);Text(stringResource(foodStatus(meal.status)))
-            if(deleting){Text(stringResource(R.string.food_delete_note));TextButton(onClick={vm.delete(meal,false);selectedMeal=null}){Text(stringResource(R.string.food_delete_local))};TextButton(onClick={vm.delete(meal,true);selectedMeal=null}){Text(stringResource(R.string.food_delete_both))}}
-            else {
-                TextButton(onClick={selectedMeal=null;if(draft!=null){draftConflict=meal;conflictRepeat=true}else{vm.repeat(meal);page="editor"}}){Text(stringResource(R.string.food_repeat))}
-                TextButton(onClick={selectedMeal=null;if(draft!=null){draftConflict=meal;conflictRepeat=false}else{vm.edit(meal);page="editor"}}){Text(stringResource(R.string.food_edit_meal))}
-                if(meal.status!="synced")TextButton(onClick={if(s.permitted)vm.retry(meal.id) else authorize()}){Text(stringResource(if(s.permitted)R.string.retry else R.string.food_nutrition_authorize))}
-                TextButton(onClick={deleting=true}){Text(stringResource(R.string.food_delete_title))}
-            }
-        }},confirmButton={TextButton(onClick={selectedMeal=null}){Text(stringResource(R.string.done))}})
-    }}
+    selectedMeal?.let {id->SavedMealDetails(vm,id,onDismiss={selectedMeal=null},onEditDraft={onOpenEditor("editor")},authorize=authorize)}
+}
+
+@Composable internal fun SavedMealDetails(vm:FoodViewModel,mealId:String,onDismiss:()->Unit,onEditDraft:()->Unit,authorize:()->Unit) {
+    val state by vm.state.collectAsStateWithLifecycle()
+    val meal=state.meals.find {it.id==mealId&&!it.deleted}
+    LaunchedEffect(state.loaded,meal==null){if(state.loaded&&meal==null)onDismiss()}
+    if(meal==null)return
+    var deleting by remember(mealId){mutableStateOf(false)}
+    var pendingAction by remember(mealId){mutableStateOf<String?>(null)}
+    fun editDraft(repeat:Boolean) {
+        if(repeat)vm.repeat(meal)else vm.edit(meal)
+        onDismiss();onEditDraft()
+    }
+    fun requestEdit(repeat:Boolean) {
+        if(state.draft?.isEmpty()==false)pendingAction=if(repeat)"repeat"else"edit"
+        else editDraft(repeat)
+    }
+    MealDetailsSheet(
+        meal=meal,onDismiss=onDismiss,onRepeat={requestEdit(true)},onEdit={requestEdit(false)},
+        onRetry={if(state.permitted)vm.retry(meal.id)else authorize()},
+        retryLabel=if(state.permitted)R.string.retry else R.string.food_nutrition_authorize,
+        onDelete={deleting=true}
+    )
+    if(pendingAction!=null)AlertDialog(
+        onDismissRequest={pendingAction=null},title={Text(stringResource(R.string.food_draft_exists))},
+        text={Text(stringResource(R.string.food_draft_note))},
+        confirmButton={TextButton(onClick={editDraft(pendingAction=="repeat")}){Text(stringResource(R.string.food_new_anyway))}},
+        dismissButton={TextButton(onClick={onDismiss();onEditDraft()}){Text(stringResource(R.string.food_resume))}}
+    )
+    if(deleting)AlertDialog(
+        onDismissRequest={deleting=false},title={Text(stringResource(R.string.food_delete_title))},
+        text={Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            Text(stringResource(R.string.food_delete_note))
+            OutlinedButton(onClick={vm.delete(meal,false);onDismiss()},modifier=Modifier.fillMaxWidth()) {Text(stringResource(R.string.food_delete_local))}
+            OutlinedButton(onClick={vm.delete(meal,true);onDismiss()},modifier=Modifier.fillMaxWidth()) {Text(stringResource(R.string.food_delete_both))}
+        }},
+        confirmButton={TextButton(onClick={deleting=false}){Text(stringResource(R.string.cancel))}}
+    )
 }
 
 private val FoodStarOutline by lazy {
@@ -342,7 +417,7 @@ private val FoodStarOutline by lazy {
 private val FoodCardShape=RoundedCornerShape(22.dp)
 private val FoodImageShape=RoundedCornerShape(12.dp)
 
-@Composable private fun FoodCard(color:androidx.compose.ui.graphics.Color=MaterialTheme.colorScheme.surfaceContainerLow,content:@Composable ColumnScope.()->Unit) {Surface(shape=FoodCardShape,color=color,modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp),content=content)}}
+@Composable private fun FoodCard(color:androidx.compose.ui.graphics.Color=lerp(MaterialTheme.colorScheme.surface,MaterialTheme.colorScheme.surfaceVariant,.42f),content:@Composable ColumnScope.()->Unit) {Surface(shape=FoodCardShape,color=color,modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp),content=content)}}
 /** One food presentation shared by pending analysis and confirmed meal items. */
 @Composable private fun FoodItemCard(
     food:FoodItem,favorite:Boolean,onFavorite:(Boolean)->Unit,onEdit:()->Unit,onRemove:()->Unit,
@@ -379,31 +454,134 @@ private val FoodImageShape=RoundedCornerShape(12.dp)
 @Composable private fun FoodSuggestion(label:Int,text:String) {
     Text(stringResource(label)+"　"+text,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
 }
-@Composable private fun MealAdviceCard(advice:MealAdvice,usage:AiUsage,analysisMs:Long?) {
-    if(!advice.hasContent&&!usage.hasContent&&analysisMs==null)return
+@Composable private fun MealAdviceCard(advice:MealAdvice,nutrients:Nutrients,usage:AiUsage,analysisMs:Long?) {
     Surface(
         shape=FoodCardShape,
-        color=MaterialTheme.colorScheme.primaryContainer.copy(alpha=.58f),
-        contentColor=MaterialTheme.colorScheme.onPrimaryContainer,
+        color=lerp(MaterialTheme.colorScheme.surface,MaterialTheme.colorScheme.primaryContainer,.32f),
+        contentColor=MaterialTheme.colorScheme.onSurface,
         modifier=Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(horizontal=18.dp,vertical=20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                Icon(Icons.Default.Favorite,null,Modifier.size(20.dp),tint=MaterialTheme.colorScheme.primary)
+                Surface(shape=CircleShape,color=MaterialTheme.colorScheme.primaryContainer) {
+                    Icon(Icons.Default.Favorite,null,Modifier.padding(8.dp).size(18.dp),tint=MaterialTheme.colorScheme.primary)
+                }
                 Text(stringResource(R.string.food_meal_advice),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.SemiBold)
             }
+            MealNutritionSummary(nutrients)
+            if(usage.hasContent||analysisMs!=null)FoodAnalysisUsage(usage,analysisMs)
+            if(advice.hasContent)HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant.copy(alpha=.6f))
             if(advice.healthiness.isNotBlank())Text(advice.healthiness,style=MaterialTheme.typography.bodyLarge,lineHeight=25.sp)
             if(advice.balance.isNotBlank())Text(advice.balance,style=MaterialTheme.typography.bodyLarge,lineHeight=25.sp)
             if(advice.nextTime.isNotBlank()) {
-                HorizontalDivider(color=MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=.14f))
-                Text(advice.nextTime,style=MaterialTheme.typography.bodyMedium,lineHeight=22.sp)
+                Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                    Text(stringResource(R.string.food_advice_next),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
+                    Text(advice.nextTime,style=MaterialTheme.typography.bodyMedium,lineHeight=22.sp)
+                }
             }
-            if(advice.note.isNotBlank())Text(advice.note,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=.72f))
-            if(usage.hasContent||analysisMs!=null) {
-                HorizontalDivider(color=MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=.14f))
-                FoodAnalysisUsage(usage,analysisMs)
+            if(advice.note.isNotBlank())Text(advice.note,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(advice.hasContent)Text(stringResource(R.string.food_meal_advice_note),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable private fun MealNutritionSummary(nutrients:Nutrients) {
+    val locale=LocalConfiguration.current.locales[0]
+    val energy=remember(locale){NumberFormat.getNumberInstance(locale).apply {maximumFractionDigits=0}}
+    Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        Text(stringResource(R.string.food_intake_estimate),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+            Text(nutrients.kcal?.let {energy.format(it)} ?: "—",style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.SemiBold,color=MaterialTheme.colorScheme.primary)
+            Text("kcal",modifier=Modifier.padding(bottom=4.dp),style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        NutritionRow(nutrients)
+        if(listOf(nutrients.kcal,nutrients.protein,nutrients.carbs,nutrients.fat).any {it==null})
+            Text(stringResource(R.string.food_nutrition_partial),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable private fun FoodPanel(onDismiss:()->Unit,onOutside:()->Unit=onDismiss,content:@Composable ColumnScope.()->Unit) {
+    val colors=MaterialTheme.colorScheme
+    Dialog(onDismissRequest=onDismiss,properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)) {
+        val view=LocalView.current
+        SideEffect {(view.parent as? DialogWindowProvider)?.window?.setWindowAnimations(0)}
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            Box(Modifier.matchParentSize().clickable(interactionSource=remember {MutableInteractionSource()},indication=null,onClick=onOutside))
+            Surface(
+                color=colors.surface,shape=RoundedCornerShape(topStart=28.dp,topEnd=28.dp),
+                modifier=Modifier.align(Alignment.BottomCenter).widthIn(max=640.dp).fillMaxWidth().height(maxHeight*.9f)
+                    .pointerInput(Unit){detectTapGestures {}}
+            ) {
+                Column(Modifier.fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal+WindowInsetsSides.Bottom))
+                    .padding(top=16.dp),content=content)
             }
-            Text(stringResource(R.string.food_meal_advice_note),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=.65f))
+        }
+    }
+}
+
+@Composable private fun MealDetailsSheet(
+    meal:Meal,onDismiss:()->Unit,onEdit:()->Unit,onRepeat:()->Unit,onRetry:()->Unit,retryLabel:Int,onDelete:()->Unit
+) {
+    val colors=MaterialTheme.colorScheme
+    FoodPanel(onDismiss=onDismiss) {
+        Row(Modifier.fillMaxWidth().padding(start=24.dp,end=12.dp,bottom=12.dp),verticalAlignment=Alignment.CenterVertically) {
+            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                Text(stringResource(R.string.food_view_details),style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.SemiBold)
+                Text(mealTimeLabel(meal),style=MaterialTheme.typography.bodySmall,color=colors.onSurfaceVariant)
+            }
+            IconButton(onClick=onDismiss) {Icon(Icons.Default.Close,stringResource(R.string.done))}
+        }
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal=24.dp),
+            verticalArrangement=Arrangement.spacedBy(18.dp)
+        ) {
+            Text(meal.title,style=MaterialTheme.typography.titleMedium,color=colors.onSurfaceVariant,maxLines=2,overflow=TextOverflow.Ellipsis)
+            if(meal.advice.hasContent||meal.usage.hasContent||meal.analysisMs!=null)MealAdviceCard(meal.advice,meal.nutrients,meal.usage,meal.analysisMs)
+            else FoodCard {MealNutritionSummary(meal.nutrients)}
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                Icon(if(meal.status=="synced")Icons.Default.CheckCircle else Icons.Default.Info,null,Modifier.size(18.dp),tint=colors.onSurfaceVariant)
+                Text(stringResource(foodStatus(meal.status)),style=MaterialTheme.typography.bodySmall,color=colors.onSurfaceVariant,modifier=Modifier.weight(1f))
+                if(meal.status!="synced"&&meal.status!="writing")TextButton(onClick=onRetry){Text(stringResource(retryLabel))}
+            }
+            Text(stringResource(R.string.food_meal_items),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.SemiBold)
+            meal.items.forEach {food->key(food.id){MealDetailFood(food)}}
+            Spacer(Modifier.height(4.dp))
+        }
+        HorizontalDivider(color=colors.outlineVariant.copy(alpha=.6f))
+        Column(Modifier.padding(horizontal=24.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                Button(onClick=onEdit,modifier=Modifier.weight(1f).heightIn(min=48.dp)){Text(stringResource(R.string.food_edit_meal))}
+                FilledTonalButton(onClick=onRepeat,modifier=Modifier.weight(1f).heightIn(min=48.dp)){Text(stringResource(R.string.food_repeat))}
+            }
+            TextButton(onClick=onDelete,colors=ButtonDefaults.textButtonColors(contentColor=colors.error),modifier=Modifier.align(Alignment.End)) {
+                Text(stringResource(R.string.food_delete_title))
+            }
+        }
+    }
+}
+
+@Composable private fun MealDetailFood(food:FoodItem) {
+    var expanded by rememberSaveable(food.id){mutableStateOf(false)}
+    val locale=LocalConfiguration.current.locales[0]
+    val number=remember(locale){NumberFormat.getNumberInstance(locale).apply {maximumFractionDigits=1}}
+    Surface(shape=FoodCardShape,color=lerp(MaterialTheme.colorScheme.surface,MaterialTheme.colorScheme.surfaceVariant,.42f),modifier=Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth().clip(FoodImageShape).clickable(role=Role.Button,onClick={expanded=!expanded}).heightIn(min=48.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                    Text(food.name,style=MaterialTheme.typography.titleMedium)
+                    Text(food.portion,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text("${food.nutrients.kcal?.let {number.format(it)} ?: "—"} kcal",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
+                Icon(if(expanded)Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,stringResource(if(expanded)R.string.food_estimate_hide_details else R.string.food_estimate_show_details),Modifier.size(20.dp))
+            }
+            if(expanded) {
+                NutritionRow(food.nutrients)
+                if(food.assumptions.isNotBlank()||food.estimateContext!=null)FoodEstimateExplanation(food,number)
+                if(food.eatingAdvice.isNotBlank())FoodSuggestion(R.string.food_advice_now,food.eatingAdvice)
+                if(food.nextTimeAdvice.isNotBlank())FoodSuggestion(R.string.food_advice_next,food.nextTimeAdvice)
+                if(food.eatingAdvice.isBlank()&&food.nextTimeAdvice.isBlank()&&food.positiveFeedback.isNotBlank())Text(food.positiveFeedback,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
@@ -591,7 +769,7 @@ private fun foodStatus(status:String)=when(status){"synced"->R.string.status_syn
     AlertDialog(onDismissRequest=onDismiss,title={Text(stringResource(R.string.food_edit))},text={Column(Modifier.verticalScroll(rememberScrollState())){FoodFields(edited,onChange={edited=it})}},confirmButton={TextButton(enabled=edited.valid(),onClick={save(edited)}){Text(stringResource(R.string.save))}},dismissButton={TextButton(onClick=onDismiss){Text(stringResource(R.string.cancel))}})
 }
 
-@Composable private fun ServiceEditPage(service:AiService,existing:Boolean,error:Int?,message:Int?,busy:Boolean,onChanged:()->Unit,onDismiss:()->Unit,onTest:(AiService,String)->Unit,onModels:(AiService,String,(AiModelCatalog)->Unit)->Unit,onCancelModels:()->Unit,onDelete:()->Unit,save:(AiService,String)->Unit){
+@Composable private fun ServiceEditPage(service:AiService,existing:Boolean,error:Int?,message:Int?,busy:Boolean,showNavigation:Boolean=true,onChanged:()->Unit,onDismiss:()->Unit,onTest:(AiService,String)->Unit,onModels:(AiService,String,(AiModelCatalog)->Unit)->Unit,onCancelModels:()->Unit,onDelete:()->Unit,save:(AiService,String)->Unit){
     var name by remember(service.id){mutableStateOf(service.name)};var url by remember(service.id){mutableStateOf(service.baseUrl)}
     var model by remember(service.id){mutableStateOf(service.model)};var key by remember(service.id){mutableStateOf("")};var images by remember(service.id){mutableStateOf(service.images)}
     var format by remember(service.id){mutableStateOf(service.format)}
@@ -602,8 +780,8 @@ private fun foodStatus(status:String)=when(status){"synced"->R.string.status_syn
     fun fetch(){catalog=null;onModels(input(),key){catalog=it}}
     if(showModels)AiModelPicker(catalog,model,busy,error,onRetry={fetch()},onDismiss={onCancelModels();showModels=false},onSelect={model=it;onChanged();showModels=false})
     Column(Modifier.fillMaxWidth().imePadding(),verticalArrangement=Arrangement.spacedBy(14.dp)) {
-        TextButton(onClick=onDismiss){Text("‹ "+stringResource(R.string.back_food))}
-        Text(stringResource(if(existing)R.string.food_edit_service else R.string.food_service_add),style=MaterialTheme.typography.headlineSmall)
+        if(showNavigation)IconButton(onClick=onDismiss){Icon(Icons.AutoMirrored.Filled.ArrowBack,stringResource(R.string.back_food))}
+        if(showNavigation)Text(stringResource(if(existing)R.string.food_edit_service else R.string.food_service_add),style=MaterialTheme.typography.headlineSmall)
         OutlinedTextField(name,{name=it;onChanged()},enabled=!busy,modifier=Modifier.fillMaxWidth(),label={Text(stringResource(R.string.food_service_name))})
         Text(stringResource(R.string.ai_format),style=MaterialTheme.typography.labelLarge)
         listOf("openai" to R.string.ai_openai,"anthropic" to R.string.ai_anthropic).forEach {(id,label)->Row(Modifier.fillMaxWidth().selectable(selected=format==id,enabled=!busy,role=Role.RadioButton,onClick={format=id;onChanged()}).heightIn(min=48.dp),verticalAlignment=Alignment.CenterVertically){RadioButton(format==id,null,enabled=!busy);Text(stringResource(label))}}

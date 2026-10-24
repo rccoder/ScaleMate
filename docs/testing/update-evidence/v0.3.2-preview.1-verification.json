@@ -1,0 +1,56 @@
+{
+  "tag": "v0.3.2-preview.1",
+  "url": "https://github.com/rccoder/ScaleMate/releases/tag/v0.3.2-preview.1",
+  "prerelease": true,
+  "draft": false,
+  "versionName": "0.3.2-preview.1",
+  "versionCode": 11,
+  "sha256": "0fa72405ee66db8f33bf706dfe6585573ac201137d25a5c8786da91a0f722309",
+  "sizeBytes": 23925734,
+  "verifiedAssets": [
+    "SHA256SUMS",
+    "ScaleMate.apk",
+    "releases.json",
+    "releases.json.sig",
+    "signing-certificate.txt",
+    "update.json",
+    "update.json.sig"
+  ],
+  "fixedSigner": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5",
+  "commit": "e92e5f9b9db6856ccc0bc0509c0fc0dd0289decc",
+  "ciRun": "https://github.com/rccoder/ScaleMate/actions/runs/40066019057",
+  "releaseRun": "https://github.com/rccoder/ScaleMate/actions/runs/40066263282",
+  "assetSha256": {
+    "SHA256SUMS": "c6cbe909c7dfa8ed0eedc4af561588510af01857630363d131481069740c083c",
+    "ScaleMate.apk": "0fa72405ee66db8f33bf706dfe6585573ac201137d25a5c8786da91a0f722309",
+    "releases.json": "33b6fca43450259160e2e70878de9d3b8f0cd3301149f1ca9b455918d5100171",
+    "releases.json.sig": "8380fc32c079eb2b627d5555091608fce385904ac20b76a86027ed5893b90233",
+    "signing-certificate.txt": "7101d592bccd52f047dac7d1687cdf67aad27ae799e9fc0c4eaca182aa13f846",
+    "update.json": "7d0c0583a4a846a55a962144eba2c12d5053d57720e5eb24652bd7474cb98e3f",
+    "update.json.sig": "6e5dd45e71073e6d64106641347a8824d414cdda0b2e3cca790fc47af858a897"
+  },
+  "checks": {
+    "latestTag": "v0.3.1",
+    "globalVersionCodeOrder": "passed",
+    "releaseNotesMatch": "passed",
+    "updateManifest": "passed",
+    "updateIndex": "passed",
+    "updateJsonSignature": "passed",
+    "releasesJsonSignature": "passed",
+    "apkPackage": "app.scalemate",
+    "debuggable": false
+  },
+  "phoneUpgrade": {
+    "toVersion": "0.3.2-preview.1",
+    "toVersionCode": 11,
+    "status": "pending",
+    "reason": "User is testing independently; no phone operation or installation performed during this release. In-app download, system confirmation, data preservation and cancellation/retry still need verification."
+  },
+  "proxyChecks": {
+    "report": "v0.3.2-preview.1-routes.json",
+    "fullApkDownload": true,
+    "passedSources": 6,
+    "totalSources": 6,
+    "network": "Release verification from the development computer; not a guarantee for user networks."
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "tag": "v0.3.3",
+  "url": "https://github.com/rccoder/ScaleMate/releases/tag/v0.3.3",
+  "prerelease": false,
+  "draft": false,
+  "versionName": "0.3.3",
+  "versionCode": 13,
+  "sha256": "ac6ed0bb7c267c5208e9c0711612253bd1157e72e6e23cc5463f4f2aa422e261",
+  "sizeBytes": 23962750,
+  "verifiedAssets": [
+    "SHA256SUMS",
+    "ScaleMate.apk",
+    "releases.json",
+    "releases.json.sig",
+    "signing-certificate.txt",
+    "update.json",
+    "update.json.sig"
+  ],
+  "fixedSigner": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5",
+  "commit": "7a71404361ab4eceeb7e62570d9e43279597b30e",
+  "ciRun": "https://github.com/rccoder/ScaleMate/actions/runs/40163893387",
+  "releaseRun": "https://github.com/rccoder/ScaleMate/actions/runs/40164121979",
+  "assetSha256": {
+    "SHA256SUMS": "81ae4b18aa7b231e9d3d654bf2ca428d150f15e102a716901cdaf0bc0d6eaba4",
+    "ScaleMate.apk": "ac6ed0bb7c267c5208e9c0711612253bd1157e72e6e23cc5463f4f2aa422e261",
+    "releases.json": "d44dc381c606340c72754f37a55e378afb4248ea82ff1811e6968ca79fad42e4",
+    "releases.json.sig": "e74eb6e59a9c10a6a161799629c5c45bb1cb7d86cb78ee63fa3d69d3427a54f8",
+    "signing-certificate.txt": "7101d592bccd52f047dac7d1687cdf67aad27ae799e9fc0c4eaca182aa13f846",
+    "update.json": "d7e88cfcded836ff13f1a011b00924becabf79c326b8e03a0f136a92718a1ae6",
+    "update.json.sig": "89673d88c9d71c3c431e18d22817d6e4f80127cacae84ee64aa766a1a415a0ab"
+  },
+  "checks": {
+    "latestTag": "v0.3.3",
+    "globalVersionCodeOrder": "passed",
+    "releaseNotesMatch": "passed",
+    "updateManifest": "passed",
+    "updateIndex": "passed",
+    "updateJsonSignature": "passed",
+    "releasesJsonSignature": "passed",
+    "apkPackage": "app.scalemate",
+    "debuggable": false,
+    "latestDownload": {
+      "httpStatus": 200,
+      "sizeBytes": 23962750,
+      "sha256Matches": true
+    }
+  },
+  "phoneUpgrade": {
+    "toVersion": "0.3.3",
+    "toVersionCode": 13,
+    "status": "pending",
+    "reason": "User accepted the isolated orange test build and explicitly requested a stable release. No public-package in-app upgrade or data-preservation test was performed in this release session."
+  },
+  "proxyChecks": {
+    "report": "v0.3.3-routes.json",
+    "fullApkDownload": true,
+    "passedSources": 5,
+    "totalSources": 6,
+    "failedSources": [
+      "ghfast-top"
+    ],
+    "network": "Development computer; not a guarantee for user networks.",
+    "retries": 0
+  }
+}

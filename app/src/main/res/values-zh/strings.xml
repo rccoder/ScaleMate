@@ -526,4 +526,12 @@
     <string name="update_probe_failed">超时或暂不可用</string>
     <string name="update_probe_result">%1$s KB/s · 试读 64 KB 用时 %2$s 秒</string>
     <string name="update_probe_fastest">已测最快 · 点击选择</string>
+    <string name="food_merge_dish">合并为一道菜</string>
+    <string name="food_merge_hint">选中同一道菜的至少两项，并填写菜名。比如把鸡胸肉、蔬菜和酱汁合成一份轻食，饮料另留。合并只累加已有的本人营养，不额外调用 AI；保存这一餐后才加入食物库。</string>
+    <string name="food_merge_name">合并后的菜名</string>
+    <string name="food_merge_default_portion">所选食物合计的本人份量</string>
+    <string name="food_merge_total">合并后的营养</string>
+    <string name="food_merge_unknown">能量信息不完整</string>
+    <string name="food_merge_invalid">请先核对所选项目的营养数值；缺失数值会保持未知。</string>
+    <string name="food_merge_confirm">确认合并</string>
 </resources>

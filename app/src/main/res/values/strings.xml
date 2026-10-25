@@ -526,4 +526,12 @@
     <string name="update_probe_failed">Timed out or unavailable</string>
     <string name="update_probe_result">%1$s KB/s · 64 KB read in %2$s s</string>
     <string name="update_probe_fastest">Fastest measured route · tap to select</string>
+    <string name="food_merge_dish">Combine into one dish</string>
+    <string name="food_merge_hint">Select at least two parts of one dish and give it a name, such as chicken, vegetables and dressing for a salad. Keep drinks separate. Existing personal nutrition is added together without another AI call. Save the meal to add the dish to your food library.</string>
+    <string name="food_merge_name">Dish name</string>
+    <string name="food_merge_default_portion">Combined personal serving</string>
+    <string name="food_merge_total">Combined nutrition</string>
+    <string name="food_merge_unknown">Energy not fully provided</string>
+    <string name="food_merge_invalid">Check the selected nutrition values before combining. Missing values stay unknown.</string>
+    <string name="food_merge_confirm">Combine selected items</string>
 </resources>

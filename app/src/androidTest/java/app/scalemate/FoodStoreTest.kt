@@ -137,6 +137,33 @@ class FoodStoreTest {
             assertEquals(recognized.advice,restored.advice);assertEquals(usage,restored.usage);assertEquals(12_345L,restored.analysisMs)
         }
     }
+    @Test fun mergedLightMealIsStoredAndReusedAsOneDishWithoutChangingOldLibraryItems() {
+        context.deleteDatabase(name)
+        val chicken=FoodItem(name="鸡胸肉",base=Nutrients(180.0),source="ai",needsPortionReview=true)
+        val greens=FoodItem(name="蔬菜",base=Nutrients(40.0),source="ai",needsPortionReview=true)
+        val sauce=FoodItem(name="酱汁",base=Nutrients(80.0),source="ai",needsPortionReview=true)
+        val milk=FoodItem(name="牛奶",base=Nutrients(120.0),source="ai",needsPortionReview=true)
+        val batch=FoodBatch(results=listOf(chicken,greens,sauce,milk),status="review")
+            .mergeDish(setOf(chicken.id,greens.id,sauce.id),"鸡胸肉轻食","本人一份")
+        val draft=FoodDraft(batch=batch)
+        Store(context,name).use {db->val store=FoodStore(db)
+            store.favorite(chicken.copy(needsPortionReview=false),true)
+            store.setting("draft",FoodJson.draft(draft))
+            assertEquals(listOf("鸡胸肉"),store.library().map {it.item.name})
+            val restored=FoodJson.draft(store.setting("draft"))
+            val meal=restored.copy(batch=restored.batch!!.copy(results=restored.batch!!.results.map {it.copy(needsPortionReview=false)})).commitBatch().meal
+            store.save(meal)
+            assertEquals(setOf("鸡胸肉","鸡胸肉轻食","牛奶"),store.library().map {it.item.name}.toSet())
+            assertFalse(store.library().any {it.item.name in listOf("蔬菜","酱汁")})
+            assertEquals(0L,store.library().single {it.item.name=="鸡胸肉"}.useCount)
+            assertTrue(store.library().single {it.item.name=="鸡胸肉"}.favorite)
+        }
+        Store(context,name).use {db->val store=FoodStore(db)
+            val dish=store.library().single {it.item.name=="鸡胸肉轻食"}
+            assertEquals(1L,dish.useCount);assertEquals(300.0,dish.item.reuse().nutrients.kcal!!,0.001)
+            assertEquals(listOf("鸡胸肉轻食","牛奶"),store.meals().single().items.map {it.name})
+        }
+    }
     @Test fun libraryCountsNewMealsOnlyAndFavoritesKeepBaseline() {
         context.deleteDatabase(name)
         Store(context,name).use {db->val food=FoodStore(db)

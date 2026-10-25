@@ -79,6 +79,14 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
     fun updateBatch(change:(FoodBatch)->FoodBatch) {updateDraft {d->d.copy(batch=d.batch?.let(change))}}
     fun removeResult(id:String){updateDraft {it.removeBatchResult(id)}}
     fun updateResult(item:FoodItem) {updateBatch {b->b.copy(results=b.results.map {if(it.id==item.id)item else it})}}
+    internal fun mergeDish(batchId:String,ids:Set<String>,name:String,portion:String):Boolean {
+        val state=mutable.value
+        if(state.busy||state.saving)return false
+        val batch=state.draft?.batch?.takeIf {it.id==batchId} ?: return false
+        val merged=runCatching {batch.mergeDish(ids,name,portion)}.getOrElse {fail(R.string.food_merge_invalid);return false}
+        updateDraft {it.copy(batch=merged)}
+        return true
+    }
     fun abandonBatch() {cancelAi();updateDraft {it.copy(batch=null)}}
     private fun confirmedDraft():FoodDraft? {
         if(mutable.value.busy||mutable.value.saving)return null

@@ -1,0 +1,57 @@
+{
+  "date": "2026-10-26T01:06:15.531890+08:00",
+  "sourceBaseline": "eb344787de66c7c0e1d81a9ee3fda8f4714b77ef",
+  "variant": "-PfoodDev debug",
+  "versionName": "0.3.3",
+  "versionCode": 13,
+  "healthAiEnabled": false,
+  "apkSha256": "837e581ddb6841274e057a18277bb000d8058a67165466ccd7876bf64f8511c5",
+  "signerSha256": "4ecf6e774217bb741abc15420e42c6b757e0e3b2de83f413000209abc8cbce58",
+  "fullJvmRun": {
+    "tests": 195,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "navigationRerunAfterMidnightFixtureFix": {
+    "tests": 4,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "lint": {
+    "errors": 0,
+    "warnings": 133
+  },
+  "i18nPairedStrings": 769,
+  "nativeHealthConnect": {
+    "tests": 2,
+    "failures": 0,
+    "skipped": 0,
+    "categories": 9,
+    "fullMs": 1823,
+    "changesMs": 132,
+    "fourCachedPeriodsMs": 488,
+    "platformReadsWhileViewingCachedPeriods": 0
+  },
+  "installed": {
+    "emulator": {
+      "package": "app.scalemate.fooddev",
+      "apkMatches": true
+    },
+    "phone": {
+      "package": "app.scalemate.fooddev",
+      "apkMatches": true
+    }
+  },
+  "phoneDataPreserved": {
+    "sevenBusinessTables": true,
+    "preferences": true,
+    "comparison": "read-only in-memory SQLite and private temporary fingerprints; temporary file removed"
+  },
+  "boundaries": [
+    "Emulator timings use public synthetic history, not a phone performance guarantee.",
+    "Phone installation and data preservation verified; phone UI and sync timing not retested.",
+    "No food prompt changes or real food AI regression."
+  ]
+}

@@ -133,7 +133,7 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
             Column(
                 Modifier.fillMaxSize()
                     .then(if(actualPage=="health") Modifier.pullToRefresh(
-                            isRefreshing=healthState.busy,
+                            isRefreshing=healthState.busy&&healthState.syncStatus!="reading_cache",
                             state=healthPullState,
                             threshold=120.dp,
                             onRefresh={mainScope.launch {mainScroll.scrollTo(0)};healthVm.refresh()}
@@ -396,7 +396,7 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
             if(actualPage=="health") {
                 PullToRefreshDefaults.Indicator(
                     state=healthPullState,
-                    isRefreshing=healthState.busy,
+                    isRefreshing=healthState.busy&&healthState.syncStatus!="reading_cache",
                     modifier=Modifier.align(Alignment.TopCenter)
                 )
             }

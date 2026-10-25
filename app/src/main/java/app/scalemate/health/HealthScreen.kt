@@ -68,6 +68,7 @@ import kotlinx.coroutines.withContext
     var showAllMetrics by rememberSaveable {mutableStateOf(false)}
     var showAllTrends by rememberSaveable {mutableStateOf(false)}
     var view by rememberSaveable {mutableStateOf("cards")}
+    var rangeWindow by remember {mutableStateOf(s.window)}
     val today=LocalDate.now()
     val todayMetrics=HealthOverview.today(s.snapshot,today)
     val configuredService=s.serviceId.takeIf {id->s.services.any {it.id==id}}
@@ -76,7 +77,7 @@ import kotlinx.coroutines.withContext
         if(uri!=null&&file!=null)scope.launch {try {withContext(Dispatchers.IO){context.contentResolver.openOutputStream(uri)?.use {out->file.inputStream().use {it.copyTo(out)}} ?: error("No output")}}catch(_:Exception){localError=R.string.health_export_error}}
     }
     fun date(time:Long?)=time?.let {DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it))} ?: "—"
-    fun go(next:String){page=next}
+    fun go(next:String){if(next=="range"&&page!="custom")rangeWindow=s.window;page=next}
     fun disabledPage(next:String)=!BuildConfig.HEALTH_AI_ENABLED&&next in setOf("chat","conversations","reports","report","export","reminders","goals","privacy")
     fun settings(){try {context.startActivity(Intent("android.health.connect.action.HEALTH_HOME_SETTINGS"))}catch(_:Exception){localError=R.string.open_error}}
     fun share() {try {
@@ -93,19 +94,20 @@ import kotlinx.coroutines.withContext
     LaunchedEffect(initialReminderId){if(initialReminderId.isNotEmpty()){if(BuildConfig.HEALTH_AI_ENABLED){selectedReminder=initialReminderId;page="reminders"};consumeReminder()}}
     LaunchedEffect(selectedReminder,s.reminders){s.reminders.find {it.id==selectedReminder&&it.id!=loadedReminder}?.let {r->loadedReminder=r.id;if(r.snapshotId.isNotEmpty())vm.openSnapshot(r.snapshotId)}}
     BackHandler(page!="home"){if(s.generating)vm.cancel();page="home"}
-    DisposableEffect(Unit){onDispose {vm.cancel()}}
+    // Sync belongs to the activity-scoped model and continues when another tab is shown.
+    DisposableEffect(vm){onDispose {vm.cancelGeneration()}}
     val error=localError ?: s.error
     Column(verticalArrangement=Arrangement.spacedBy(16.dp)) {
         if(page!="home")TextButton(onClick={if(s.generating)vm.cancel();page="home"}){Text("‹ "+stringResource(R.string.health_title))}
         if(error!=null)HealthCard {Text(stringResource(error),color=MaterialTheme.colorScheme.error);TextButton(onClick={localError=null;vm.clearError()}){Text(stringResource(R.string.done))}}
         if(localMessage!=null)HealthCard {Text(stringResource(localMessage!!),color=MaterialTheme.colorScheme.primary);TextButton(onClick={localMessage=null}){Text(stringResource(R.string.done))}}
         if(!s.available)HealthCard {Text(stringResource(R.string.health_unavailable));TextButton(onClick=::settings){Text(stringResource(R.string.health_open_settings))}}
-        if(s.busy){LinearProgressIndicator(Modifier.fillMaxWidth());if(s.progress.isNotEmpty())Text(s.progress,style=MaterialTheme.typography.bodySmall);TextButton(onClick=vm::cancel){Text(stringResource(if(s.generating)R.string.health_stop else R.string.cancel))}}
+        if(s.busy&&s.syncStatus!="reading_cache"){LinearProgressIndicator(Modifier.fillMaxWidth());if(s.progress.isNotEmpty())Text(s.progress,style=MaterialTheme.typography.bodySmall);TextButton(onClick=vm::cancel){Text(stringResource(if(s.generating)R.string.health_stop else R.string.cancel))}}
         when(page) {
             "home"->{
                 HealthHomeHeader(s,readAt=date(s.snapshot?.readAt),asOf=date(s.snapshot?.dataAsOf),view=view,onView={view=it},onRange={go("range")},onRefresh=vm::refresh,onPermissions=managePermissions)
                 if(view=="cards") {
-                    if(todayMetrics.isEmpty()) {
+                    if(todayMetrics.isEmpty()&&!s.busy) {
                         HealthCard {
                             val hasRead=s.snapshot!=null&&s.categories.any {s.permissions[it]=="ready"}
                             Text(stringResource(if(hasRead)R.string.health_today_empty else R.string.health_no_data),fontWeight=FontWeight.Medium)
@@ -116,7 +118,7 @@ import kotlinx.coroutines.withContext
                                 TextButton(enabled=!s.busy&&s.categories.isNotEmpty(),onClick=vm::refresh){Text(stringResource(R.string.health_refresh_short))}
                             }
                         }
-                    } else {
+                    } else if(todayMetrics.isNotEmpty()) {
                         Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
                             todayMetrics.chunked(2).forEach {row->
                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -126,8 +128,8 @@ import kotlinx.coroutines.withContext
                             }
                         }
                     }
-                    Text(stringResource(R.string.health_last_synced,date(s.snapshot?.readAt),date(s.snapshot?.dataAsOf)),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     s.snapshot?.let {snapshot->
+                        Text(stringResource(R.string.health_last_synced,date(snapshot.readAt),date(snapshot.dataAsOf)),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         if(showAllMetrics) {
                             val priority=listOf("sleepMinutes","sessionMinutes","sleepBpm","nightRmssd","count","weight","energy","volume","distance")
                             val rows=snapshot.evidence.filter {it.period(snapshot.window) in setOf("analysis","partial")}.filter {it.field!="recordCount"&&!it.algorithm.startsWith("range-")}.groupBy {it.kind}
@@ -150,12 +152,12 @@ import kotlinx.coroutines.withContext
                     }
                 } else {
                     val trends=HealthOverview.trendKinds.mapNotNull {kind->HealthOverview.trend(s.snapshot,kind)?.let {kind to it}}
-                    if(trends.isEmpty()) {
+                    if(trends.isEmpty()&&!s.busy) {
                         HealthCard {
                             Text(stringResource(R.string.health_trend_empty),color=MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(stringResource(R.string.health_no_data_today_hint),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                    } else {
+                    } else if(trends.isNotEmpty()) {
                         val visible=if(showAllTrends)trends else trends.take(4)
                         Text(stringResource(R.string.health_trend_missing),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         visible.forEach {(kind,trend)->HealthTrendCard(kind,trend,chinese){vm.evidence(trend.lastEvidenceId)}}
@@ -218,20 +220,20 @@ import kotlinx.coroutines.withContext
             "range"->{
                 Text(stringResource(R.string.health_range),style=MaterialTheme.typography.headlineSmall)
                 FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    for((days,label) in listOf(7L to R.string.health_seven,28L to R.string.health_twentyeight,90L to R.string.health_ninety))FilterChip(enabled=!s.busy,selected=!s.window.allHistory&&s.window==HealthWindow.recent(days),onClick={vm.window(HealthWindow.recent(days))},label={Text(stringResource(label))})
-                    FilterChip(enabled=!s.busy,selected=s.window.allHistory,onClick={vm.window(HealthWindow.recent(7).copy(allHistory=true))},label={Text(stringResource(R.string.health_all))})
-                    FilterChip(enabled=!s.busy,selected=false,onClick={customStart=s.window.start;customEnd=s.window.end;customZone=s.window.zone;go("custom")},label={Text(stringResource(R.string.health_custom))})
+                    for((days,label) in listOf(7L to R.string.health_seven,28L to R.string.health_twentyeight,90L to R.string.health_ninety))FilterChip(enabled=!s.busy,selected=!rangeWindow.allHistory&&rangeWindow==HealthWindow.recent(days),onClick={rangeWindow=HealthWindow.recent(days)},label={Text(stringResource(label))})
+                    FilterChip(enabled=!s.busy,selected=rangeWindow.allHistory,onClick={rangeWindow=HealthWindow.recent(7).copy(allHistory=true)},label={Text(stringResource(R.string.health_all))})
+                    FilterChip(enabled=!s.busy,selected=false,onClick={customStart=rangeWindow.start;customEnd=rangeWindow.end;customZone=rangeWindow.zone;go("custom")},label={Text(stringResource(R.string.health_custom))})
                 }
-                Text("${s.window.start} — ${s.window.end}");Text(stringResource(R.string.health_range_note))
+                Text("${rangeWindow.start} — ${rangeWindow.end}");Text(stringResource(R.string.health_range_note))
                 if(s.historySupported&&!s.historyGranted)Text(stringResource(R.string.health_history_disabled),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                Button(enabled=!s.busy&&s.categories.isNotEmpty(),onClick={vm.refresh();go("home")},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_refresh))}
+                Button(enabled=!s.busy&&s.categories.isNotEmpty(),onClick={vm.window(rangeWindow);go("home")},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_view_period))}
             }
             "custom"->{
                 Text(stringResource(R.string.health_custom),style=MaterialTheme.typography.headlineSmall)
                 OutlinedTextField(customStart,{customStart=it},label={Text(stringResource(R.string.health_start))},modifier=Modifier.fillMaxWidth())
                 OutlinedTextField(customEnd,{customEnd=it},label={Text(stringResource(R.string.health_end))},modifier=Modifier.fillMaxWidth())
                 OutlinedTextField(customZone,{customZone=it},label={Text(stringResource(R.string.health_timezone))},modifier=Modifier.fillMaxWidth())
-                Button(onClick={try {require(LocalDate.parse(customEnd)<=LocalDate.now().plusDays(1));vm.window(HealthWindow(customStart,customEnd,customZone.trim()));go("range")}catch(_:Exception){localError=R.string.health_date_invalid}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.done))}
+                Button(onClick={try {require(LocalDate.parse(customEnd)<=LocalDate.now().plusDays(1));rangeWindow=HealthWindow(customStart,customEnd,customZone.trim());go("range")}catch(_:Exception){localError=R.string.health_date_invalid}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.done))}
             }
             "chat"->{
                 Text(stringResource(R.string.health_chat),style=MaterialTheme.typography.headlineSmall)

@@ -64,7 +64,7 @@ class HealthUiLocalTest {
         compose.onNodeWithText("健康隐私与历史").assertDoesNotExist()
         compose.onNodeWithText("健康对话").assertDoesNotExist()
         compose.onNodeWithText("主动提醒").assertDoesNotExist()
-        compose.onNodeWithText("分析时间范围").performScrollTo().performClick()
+        compose.onNodeWithText("查看时间范围").performScrollTo().performClick()
         compose.onNodeWithText("90 天").assertExists()
         compose.onNodeWithText("全部可读取历史").assertExists()
         screenshot("02-health-range-local")

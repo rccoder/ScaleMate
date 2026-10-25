@@ -539,9 +539,11 @@
     <string name="health_title">Health</string>
     <string name="health_intro">Understand your health, then take the next step.</string>
     <string name="health_analysis_source_note">Only Health Connect data is used. Local meals, weight and drafts that have not synced are excluded.</string>
-    <string name="health_refresh">Refresh health data</string>
     <string name="health_refresh_short">Refresh</string>
-    <string name="health_range">Analysis period</string>
+    <string name="health_range">Viewing period</string>
+    <string name="health_view_period">View</string>
+    <string name="health_sync_history">Syncing all readable history</string>
+    <string name="health_sync_changes">Syncing new and changed records</string>
     <string name="health_seven">7 days</string>
     <string name="health_twentyeight">28 days</string>
     <string name="health_ninety">90 days</string>
@@ -549,7 +551,7 @@
     <string name="health_custom">Custom dates</string>
     <string name="health_start">Start date</string>
     <string name="health_end">End date (exclusive)</string>
-    <string name="health_range_note">Reads the selected period; dates without data are not connected or filled with zero.</string>
+    <string name="health_range_note">Changes the viewing period using cached data. Missing dates are not connected or filled with zero.</string>
     <string name="health_read_at">Last read</string>
     <string name="health_data_as_of">Latest record</string>
     <string name="health_no_data">No health data read yet. Choose categories and grant read access to begin.</string>

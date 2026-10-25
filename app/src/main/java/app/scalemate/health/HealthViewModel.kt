@@ -29,7 +29,7 @@ data class HealthState(
     val exports:List<File> = emptyList(),val selectedEvidence:HealthEvidence?=null,val selectedEvidencePeriod:String="",val selectedEvidenceRecords:List<HealthRecord> = emptyList(),val selectedEvidenceRecordCount:Int=0,val selectedEvidenceReferences:List<HealthDetailReference> = emptyList(),val lastCheck:Long?=null,val sources:Map<String,String> = emptyMap(),val routeRequests:List<HealthRouteRequest> = emptyList(),val pendingRoute:HealthRouteRequest?=null,val syncStatus:String="idle",val syncProgress:String=""
 )
 
-class HealthViewModel(application:Application):AndroidViewModel(application) {
+class HealthViewModel @JvmOverloads constructor(application:Application,private val syncSource:HealthSyncSource?=null):AndroidViewModel(application) {
     private val db=Store(application);private val store=HealthStore(db);private val food=FoodStore(db)
     private val reader=HealthReader(application);private val ai=AiClient()
     private val mutable=MutableStateFlow(HealthState());val state=mutable.asStateFlow()
@@ -38,6 +38,7 @@ class HealthViewModel(application:Application):AndroidViewModel(application) {
     private fun task(block:suspend ()->Unit) {viewModelScope.launch {try {settingsMutex.withLock {block()}}catch(e:CancellationException){throw e}catch(_:Exception){mutable.update {it.copy(error=R.string.health_storage_error)}}}}
     init {reload()}
     fun reload(refreshIfStale:Boolean=false)=task {
+        val before=mutable.value.snapshot?.id
         val data=withContext(Dispatchers.IO) {
             store.prune()
             listOf("health_raw","health_exports").forEach {name->File(getApplication<Application>().cacheDir,name).listFiles()?.filter {it.lastModified()<System.currentTimeMillis()-86400000}?.forEach {it.deleteRecursively()}}
@@ -53,9 +54,10 @@ class HealthViewModel(application:Application):AndroidViewModel(application) {
                 window=if(!current.loaded)cached?.window ?: current.window else current.window,snapshot=cached,services=services,serviceId=current.serviceId.takeIf {id->services.any {it.id==id}} ?: food.setting("text").takeIf {id->services.any {it.id==id}} ?: services.singleOrNull()?.id.orEmpty(),
                 goals=store.goals(),reminderSettings=store.reminderSettings(),reminders=store.reminders(),conversations=store.conversations(),conversation=current.conversation,reports=store.reports(),lastCheck=store.setting("lastBackgroundCheck").toLongOrNull(),sources=store.sources())
         }
-        mutable.update {s->val revoked=s.permissions.any {(kind,status)->status=="ready"&&data.permissions[kind]!="ready"};s.copy(loaded=true,available=data.available,categories=data.categories,permissions=data.permissions,window=data.window,historySupported=data.historySupported,historyGranted=data.historyGranted,backgroundSupported=data.backgroundSupported,backgroundGranted=data.backgroundGranted,snapshot=if(s.busy)s.snapshot else data.snapshot,services=data.services,serviceId=data.serviceId,goals=data.goals,reminderSettings=data.reminderSettings,reminders=data.reminders,conversations=data.conversations,conversation=if(revoked)HealthConversation() else s.conversation,reports=data.reports,lastCheck=data.lastCheck,sources=data.sources)}
+        mutable.update {s->val revoked=s.permissions.any {(kind,status)->status=="ready"&&data.permissions[kind]!="ready"};val keep=!revoked&&(s.busy||s.snapshot?.id!=before);s.copy(loaded=true,available=data.available,categories=data.categories,permissions=data.permissions,window=if(keep)s.window else data.window,historySupported=data.historySupported,historyGranted=data.historyGranted,backgroundSupported=data.backgroundSupported,backgroundGranted=data.backgroundGranted,snapshot=if(keep)s.snapshot else data.snapshot,services=data.services,serviceId=data.serviceId,goals=data.goals,reminderSettings=data.reminderSettings,reminders=data.reminders,conversations=data.conversations,conversation=if(revoked)HealthConversation() else s.conversation,reports=data.reports,lastCheck=data.lastCheck,sources=data.sources)}
         if(BuildConfig.HEALTH_AI_ENABLED&&data.reminderSettings.enabled)HealthReminders.schedule(getApplication(),true)
-        if(refreshIfStale&&!mutable.value.busy&&data.categories.any {data.permissions[it]=="ready"}&&(data.snapshot==null||System.currentTimeMillis()-data.snapshot.readAt>60000))refresh()
+        val current=mutable.value
+        if(refreshIfStale&&!current.busy&&current.categories.any {current.permissions[it]=="ready"}&&(current.snapshot==null||System.currentTimeMillis()-current.snapshot.readAt>60000))refresh()
     }
     fun onReadPermissionsResult()=task {
         val data=withContext(Dispatchers.IO) {
@@ -70,26 +72,27 @@ class HealthViewModel(application:Application):AndroidViewModel(application) {
     }
     fun clearError(){mutable.update {it.copy(error=null)}}
     fun categories(ids:Set<String>) {if(mutable.value.busy)return;val selected=ids.intersect(HealthCatalog.kinds.map {it.id}.toSet());mutable.update {it.copy(categories=selected,snapshot=null,exports=emptyList())};task {withContext(Dispatchers.IO){store.categories(selected);store.setting("activeSnapshot","")}}}
-    fun window(w:HealthWindow){if(mutable.value.busy)return;mutable.update {it.copy(window=w,snapshot=null,exports=emptyList())};task {withContext(Dispatchers.IO){store.setting("activeSnapshot","")}}}
+    fun window(w:HealthWindow){if(mutable.value.busy)return;mutable.update {it.copy(window=w,exports=emptyList())};read(preferCache=true)}
     fun selectService(id:String,makeDefault:Boolean=false){if(mutable.value.busy)return;mutable.update {it.copy(serviceId=id,conversation=if(it.serviceId!=id)HealthConversation() else it.conversation,consent=null)};if(makeDefault)task {withContext(Dispatchers.IO){food.setting("text",id)}}}
     fun goals(g:HealthGoals){mutable.update {it.copy(goals=g)};task {withContext(Dispatchers.IO){store.goals(g)}}}
     fun reminderSettings(settings:HealthReminderSettings){mutable.update {it.copy(reminderSettings=settings)};task {withContext(Dispatchers.IO){store.reminderSettings(settings)};HealthReminders.schedule(getApplication(),BuildConfig.HEALTH_AI_ENABLED&&settings.enabled)}}
     fun source(kind:String,source:String){if(mutable.value.busy)return;val sources=mutable.value.sources+(kind to source);mutable.update {it.copy(sources=sources,snapshot=null)};task {withContext(Dispatchers.IO){store.sources(sources);store.setting("activeSnapshot","")}}}
     fun clearSource(kind:String){if(mutable.value.busy)return;val sources=mutable.value.sources-kind;mutable.update {it.copy(sources=sources,snapshot=null)};task {withContext(Dispatchers.IO){store.sources(sources);store.setting("activeSnapshot","")}}}
-    fun refresh() {
+    fun refresh()=read()
+    private fun read(preferCache:Boolean=false) {
         if(mutable.value.busy)return
-        mutable.update {it.copy(busy=true,error=null,exports=emptyList(),syncStatus="syncing",syncProgress="")}
+        mutable.update {it.copy(busy=true,error=null,exports=emptyList(),syncStatus=if(preferCache)"reading_cache" else "syncing",syncProgress="")}
         operation=viewModelScope.launch {
-            try {refreshNow()}
+            try {refreshNow(preferCache)}
             catch(e:CancellationException){throw e}
             catch(_:Exception){mutable.update {it.copy(error=R.string.health_read_error)}}
             finally {mutable.update {it.copy(busy=false,progress="",syncStatus=if(it.error==null)"idle" else "failed",syncProgress="")}}
         }
     }
-    private suspend fun refreshNow():HealthSnapshot {
+    private suspend fun refreshNow(preferCache:Boolean=false):HealthSnapshot {
         val current=mutable.value
         val zone=java.time.ZoneId.of(current.window.zone)
-        val requested=current.window.let {window->
+        val requested=if(preferCache)current.window else current.window.let {window->
             val today=LocalDate.now(zone)
             val previous=current.snapshot?.readAt?.let {Instant.ofEpochMilli(it).atZone(zone).toLocalDate()}
             if(previous?.toString()==window.end&&previous<today) {
@@ -97,14 +100,18 @@ class HealthViewModel(application:Application):AndroidViewModel(application) {
                 window.copy(start=if(window.allHistory)window.start else LocalDate.parse(window.start).plusDays(days).toString(),end=today.toString())
             } else window
         }
-        val snapshot=withContext(Dispatchers.IO) {
-            val result=HealthSync(store,reader).refresh(requested,current.categories,current.sources) {progress->
-                val label=HealthCatalog.kinds.find {it.id==progress}?.label(getApplication<Application>().resources.configuration.locales[0].language=="zh") ?: progress
-                mutable.update {it.copy(progress=label,syncProgress=label)}
+        val (snapshot,fromCache)=withContext(Dispatchers.IO) {
+            val sync=HealthSync(store,syncSource ?: reader)
+            val cached=preferCache&&sync.canUseCache(requested,current.categories)
+            val result=if(cached)sync.cached(requested,current.categories,current.sources) else sync.refresh(requested,current.categories,current.sources) {progress->
+                val app=getApplication<Application>()
+                val label=HealthCatalog.kinds.find {it.id==progress.detail}?.label(app.resources.configuration.locales[0].language=="zh") ?: progress.detail
+                val text=app.getString(if(progress.history)R.string.health_sync_history else R.string.health_sync_changes)+label.takeIf {it.isNotBlank()}?.let {" · $it"}.orEmpty()
+                mutable.update {it.copy(progress=text,syncProgress=text,syncStatus="syncing")}
             }
             val rawRoot=File(getApplication<Application>().cacheDir,"health_raw").apply {mkdirs()}
             val raw=File.createTempFile("snapshot-",".jsonl",rawRoot)
-            try {
+            val snapshot=try {
                 raw.bufferedWriter().use {out->result.records.filterNot {it.id.startsWith("aggregate:")}.forEach {record->
                     currentCoroutineContext().ensureActive()
                     out.write(HealthJson.cacheRecord(record).toString());out.newLine()
@@ -113,11 +120,12 @@ class HealthViewModel(application:Application):AndroidViewModel(application) {
                     store.transaction {store.snapshot(snapshot);store.setting("activeSnapshot",snapshot.id)}
                 }
             }catch(e:Throwable){raw.delete();throw e}
+            snapshot to cached
         }
         val permissions=withContext(Dispatchers.IO){HealthCatalog.kinds.associate {it.id to reader.state(it)}}
         mutable.update {it.copy(snapshot=snapshot,window=snapshot.window,permissions=permissions)}
-        val routes=if("ExerciseRoute" in current.categories)withContext(Dispatchers.IO){reader.routeRequests(snapshot.window)} else emptyList();mutable.update {it.copy(routeRequests=routes)}
-        val event=if(BuildConfig.HEALTH_AI_ENABLED)withContext(Dispatchers.IO){HealthReminderPolicy.evaluate(snapshot,store.reminderSettings(),store.goals(),store.reminders(),System.currentTimeMillis(),java.time.ZoneId.systemDefault())} else null
+        val routes=if("ExerciseRoute" in current.categories&&!fromCache)withContext(Dispatchers.IO){reader.routeRequests(snapshot.window)} else current.routeRequests;mutable.update {it.copy(routeRequests=routes)}
+        val event=if(BuildConfig.HEALTH_AI_ENABLED&&!fromCache)withContext(Dispatchers.IO){HealthReminderPolicy.evaluate(snapshot,store.reminderSettings(),store.goals(),store.reminders(),System.currentTimeMillis(),java.time.ZoneId.systemDefault())} else null
         if(event!=null)withContext(Dispatchers.IO){if(store.reminder(event))HealthReminders.notify(getApplication(),event,store.reminderSettings().showDetails)}
         val reminders=withContext(Dispatchers.IO){store.reminders()};mutable.update {it.copy(reminders=reminders)}
         mutable.update {it.copy(syncStatus="idle",syncProgress="")}
@@ -176,6 +184,7 @@ class HealthViewModel(application:Application):AndroidViewModel(application) {
         }
     }
     fun cancel(){generationId=null;operation?.cancel();operation=null;mutable.update {it.copy(consent=null)}}
+    fun cancelGeneration(){if(mutable.value.generating)cancel()}
     fun newConversation(){if(!mutable.value.busy)mutable.update {it.copy(conversation=HealthConversation())}}
     fun openConversation(c:HealthConversation){if(!mutable.value.busy)mutable.update {it.copy(conversation=c)}}
     fun deleteConversation(id:String){if(mutable.value.busy)return;task {withContext(Dispatchers.IO){store.deleteConversation(id)};mutable.update {it.copy(conversations=it.conversations.filterNot {c->c.id==id},conversation=if(it.conversation.id==id)HealthConversation() else it.conversation)}}}

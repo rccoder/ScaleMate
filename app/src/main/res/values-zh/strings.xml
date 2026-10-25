@@ -539,9 +539,11 @@
     <string name="health_title">健康</string>
     <string name="health_intro">看懂整体健康数据，再决定下一步。</string>
     <string name="health_analysis_source_note">只使用从 Health Connect 读到的数据；本地未同步的饮食、体重和草稿不参与。</string>
-    <string name="health_refresh">刷新健康数据</string>
     <string name="health_refresh_short">刷新</string>
-    <string name="health_range">分析时间范围</string>
+    <string name="health_range">查看时间范围</string>
+    <string name="health_view_period">查看</string>
+    <string name="health_sync_history">正在同步全部可读历史</string>
+    <string name="health_sync_changes">正在同步新增与变更</string>
     <string name="health_seven">7 天</string>
     <string name="health_twentyeight">28 天</string>
     <string name="health_ninety">90 天</string>
@@ -549,7 +551,7 @@
     <string name="health_custom">自定义日期</string>
     <string name="health_start">开始日期</string>
     <string name="health_end">结束日期（不含当天）</string>
-    <string name="health_range_note">按所选时间范围读取；没有数据的日期不连线和补零。</string>
+    <string name="health_range_note">仅切换展示范围，已有数据直接从本地查看；没有数据的日期不连线和补零。</string>
     <string name="health_read_at">最近读取</string>
     <string name="health_data_as_of">最新记录</string>
     <string name="health_no_data">尚未读取健康数据，请先选择类别并授权读取。</string>

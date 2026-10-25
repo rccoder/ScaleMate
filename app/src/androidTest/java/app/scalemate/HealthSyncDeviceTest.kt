@@ -18,6 +18,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.junit.Assert.*
@@ -29,6 +30,56 @@ import kotlin.coroutines.resumeWithException
 
 @RunWith(AndroidJUnit4::class)
 class HealthSyncDeviceTest {
+    @Test fun nativeMultiCategorySyncAndCachedViewingPeriods()=runBlocking {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        val context=instrumentation.targetContext
+        assumeTrue(InstrumentationRegistry.getArguments().getString("healthSyncLive")=="true")
+        assumeTrue(android.os.Build.FINGERPRINT.contains("generic")||android.os.Build.MODEL.contains("sdk_gphone"))
+        assertEquals("app.scalemate.fooddev",context.packageName)
+        instrumentation.startActivitySync(Intent(context,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        val reader=HealthReader(context)
+        val categories=(HealthCatalog.common+listOf("ActiveCaloriesBurned","Distance")).filter {reader.status(it)=="ready"}.toSet()
+        assertEquals("Grant the nine synthetic-data categories before running this test",9,categories.size)
+        val fullReads=AtomicInteger();val changeReads=AtomicInteger()
+        val source=object:HealthSyncSource by reader {
+            override suspend fun full(window:HealthWindow,categories:Set<String>,sources:Map<String,String>,progress:(String)->Unit):HealthSyncRead {
+                fullReads.incrementAndGet();return reader.full(window,categories,sources,progress)
+            }
+            override suspend fun changes(category:String,token:String):HealthChanges {
+                changeReads.incrementAndGet();return reader.changes(category,token)
+            }
+        }
+        val name="health-multicategory-device-${UUID.randomUUID()}.db"
+        try {
+            Store(context,name).use {db->
+                val sync=HealthSync(HealthStore(db),source)
+                val window=HealthWindow.recent(7,zone=ZoneId.of("Asia/Shanghai"))
+                var time=android.os.SystemClock.elapsedRealtime()
+                val first=sync.refresh(window,categories,emptyMap()).snapshot
+                val fullMs=android.os.SystemClock.elapsedRealtime()-time
+                assertTrue(first.coverage.all {it.status in setOf("available","no_records")})
+                assertTrue("The emulator must contain the documented synthetic history",first.evidence.isNotEmpty())
+                time=android.os.SystemClock.elapsedRealtime()
+                for(days in listOf(7L,28L,90L)) {
+                    val cached=sync.cached(HealthWindow.recent(days,zone=ZoneId.of(window.zone)),categories,emptyMap()).snapshot
+                    assertEquals(first.readAt,cached.readAt)
+                    assertTrue(cached.evidence.isNotEmpty())
+                }
+                sync.cached(window.copy(allHistory=true),categories,emptyMap())
+                val cachedMs=android.os.SystemClock.elapsedRealtime()-time
+                assertEquals(1,fullReads.get());assertEquals(0,changeReads.get())
+                time=android.os.SystemClock.elapsedRealtime()
+                val changed=sync.refresh(window,categories,emptyMap()).snapshot
+                val changesMs=android.os.SystemClock.elapsedRealtime()-time
+                assertTrue(changed.coverage.all {it.status in setOf("available","no_records")})
+                assertEquals(1,fullReads.get());assertEquals(categories.size,changeReads.get())
+                instrumentation.sendStatus(2,android.os.Bundle().apply {
+                    putString("healthSyncTimings","categories=${categories.size}, fullMs=$fullMs, changesMs=$changesMs, fourCachedPeriodsMs=$cachedMs; period changes made zero platform reads")
+                })
+            }
+        }finally {context.deleteDatabase(name)}
+    }
+
     @Test fun nativeBootstrapChangesDeletionAndExpiredTokenRecovery()=runBlocking {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         val context=instrumentation.targetContext

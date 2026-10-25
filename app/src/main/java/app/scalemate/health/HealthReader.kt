@@ -39,9 +39,19 @@ class HealthReader(private val context:Context):HealthSyncSource {
     override fun fingerprint(category:String)="${status(category)}|history=${granted(HealthCatalog.HISTORY)}"
     override fun incremental(category:String)=category!="ExerciseRoute"&&HealthCatalog.kind(category).medicalType.isEmpty()
     override suspend fun full(window:HealthWindow,categories:Set<String>,sources:Map<String,String>,progress:(String)->Unit):HealthSyncRead {
-        val snapshot=read(window,categories,sources,progress,captureTokenFirst=true)
-        val records=File(context.cacheDir,"health_raw/${snapshot.rawFile}").useLines {lines->lines.map {HealthJson.cachedRecord(org.json.JSONObject(it))}.toList()}
-        return HealthSyncRead(snapshot,records)
+        val results=healthParallelRead(categories) {category->
+            val snapshot=read(window,setOf(category),sources,progress,captureTokenFirst=true)
+            val file=File(context.cacheDir,"health_raw/${snapshot.rawFile}")
+            try {
+                HealthSyncRead(snapshot,file.useLines {lines->lines.map {HealthJson.cachedRecord(org.json.JSONObject(it))}.toList()})
+            }finally {file.delete()}
+        }
+        val snapshots=results.map {it.snapshot}
+        val actual=window.copy(start=snapshots.minOfOrNull {it.window.start} ?: window.start)
+        // Cross-category metrics are computed from the merged cache by HealthSync.
+        return HealthSyncRead(HealthSnapshot(window=actual,categories=categories,evidence=emptyList(),
+            coverage=snapshots.flatMap {it.coverage},warnings=snapshots.flatMap {it.warnings}.distinct(),
+            syncTokens=snapshots.flatMap {it.syncTokens.entries}.associate {it.key to it.value}),results.flatMap {it.records})
     }
     override suspend fun changes(category:String,token:String):HealthChanges {
         val batch=changes(token,setOf(category))

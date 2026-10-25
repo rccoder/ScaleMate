@@ -4,9 +4,20 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 data class HealthSyncRead(val snapshot:HealthSnapshot,val records:List<HealthRecord>)
 data class HealthChanges(val records:List<HealthRecord>,val deletedIds:List<String>,val nextToken:String)
+data class HealthSyncProgress(val history:Boolean,val detail:String="")
+
+internal suspend fun <T,R> healthParallelRead(items:Collection<T>,read:suspend (T)->R):List<R> = coroutineScope {
+    val permits=Semaphore(3)
+    items.map {item->async {permits.withPermit {read(item)}}}.awaitAll()
+}
 
 interface HealthSyncSource {
     fun status(category:String):String
@@ -22,12 +33,22 @@ class HealthSync(
     private val source:HealthSyncSource,
     private val clock:()->Long=System::currentTimeMillis
 ) {
-    suspend fun refresh(window:HealthWindow,categories:Set<String>,sources:Map<String,String>,progress:(String)->Unit={}):HealthSyncRead {
+    private fun fingerprint(category:String,window:HealthWindow)=source.fingerprint(category)+"|cache=2|zone=${window.zone}"
+    fun canUseCache(window:HealthWindow,categories:Set<String>):Boolean = categories.filter {source.status(it)=="ready"}.all {category->
+        val state=store.syncState(category)
+        state.syncedAt>0&&state.permissionFingerprint==fingerprint(category,window)&&
+            (state.allHistory||!window.allHistory&&state.rangeStart<=window.start&&state.rangeEnd>=window.end)
+    }
+    fun cached(window:HealthWindow,categories:Set<String>,sources:Map<String,String>):HealthSyncRead {
+        require(canUseCache(window,categories))
+        val readAt=categories.filter {source.status(it)=="ready"}.maxOfOrNull {store.syncState(it).syncedAt} ?: clock()
+        return snapshot(window,categories,sources,readAt)
+    }
+    suspend fun refresh(window:HealthWindow,categories:Set<String>,sources:Map<String,String>,progress:(HealthSyncProgress)->Unit={}):HealthSyncRead {
         val now=clock();val zone=ZoneId.of(window.zone)
         val readable=categories.filter {source.status(it)=="ready"}.toSet()
         val states=readable.associateWith(store::syncState)
-        fun fingerprint(category:String)=source.fingerprint(category)+"|cache=2|zone=${window.zone}"
-        val plan=HealthSyncPlan.plan(readable,states,::fingerprint,window,readable.filter(source::incremental).toSet())
+        val plan=HealthSyncPlan.plan(readable,states,{fingerprint(it,window)},window,readable.filter(source::incremental).toSet())
         val failures=mutableMapOf<String,String>();val warnings=mutableSetOf<String>()
 
         suspend fun full(selected:Set<String>) {
@@ -35,14 +56,15 @@ class HealthSync(
             try {
                 // Bootstrap and recovery both reconcile the complete readable history.
                 val request=HealthWindow.recent(7,Instant.ofEpochMilli(now),zone).copy(allHistory=true)
-                val result=source.full(request,selected,sources,progress)
+                progress(HealthSyncProgress(true))
+                val result=source.full(request,selected,sources){progress(HealthSyncProgress(true,it))}
                 warnings+=result.snapshot.warnings
                 selected.forEach {category->
                     val status=result.snapshot.coverage.find {it.kind==category}?.status ?: "read_failed"
                     if(status !in setOf("available","no_records")) {
                         failures[category]=status
                     } else {
-                        val state=HealthSyncState(category,result.snapshot.syncTokens[category].orEmpty(),now,fingerprint(category),result.snapshot.window.start,result.snapshot.window.end,true)
+                        val state=HealthSyncState(category,result.snapshot.syncTokens[category].orEmpty(),now,fingerprint(category,window),result.snapshot.window.start,result.snapshot.window.end,true)
                         store.transaction {
                             store.replaceCategory(category,result.records.filter {it.kind==category})
                             store.syncState(state)
@@ -53,10 +75,9 @@ class HealthSync(
         }
 
         full(plan.full)
-        val fallback=linkedSetOf<String>()
-        for(category in plan.incremental) {
+        val fallback=healthParallelRead(plan.incremental) {category->
             try {
-                progress(category)
+                progress(HealthSyncProgress(false,category))
                 val batch=source.changes(category,states.getValue(category).token)
                 check(batch.nextToken.isNotEmpty())
                 val existing=store.platformRecords(category,batch.deletedIds).associateBy {it.platformId}
@@ -75,10 +96,17 @@ class HealthSync(
                     }
                     store.syncState(states.getValue(category).copy(token=batch.nextToken,syncedAt=now))
                 }
-            }catch(e:CancellationException){throw e}catch(_:Exception){fallback+=category}
-        }
+                null
+            }catch(e:CancellationException){throw e}catch(_:Exception){category}
+        }.filterNotNull().toSet()
         full(fallback)
 
+        return snapshot(window,categories,sources,now,failures,warnings.toList())
+    }
+
+    private fun snapshot(window:HealthWindow,categories:Set<String>,sources:Map<String,String>,readAt:Long,failures:Map<String,String> = emptyMap(),warnings:List<String> = emptyList()):HealthSyncRead {
+        val now=clock();val zone=ZoneId.of(window.zone)
+        val readable=categories.filter {source.status(it)=="ready"}.toSet()
         val actual=if(window.allHistory) {
             val first=store.earliest(readable)?.let {Instant.ofEpochMilli(it).atZone(zone).toLocalDate()}
             window.copy(start=first?.takeIf {it<LocalDate.parse(window.end)}?.toString() ?: LocalDate.parse(window.end).minusDays(1).toString())
@@ -94,7 +122,7 @@ class HealthSync(
             val cached=healthCoverage(category,local.filter {it.kind==category})
             cached.copy(status=failures[category] ?: if(status=="ready")cached.status else status)
         }
-        val snapshot=HealthSnapshot(readAt=now,window=actual,categories=categories,evidence=evidence,coverage=coverage,warnings=warnings.toList())
+        val snapshot=HealthSnapshot(readAt=readAt,window=actual,categories=categories,evidence=evidence,coverage=coverage,warnings=warnings)
         return HealthSyncRead(snapshot,local)
     }
 }

@@ -5,6 +5,13 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Test
@@ -85,9 +92,66 @@ class HealthSyncLocalTest {
             assertTrue(source.totalRequests.isEmpty())
             assertEquals(1500.0,second.evidence.single {it.kind=="Nutrition"&&it.field=="energy"&&it.date=="2026-10-25"}.value,0.0)
             assertEquals(2L,second.coverage.single().records)
-            val expanded=sync.refresh(window.copy(start="2026-05-01"),setOf("Nutrition"),emptyMap()).snapshot
+            val expanded=sync.cached(window.copy(start="2026-05-01"),setOf("Nutrition"),emptyMap()).snapshot
             assertTrue(expanded.evidence.any {it.date=="2026-06-01"})
             assertEquals(1,source.fullRequests.size)
+            assertEquals(1,source.changeRequests.size)
+            assertEquals(second.readAt,expanded.readAt)
+        }
+    }
+    @Test fun cachedViewingRequiresMatchingPermissionAndTimeZoneButDoesNotConsumeChanges()=runBlocking {
+        Store(context,name).use {db->
+            val store=HealthStore(db);val source=Source();val sync=HealthSync(store,source){now}
+            source.rows=listOf(record("meal","2026-10-25",500.0))
+            sync.refresh(window,setOf("Nutrition"),emptyMap())
+            assertTrue(sync.canUseCache(window.copy(allHistory=true),setOf("Nutrition")))
+            assertFalse(sync.canUseCache(window.copy(zone="America/New_York"),setOf("Nutrition")))
+            source.revisions["Nutrition"]="history-permission-changed"
+            assertFalse(sync.canUseCache(window,setOf("Nutrition")))
+            assertTrue(source.changeRequests.isEmpty())
+        }
+    }
+    @Test fun parallelChangesAreBoundedAndOneFailedCategoryKeepsItsOwnCursor()=runBlocking {
+        Store(context,name).use {db->
+            val store=HealthStore(db);val source=Source()
+            val categories=setOf("Nutrition","ActiveCaloriesBurned","Distance","Hydration")
+            source.rows=categories.map {record(it,"2026-10-25",100.0,it)}
+            HealthSync(store,source){now}.refresh(window,categories,emptyMap())
+            val previous=store.syncState("Nutrition")
+            source.rows=source.rows.map {it.copy(values=mapOf("energy" to HealthValue(200.0,"kcal")))}
+            categories.forEach {kind->source.pending[kind]=HealthChanges(source.rows.filter {it.kind==kind},emptyList(),"next-$kind")}
+            source.failTotals+="Nutrition";source.failFull+="Nutrition"
+            val active=AtomicInteger();val maximum=AtomicInteger()
+            val concurrent=object:HealthSyncSource by source {
+                override suspend fun changes(category:String,token:String):HealthChanges {
+                    val count=active.incrementAndGet();maximum.updateAndGet {maxOf(it,count)}
+                    try {delay(30);return source.changes(category,token)}finally {active.decrementAndGet()}
+                }
+            }
+            HealthSync(store,concurrent){now}.refresh(window,categories,emptyMap())
+            assertEquals(3,maximum.get())
+            assertEquals(previous,store.syncState("Nutrition"))
+            assertEquals(100.0,store.records(setOf("Nutrition")).single {it.id=="Nutrition"}.values.getValue("energy").value,0.0)
+            (categories-"Nutrition").forEach {assertEquals("next-$it",store.syncState(it).token)}
+        }
+    }
+    @Test fun cancellingParallelReadsLeavesAllUnfinishedCursorsRetryable()=runBlocking {
+        Store(context,name).use {db->
+            val store=HealthStore(db);val source=Source()
+            val categories=setOf("Nutrition","ActiveCaloriesBurned","Distance","Hydration")
+            HealthSync(store,source){now}.refresh(window,categories,emptyMap())
+            val before=categories.associateWith(store::syncState)
+            val entered=CompletableDeferred<Unit>();val active=AtomicInteger()
+            val paused=object:HealthSyncSource by source {
+                override suspend fun changes(category:String,token:String):HealthChanges {
+                    if(active.incrementAndGet()==3)entered.complete(Unit)
+                    awaitCancellation()
+                }
+            }
+            val read=async {HealthSync(store,paused){now}.refresh(window,categories,emptyMap())}
+            withTimeout(2000){entered.await()}
+            read.cancelAndJoin()
+            assertEquals(before,categories.associateWith(store::syncState))
         }
     }
     @Test fun movedRecordRebuildsOldAndNewDatesWithoutDeletingOtherMeals()=runBlocking {

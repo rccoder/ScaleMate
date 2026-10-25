@@ -8,7 +8,7 @@
 
 拍照估算一餐的营养，站上秤自动接收体重；确认后的饮食与体重先留在手机，经你授权后写入 **Health Connect**，供 Google Fit 等兼容应用读取。
 
-> 当前正式版为 0.3.2：[查看版本说明](https://github.com/rccoder/ScaleMate/releases/tag/v0.3.2)
+> 当前正式版为 0.3.3：[查看版本说明](https://github.com/rccoder/ScaleMate/releases/tag/v0.3.3)
 
 **Android 14+ · 中英双语支持 · 无需注册 · 自选 AI 服务**
 

@@ -29,6 +29,23 @@ data class FoodEstimateContext(
     val factor get()=if(resultMode=="personal")1.0 else consumedFraction/if(fractionBasis=="own")shareCount else 1
 }
 
+data class MealAdvice(
+    val healthiness:String="",
+    val balance:String="",
+    val nextTime:String="",
+    val note:String=""
+) {
+    val hasContent get()=healthiness.isNotBlank()||balance.isNotBlank()||nextTime.isNotBlank()
+}
+
+data class AiUsage(
+    val inputTokens:Long?=null,
+    val outputTokens:Long?=null,
+    val totalTokens:Long?=null
+) {
+    val hasContent get()=inputTokens!=null||outputTokens!=null||totalTokens!=null
+}
+
 data class FoodItem(
     val id: String = newFoodId(), val name: String = "", val portion: String = "1", val grams: Double? = null,
     val base: Nutrients = Nutrients(), val shareCount: Int = 1, val fraction: Double = 1.0,
@@ -36,6 +53,9 @@ data class FoodItem(
     val photos:List<String> = emptyList(),val libraryId:String="",val eatingAdvice:String="",val nextTimeAdvice:String="",val positiveFeedback:String="",val estimateContext:FoodEstimateContext?=null
 ) {
     val hasEatingSuggestions get()=eatingAdvice.isNotBlank()||nextTimeAdvice.isNotBlank()||positiveFeedback.isNotBlank()
+    val hasDraftContent get()=name.isNotBlank()||base.hasValue()||grams!=null||portion!="1"||quantity!=1.0||
+        shareCount!=1||fraction!=1.0||basis!="whole"||source!="manual"||assumptions.isNotBlank()||
+        needsPortionReview||photos.isNotEmpty()||libraryId.isNotBlank()||hasEatingSuggestions||estimateContext!=null
     val factor get() = quantity * fraction / if(basis == "own") shareCount else 1
     val nutrients get() = base.scaled(factor)
     fun valid() = name.isNotBlank() && name.length<=120 && base.valid() && base.hasValue() &&
@@ -54,7 +74,8 @@ data class Meal(
     val id: String = newFoodId(), val revision: Long = 1, val time: Long = System.currentTimeMillis(),
     val offset: Int = ZoneId.systemDefault().rules.getOffset(Instant.ofEpochMilli(time)).totalSeconds,
     val mealType: Int = defaultMealType(), val items: List<FoodItem> = emptyList(), val status: String = "pending",
-    val platformId: String = "", val attempts: Int = 0, val deleted: Boolean = false
+    val platformId: String = "", val attempts: Int = 0, val deleted: Boolean = false,
+    val advice: MealAdvice = MealAdvice(), val usage: AiUsage = AiUsage(), val analysisMs: Long? = null
 ) {
     val nutrients get() = Nutrients.sum(items.map {it.nutrients})
     val title get() = items.joinToString("、"){it.name}.take(160)
@@ -63,12 +84,16 @@ data class FoodTemplate(val id: String=newFoodId(),val item: FoodItem)
 data class FoodBatch(
     val id:String=newFoodId(),val kind:String="photo",val photos:List<String> = emptyList(),
     val description:String="",val tags:Set<String> = emptySet(),val shareCount:Int=1,
-    val results:List<FoodItem> = emptyList(),val status:String="idle",val editingItemId:String?=null
+    val results:List<FoodItem> = emptyList(),val status:String="idle",val editingItemId:String?=null,
+    val advice:MealAdvice=MealAdvice(),val usage:AiUsage=AiUsage(),val analysisMs:Long?=null
 ) {
     fun validForCommit()=results.isNotEmpty()&&results.all {it.valid()}&&Nutrients.sum(results.map {it.nutrients}).valid()
+    val hasDraftContent get()=photos.isNotEmpty()||description.isNotBlank()||tags.isNotEmpty()||
+        results.any {it.hasDraftContent}||advice.hasContent
 }
 data class FoodDraft(val meal:Meal=Meal(),val editing:Boolean=false,val updatedAt:Long=System.currentTimeMillis(),val batch:FoodBatch?=null) {
-    fun isEmpty()=meal.items.isEmpty()&&(batch==null||batch.photos.isEmpty()&&batch.results.isEmpty()&&batch.description.isBlank())
+    val hasContent get()=meal.items.any {it.hasDraftContent}||meal.advice.hasContent||batch?.hasDraftContent==true
+    fun isEmpty()=!hasContent
     fun removeBatchResult(id:String):FoodDraft {
         val pending=batch ?: return this
         if(pending.results.none {it.id==id})return this
@@ -84,7 +109,16 @@ data class FoodDraft(val meal:Meal=Meal(),val editing:Boolean=false,val updatedA
             require(meal.items.any {it.id==pending.editingItemId}&&pending.results.size==1)
             meal.items.map {if(it.id==pending.editingItemId)pending.results.single().copy(id=it.id) else it}
         } else meal.items+pending.results
-        return copy(meal=meal.copy(items=items),batch=null,updatedAt=System.currentTimeMillis())
+        return copy(
+            meal=meal.copy(
+                items=items,
+                advice=if(pending.advice.hasContent)pending.advice else meal.advice,
+                usage=if(pending.usage.hasContent)pending.usage else meal.usage,
+                analysisMs=pending.analysisMs ?: meal.analysisMs
+            ),
+            batch=null,
+            updatedAt=System.currentTimeMillis()
+        )
     }
 }
 data class FoodLibraryEntry(val id:String=newFoodId(),val item:FoodItem,val favorite:Boolean=false,val useCount:Long=0,val lastUsed:Long=0)
@@ -104,5 +138,6 @@ data class FoodState(
     val loaded: Boolean=false,val meals: List<Meal> = emptyList(),val templates: List<FoodTemplate> = emptyList(),
     val library:List<FoodLibraryEntry> = emptyList(),val services: List<AiService> = emptyList(),val draft: FoodDraft?=null,val defaultVision: String="",val defaultText: String="",
     val selectedService: String="",val permitted: Boolean=false,val healthAvailable:Boolean=true,val busy: Boolean=false,val saving: Boolean=false,
-    val error: Int?=null,val message: Int?=null
+    val error: Int?=null,val message: Int?=null,val analysisStage:String="",val analysisAttempt:Int=1,val analysisOutputTokens:Long?=null,
+    val analysisStartedAt:Long=0L
 )

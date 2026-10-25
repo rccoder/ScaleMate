@@ -29,7 +29,13 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
     private val mutable=MutableStateFlow(FoodState())
     val state=mutable.asStateFlow()
     init {viewModelScope.launch {try {
-        val draft=withContext(Dispatchers.IO){store.setting("draft").takeIf {it.isNotBlank()}?.let {FoodJson.draft(it).takeIf {d->System.currentTimeMillis()-d.updatedAt<24*60*60*1000}}}
+        val draft=withContext(Dispatchers.IO){
+            val raw=store.setting("draft")
+            val parsed=raw.takeIf {it.isNotBlank()}?.let(FoodJson::draft)
+            val valid=parsed?.takeIf {d->System.currentTimeMillis()-d.updatedAt<24*60*60*1000&&!d.isEmpty()}
+            if(raw.isNotBlank()&&valid==null)store.setting("draft","")
+            valid
+        }
         mutable.update {it.copy(draft=draft)};reload()
         withContext(Dispatchers.IO){cleanupImages()}
         retryPending()
@@ -52,7 +58,7 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
         // Keep the last valid snapshot while a numeric field contains an incomplete value.
         val items=draft?.meal?.items.orEmpty()+draft?.batch?.results.orEmpty()
         if(items.any {f->!f.base.valid()||f.grams?.isFinite()==false})return@withLock
-        withContext(Dispatchers.IO){store.setting("draft",draft?.let {FoodJson.draft(it)}.orEmpty())}
+        withContext(Dispatchers.IO){store.setting("draft",draft?.takeUnless {it.isEmpty()}?.let {FoodJson.draft(it)}.orEmpty())}
     }}}
     fun newMeal() {cancelAi();mutable.update {it.copy(draft=FoodDraft(),error=null,message=null)};persistDraft()}
     fun updateDraft(change:(FoodDraft)->FoodDraft) {if(mutable.value.saving||mutable.value.busy)return;mutable.update {s->s.copy(draft=s.draft?.let {change(it).copy(updatedAt=System.currentTimeMillis())},error=null)};persistDraft()}
@@ -74,14 +80,32 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
     fun updateBatch(change:(FoodBatch)->FoodBatch) {updateDraft {d->d.copy(batch=d.batch?.let(change))}}
     fun removeResult(id:String){updateDraft {it.removeBatchResult(id)}}
     fun updateResult(item:FoodItem) {updateBatch {b->b.copy(results=b.results.map {if(it.id==item.id)item else it})}}
+    internal fun mergeDish(batchId:String,ids:Set<String>,name:String,portion:String):Boolean {
+        val state=mutable.value
+        if(state.busy||state.saving)return false
+        val batch=state.draft?.batch?.takeIf {it.id==batchId} ?: return false
+        val merged=runCatching {batch.mergeDish(ids,name,portion)}.getOrElse {fail(R.string.food_merge_invalid);return false}
+        updateDraft {it.copy(batch=merged)}
+        return true
+    }
     fun abandonBatch() {cancelAi();updateDraft {it.copy(batch=null)}}
-    fun confirmBatch():Boolean {
-        if(mutable.value.busy||mutable.value.saving)return false
-        val d=mutable.value.draft ?: return false
-        val b=d.batch ?: return false
+    private fun confirmedDraft():FoodDraft? {
+        if(mutable.value.busy||mutable.value.saving)return null
+        val d=mutable.value.draft ?: return null
+        val b=d.batch ?: return null
         val confirmed=b.copy(results=b.results.map {it.copy(needsPortionReview=false)})
-        if(!confirmed.validForCommit()){fail(R.string.food_review_required);return false}
-        updateDraft {it.copy(batch=confirmed).commitBatch()};return true
+        if(!confirmed.validForCommit()){fail(R.string.food_review_required);return null}
+        return d.copy(batch=confirmed).commitBatch()
+    }
+    fun confirmBatch():Boolean {
+        val confirmed=confirmedDraft() ?: return false
+        updateDraft {confirmed};return true
+    }
+    fun confirmAndSave(done:()->Unit) {
+        val confirmed=confirmedDraft() ?: return
+        updateDraft {confirmed}
+        persistDraft()
+        save(done)
     }
     fun removePhoto(path:String) {updateBatch {it.copy(photos=it.photos-path,results=emptyList(),status="idle")}}
     fun importPhoto(uri:Uri)=importPhotos(listOf(uri))
@@ -108,20 +132,42 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
         val localeManager=getApplication<Application>().getSystemService(android.app.LocaleManager::class.java)
         val outputLanguage=FoodAiLanguage.outputLanguage(localeManager.applicationLocales.toLanguageTags(),localeManager.systemLocales.toLanguageTags())
         val requestId=newFoodId();activeRequest=requestId
-        mutable.update {it.copy(busy=true,error=null,draft=it.draft?.copy(batch=batch.copy(status="analyzing")))};persistDraft()
+        val startedAt=System.currentTimeMillis()
+        mutable.update {it.copy(
+            busy=true,error=null,message=null,analysisStage="uploading",analysisAttempt=1,analysisOutputTokens=null,analysisStartedAt=startedAt,
+            draft=it.draft?.copy(batch=batch.copy(status="analyzing",advice=MealAdvice(),usage=AiUsage(),analysisMs=null))
+        )};persistDraft()
         aiJob=viewModelScope.launch {try {
-            val bytes=withContext(Dispatchers.IO){batch.photos.map {File(it).readBytes().also {bytes->require(bytes.size<=4_000_000)}}}
-            val items=ai.recognize(service,bytes,batch.description,batch.tags,batch.shareCount,batch.photos,outputLanguage=outputLanguage)
-            if(activeRequest==requestId&&mutable.value.draft?.batch?.id==batch.id) {
-                mutable.update {it.copy(draft=it.draft?.let {d->d.copy(batch=d.batch?.copy(results=items,status="review"),updatedAt=System.currentTimeMillis())})};persistDraft()
+            val bytes=withContext(Dispatchers.IO){batch.photos.map {File(it).readBytes().also {bytes->require(bytes.size<=FoodImages.MAX_IMAGE_BYTES)}}}
+            val result=ai.recognizeDetailed(service,bytes,batch.description,batch.tags,batch.shareCount,batch.photos,outputLanguage=outputLanguage){stage->
+                if(activeRequest==requestId)mutable.update {it.copy(
+                    analysisStage=if(stage.startsWith("retry:"))"retrying" else stage,
+                    analysisAttempt=stage.substringAfter("retry:",stage).toIntOrNull() ?: it.analysisAttempt
+                )}
             }
-        }catch(e:CancellationException){throw e}catch(e:FoodFailure){if(activeRequest==requestId)fail(e.resource)}catch(_:Exception){if(activeRequest==requestId)fail(R.string.food_ai_invalid)}finally {
-            if(activeRequest==requestId){activeRequest=null;mutable.update {it.copy(busy=false,draft=it.draft?.let {d->if(d.batch?.status=="analyzing")d.copy(batch=d.batch.copy(status="interrupted")) else d})};persistDraft()}
+            if(activeRequest==requestId&&mutable.value.draft?.batch?.id==batch.id) {
+                val elapsed=System.currentTimeMillis()-startedAt
+                mutable.update {it.copy(
+                    analysisStage="ready",message=R.string.food_analysis_ready,analysisOutputTokens=result.usage.outputTokens,
+                    draft=it.draft?.let {d->d.copy(batch=d.batch?.copy(
+                        results=result.items,status="review",advice=result.advice,
+                        usage=result.usage,analysisMs=elapsed
+                    ),updatedAt=System.currentTimeMillis())}
+                )};persistDraft()
+            }
+        }catch(e:CancellationException){throw e}catch(e:FoodFailure){if(activeRequest==requestId)fail(e.resource)}catch(_:Exception){if(activeRequest==requestId)fail(R.string.food_ai_request_error)}finally {
+            if(activeRequest==requestId){activeRequest=null;mutable.update {it.copy(
+                busy=false,analysisStage=if(it.analysisStage=="ready")"ready" else "failed",
+                draft=it.draft?.let {d->if(d.batch?.status=="analyzing")d.copy(batch=d.batch.copy(status="interrupted")) else d}
+            )};persistDraft()}
         }}
     }
     private var activeRequest:String?=null
-    fun cancelAi(){activeRequest=null;aiJob?.cancel();aiJob=null;mutable.update {it.copy(busy=false,draft=it.draft?.let {d->if(d.batch?.status=="analyzing")d.copy(batch=d.batch.copy(status="interrupted")) else d})};persistDraft()}
-    fun save(done:()->Unit) {
+    fun cancelAi(){activeRequest=null;aiJob?.cancel();aiJob=null;mutable.update {it.copy(
+        busy=false,analysisStage="",
+        draft=it.draft?.let {d->if(d.batch?.status=="analyzing")d.copy(batch=d.batch.copy(status="interrupted")) else d}
+    )};persistDraft()}
+    private fun save(done:()->Unit) {
         val draft=mutable.value.draft ?: return
         if(mutable.value.saving)return
         if(draft.batch!=null||draft.meal.items.isEmpty()||draft.meal.items.any {!it.valid()}||!draft.meal.nutrients.valid()||!draft.meal.nutrients.hasValue()){fail(R.string.food_review_required);return}
@@ -150,8 +196,15 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
                 mutable.update {it.copy(saving=false)}
                 done()
                 task {sync(meal.id)}
+            } catch(e:Throwable) {
+                mutable.update {it.copy(error=R.string.food_storage_error)}
+                throw e
             } finally {mutable.update {it.copy(saving=false)}}
         }
+    }
+    fun saveLater(done:()->Unit) {
+        val draft=mutable.value.draft ?: return
+        if(draft.batch!=null)confirmAndSave(done)else save(done)
     }
 
     fun refreshPermissions() {mutable.update {it.copy(permitted=health.permitted,healthAvailable=health.available)};if(mutable.value.loaded)task {retryPending()}}

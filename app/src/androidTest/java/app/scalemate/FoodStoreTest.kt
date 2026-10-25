@@ -28,6 +28,32 @@ class FoodStoreTest {
         Store(context,name).use {db->assertEquals(71.2,db.records().single().kg,0.001);assertTrue(db.scales().single().verified)
             val food=FoodStore(db);food.save(Meal(items=listOf(FoodItem(name="rice",base=Nutrients(100.0)))));assertEquals(1,food.meals().size)}
     }
+    @Test fun developmentHealthSchemaDoesNotDowngradeDatabase() {
+        context.deleteDatabase(name)
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(name),null).use {db->
+            db.execSQL("CREATE TABLE scales(id TEXT PRIMARY KEY,name TEXT NOT NULL,address TEXT UNIQUE NOT NULL,verified INTEGER NOT NULL)")
+            db.execSQL("CREATE TABLE measurements(id TEXT PRIMARY KEY,deviceId TEXT NOT NULL,source TEXT NOT NULL,kg REAL NOT NULL,time INTEGER NOT NULL,offset INTEGER NOT NULL,status TEXT NOT NULL,platformId TEXT NOT NULL,attempts INTEGER NOT NULL)")
+            db.execSQL("CREATE TABLE food_meals(id TEXT PRIMARY KEY,revision INTEGER NOT NULL,time INTEGER NOT NULL,payload TEXT NOT NULL,status TEXT NOT NULL,platformId TEXT NOT NULL DEFAULT '',attempts INTEGER NOT NULL DEFAULT 0,deleted INTEGER NOT NULL DEFAULT 0)")
+            db.execSQL("CREATE INDEX food_meals_time ON food_meals(time)")
+            db.execSQL("CREATE TABLE food_templates(id TEXT PRIMARY KEY,payload TEXT NOT NULL)")
+            db.execSQL("CREATE TABLE ai_services(id TEXT PRIMARY KEY,name TEXT NOT NULL,url TEXT NOT NULL,model TEXT NOT NULL,secret TEXT NOT NULL,images INTEGER NOT NULL,version INTEGER NOT NULL,consent INTEGER NOT NULL,format TEXT NOT NULL DEFAULT 'openai')")
+            db.execSQL("CREATE TABLE food_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
+            db.execSQL("CREATE TABLE food_library(id TEXT PRIMARY KEY,nameKey TEXT NOT NULL UNIQUE,payload TEXT NOT NULL,favorite INTEGER NOT NULL DEFAULT 0,useCount INTEGER NOT NULL DEFAULT 0,lastUsed INTEGER NOT NULL DEFAULT 0)")
+            db.execSQL("CREATE TABLE health_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
+            db.execSQL("INSERT INTO scales VALUES('scale','home','A',1)")
+            db.execSQL("INSERT INTO measurements VALUES('weight','scale','home',71.2,1000,28800,'synced','platform',1)")
+            db.execSQL("INSERT INTO health_settings VALUES('sentinel','kept')")
+            db.version=4
+        }
+        Store(context,name).use {db->
+            assertEquals(71.2,db.records().single().kg,0.001)
+            db.readableDatabase.rawQuery("SELECT value FROM health_settings WHERE key='sentinel'",null).use {
+                assertTrue(it.moveToFirst());assertEquals("kept",it.getString(0))
+            }
+            FoodStore(db).save(Meal(items=listOf(FoodItem(name="rice",base=Nutrients(100.0)))))
+            assertEquals(1,FoodStore(db).meals().size)
+        }
+    }
     @Test fun pendingEditAndDeleteSurviveRestart() {
         context.deleteDatabase(name)
         val meal=Meal(items=listOf(FoodItem(name="rice",base=Nutrients(100.0))))
@@ -97,6 +123,53 @@ class FoodStoreTest {
         val feedback=item.copy(eatingAdvice="",nextTimeAdvice="",positiveFeedback="搭配包含主食与蛋白质。")
         assertEquals(feedback,FoodJson.item(FoodJson.item(feedback)))
     }
+    @Test fun mealAdviceAndProviderUsageSurviveRecognitionDraftAndSavedMeal() {
+        context.deleteDatabase(name)
+        val raw="""{"calculationMode":"personal","foods":[{"name":"咖喱猪排饭","personalGrams":260,"personalNutrients":{"kcal":650},"eatingAdvice":"酱汁可以按需蘸取。"}],"mealAdvice":{"healthiness":"以主食和蛋白质为主，蔬菜偏少。","balance":"先吃蔬菜，酱汁按需蘸取。","nextTime":"下次搭配一份深色蔬菜。","note":"蔬菜被遮挡，实际份量可能更多。"},"usage":{"prompt_tokens":1200,"completion_tokens":240,"total_tokens":1440}}"""
+        val recognized=FoodJson.recognition(raw,1)
+        assertEquals("先吃蔬菜，酱汁按需蘸取。",recognized.advice.balance)
+        val usage=FoodJson.usage(raw)
+        assertEquals(1200L,usage.inputTokens);assertEquals(240L,usage.outputTokens);assertEquals(1440L,usage.totalTokens)
+        val batch=FoodBatch(results=recognized.items.map {it.copy(needsPortionReview=false)},status="review",advice=recognized.advice,usage=usage,analysisMs=12_345)
+        val draft=FoodDraft(batch=batch)
+        assertEquals(draft,FoodJson.draft(FoodJson.draft(draft)))
+        val committed=draft.commitBatch()
+        assertEquals(batch.advice,committed.meal.advice)
+        assertEquals(12_345L,committed.meal.analysisMs)
+        val meal=committed.meal
+        Store(context,name).use {db->FoodStore(db).save(meal)}
+        Store(context,name).use {db->
+            val restored=FoodStore(db).meals().single()
+            assertEquals(recognized.advice,restored.advice);assertEquals(usage,restored.usage);assertEquals(12_345L,restored.analysisMs)
+        }
+    }
+    @Test fun mergedLightMealIsStoredAndReusedAsOneDishWithoutChangingOldLibraryItems() {
+        context.deleteDatabase(name)
+        val chicken=FoodItem(name="鸡胸肉",base=Nutrients(180.0),source="ai",needsPortionReview=true)
+        val greens=FoodItem(name="蔬菜",base=Nutrients(40.0),source="ai",needsPortionReview=true)
+        val sauce=FoodItem(name="酱汁",base=Nutrients(80.0),source="ai",needsPortionReview=true)
+        val milk=FoodItem(name="牛奶",base=Nutrients(120.0),source="ai",needsPortionReview=true)
+        val batch=FoodBatch(results=listOf(chicken,greens,sauce,milk),status="review")
+            .mergeDish(setOf(chicken.id,greens.id,sauce.id),"鸡胸肉轻食","本人一份")
+        val draft=FoodDraft(batch=batch)
+        Store(context,name).use {db->val store=FoodStore(db)
+            store.favorite(chicken.copy(needsPortionReview=false),true)
+            store.setting("draft",FoodJson.draft(draft))
+            assertEquals(listOf("鸡胸肉"),store.library().map {it.item.name})
+            val restored=FoodJson.draft(store.setting("draft"))
+            val meal=restored.copy(batch=restored.batch!!.copy(results=restored.batch!!.results.map {it.copy(needsPortionReview=false)})).commitBatch().meal
+            store.save(meal)
+            assertEquals(setOf("鸡胸肉","鸡胸肉轻食","牛奶"),store.library().map {it.item.name}.toSet())
+            assertFalse(store.library().any {it.item.name in listOf("蔬菜","酱汁")})
+            assertEquals(0L,store.library().single {it.item.name=="鸡胸肉"}.useCount)
+            assertTrue(store.library().single {it.item.name=="鸡胸肉"}.favorite)
+        }
+        Store(context,name).use {db->val store=FoodStore(db)
+            val dish=store.library().single {it.item.name=="鸡胸肉轻食"}
+            assertEquals(1L,dish.useCount);assertEquals(300.0,dish.item.reuse().nutrients.kcal!!,0.001)
+            assertEquals(listOf("鸡胸肉轻食","牛奶"),store.meals().single().items.map {it.name})
+        }
+    }
     @Test fun libraryCountsNewMealsOnlyAndFavoritesKeepBaseline() {
         context.deleteDatabase(name)
         Store(context,name).use {db->val food=FoodStore(db)
@@ -146,6 +219,13 @@ class FoodStoreTest {
         val draft=FoodDraft(batch=FoodBatch(photos=listOf("a","b"),status="analyzing",description="两人均分",shareCount=2))
         val restored=FoodJson.draft(FoodJson.draft(draft))
         assertEquals("interrupted",restored.batch!!.status);assertEquals(listOf("a","b"),restored.batch!!.photos);assertTrue(restored.meal.items.isEmpty())
+    }
+    @Test fun pendingAiResultsKeepFullFoodDataWhenRestoringLegacySplitDraft() {
+        val food=FoodJson.recognitionPersonal("""{"calculationMode":"personal","foods":[{"name":"咖喱猪排饭","personalGrams":260,"personalNutrients":{"kcal":650},"assumptions":"按可见份量估算。","eatingAdvice":"酱汁按需蘸取。","nextAdvice":"下次搭配蔬菜。","contextWarning":"油量不确定。"}],"mealAdvice":{"healthiness":"主食充足。"}}""",1).single()
+        val original=Meal(items=listOf(food.copy(needsPortionReview=true)))
+        val restored=FoodJson.draft(JSONObject().put("meal",FoodJson.meal(original)).put("batch",JSONObject.NULL).put("editing",false).put("updatedAt",System.currentTimeMillis()).toString())
+        assertEquals(original.items.single(),restored.batch!!.results.single())
+        assertEquals(original.advice,restored.batch!!.advice)
     }
 
     @Test fun libraryCapRetainsFavoritesAcrossSaveAndRestart() {

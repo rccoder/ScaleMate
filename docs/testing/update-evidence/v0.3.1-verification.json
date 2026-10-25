@@ -1,0 +1,47 @@
+{
+  "tag": "v0.3.1",
+  "url": "https://github.com/rccoder/ScaleMate/releases/tag/v0.3.1",
+  "prerelease": false,
+  "versionName": "0.3.1",
+  "versionCode": 10,
+  "sha256": "f645eda4a7411131129957c9d33b3880652338b97fe3334128d372aa2f98e54d",
+  "sizeBytes": 23832258,
+  "verifiedAssets": [
+    "SHA256SUMS",
+    "ScaleMate.apk",
+    "releases.json",
+    "releases.json.sig",
+    "signing-certificate.txt",
+    "update.json",
+    "update.json.sig"
+  ],
+  "fixedSigner": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5",
+  "commit": "21a62169102cc69fb305f5ae578eecc25e080253",
+  "ciRun": "https://github.com/rccoder/ScaleMate/actions/runs/39968029134",
+  "releaseRun": "https://github.com/rccoder/ScaleMate/actions/runs/39968546406",
+  "checks": {
+    "latest": true,
+    "remoteVersionCodeOrder": "passed",
+    "updateManifest": "passed",
+    "updateJsonSignature": "passed",
+    "releasesJsonSignature": "passed",
+    "apkPackage": "app.scalemate",
+    "debuggable": false
+  },
+  "proxyCheck": {
+    "source": "gh-proxy-com",
+    "url": "https://gh-proxy.com/https://github.com/rccoder/ScaleMate/releases/download/v0.3.1/ScaleMate.apk",
+    "fullDownload": true,
+    "sizeBytes": 23832258,
+    "sha256": "f645eda4a7411131129957c9d33b3880652338b97fe3334128d372aa2f98e54d",
+    "elapsedSeconds": 5.0
+  },
+  "phoneUpgrade": {
+    "fromVersion": "0.3.1-preview.2",
+    "fromVersionCode": 9,
+    "toVersion": "0.3.1",
+    "toVersionCode": 10,
+    "status": "pending",
+    "reason": "Phone not present in the ADB device list after public release; must not substitute ADB install for in-app upgrade."
+  }
+}

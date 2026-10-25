@@ -16,6 +16,48 @@ import java.io.File
 /** Opt-in only. Private fixtures are provisioned outside Git; never logs keys, responses or images. */
 @RunWith(AndroidJUnit4::class)
 class FoodAiIntegrationTest {
+    private data class PromptBaseline(val name:String,val expectedGroups:Set<Set<String>>,val forbidden:Set<String>)
+    private val promptBaseline=listOf(
+        PromptBaseline("kung-pao-chicken-with-rice",setOf(setOf("宫保鸡丁","米饭")),setOf("花生","辣椒","葱")),
+        PromptBaseline("tomato-egg-with-rice",setOf(setOf("番茄炒蛋","米饭")),setOf("番茄","鸡蛋")),
+        PromptBaseline("cheeseburger-with-fries",setOf(setOf("芝士汉堡","薯条"),setOf("汉堡薯条套餐")),emptySet()),
+        PromptBaseline("bacon-eggs-english-muffin",setOf(setOf("炒蛋","培根","英式松饼"),setOf("美式早餐拼盘")),emptySet())
+    )
+    private val promptWords=listOf(
+        "宫保鸡丁" to "kung pao chicken","米饭" to "rice","花生" to "peanut","辣椒" to "chili","葱" to "scallion",
+        "番茄炒蛋" to "tomato scrambled eggs","番茄" to "tomato","鸡蛋" to "egg","芝士汉堡" to "cheeseburger",
+        "汉堡薯条套餐" to "burger and fries","薯条" to "fries","炒蛋" to "scrambled eggs","培根" to "bacon",
+        "英式松饼" to "english muffin","美式早餐拼盘" to "american breakfast plate"
+    )
+    private fun countWord(text:String,word:String):Int = Regex(Regex.escape(word)).findAll(text.lowercase()).count()
+    private fun promptWord(zh:String,language:String)=if(language=="zh-CN")zh else promptWords.toMap()[zh] ?: zh
+    private fun recognizedNames(asset:String,language:String):List<String> = runBlocking {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        val context=instrumentation.targetContext
+        val privateFixture=File(context.filesDir,"ai-validation-private.json")
+        assumeTrue("Private AI test fixture is not provisioned",privateFixture.exists())
+        var processed:File?=null
+        var source:File?=null
+        try {
+            val cfg=JSONObject(privateFixture.readText())
+            val secrets=AiSecrets()
+            val photo=context.assets.open("food-prompt-baseline/$asset.png").use {it.readBytes()}
+            source=File(context.cacheDir,"prompt-baseline-$asset.png").apply {writeBytes(photo)}
+            processed=FoodImages.import(context,Uri.fromFile(source))
+            source.delete();source=null
+            val format="openai"
+            val base=cfg.getString("baseUrl")
+            val service=AiService(name="Prompt baseline",baseUrl=base,model="codex/gpt-6-luna",images=true,format=format)
+                .let {it.copy(encryptedKey=secrets.encrypt(it.id,cfg.getString("key")))}
+            val items=withTimeout(90000){AiClient(secrets).recognize(service,listOf(processed!!.readBytes()),"",emptySet(),1,outputLanguage=language)}
+            assertTrue("Expected actual food estimates for $asset",items.isNotEmpty())
+            assertTrue("Personal intake contract changed for $asset",items.all {
+                it.needsPortionReview&&it.base.valid()&&it.base.hasValue()&&it.factor==1.0&&
+                    it.estimateContext?.resultMode=="personal"&&it.estimateContext?.reportedNutrients==it.base
+            })
+            items.map {it.name}
+        }finally {processed?.delete();source?.delete();privateFixture.delete()}
+    }
     @Test fun privateFixtureBothFormatsTextAndVision()=runBlocking {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
         val fixture=File(context.filesDir,"ai-validation-private.json")
@@ -26,7 +68,7 @@ class FoodAiIntegrationTest {
             val cfg=JSONObject(fixture.readText())
             val secrets=AiSecrets()
             processed=FoodImages.import(context,Uri.fromFile(photo))
-            assertTrue(processed!!.length() in 1..4_000_000)
+            assertTrue(processed!!.length() in 1..FoodImages.MAX_IMAGE_BYTES)
             for(format in listOf("openai","anthropic")) {
                 val base=if(format=="anthropic")cfg.getString("baseUrl").trimEnd('/').removeSuffix("/v1") else cfg.getString("baseUrl")
                 val service=AiService(id="integration-$format",name="Private validation",baseUrl=base,model="codex/gpt-6-luna",images=true,format=format)
@@ -42,6 +84,24 @@ class FoodAiIntegrationTest {
                 assertTrue(results.all {it.needsPortionReview && it.base.valid() && it.base.hasValue() && it.factor==1.0})
             }
         }finally {fixture.delete();photo.delete();processed?.delete()}
+    }
+    @Test fun privateFixturePromptBaselineChineseAndEnglish()=runBlocking {
+        for(language in listOf("zh-CN","en-US")) {
+            val words=promptWords.map {promptWord(it.first,language)}
+            val han=Regex("[\u4e00-\u9fff]")
+            for(sample in promptBaseline) {
+                val names=recognizedNames(sample.name,language)
+                val normalized=names.map {name->
+                    words.filter {countWord(name,it)>0}.maxByOrNull {countWord(name,it)*it.length}.orEmpty()
+                }.toSet()
+                val expected=sample.expectedGroups.map {group->group.map {promptWord(it,language)}.toSet()}.toSet()
+                assertTrue("Unexpected grouping for ${sample.name}: $names",normalized in expected)
+                val forbidden=sample.forbidden.map {promptWord(it,language)}.toSet()
+                assertFalse("Ingredient split for ${sample.name}: $names",normalized.any {it in forbidden})
+                if(language=="en-US")assertFalse("English output contains Chinese: $names",names.any {han.containsMatchIn(it)})
+                InstrumentationRegistry.getInstrumentation().sendStatus(2,android.os.Bundle().apply {putString("stream","$language ${sample.name}: ${names.joinToString(" | ")}\n")})
+            }
+        }
     }
     @Test fun privateFixtureOutputLanguageBothFormats()=runBlocking {
         val context=InstrumentationRegistry.getInstrumentation().targetContext

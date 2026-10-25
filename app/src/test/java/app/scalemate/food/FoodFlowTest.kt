@@ -52,5 +52,19 @@ class FoodFlowTest {
         assertNull(editing.batch);assertTrue(editing.meal.items.isEmpty())
         assertEquals(draft,draft.removeBatchResult("missing"))
     }
+    @Test fun blankOrIncidentalDraftStateDoesNotCountAsContent() {
+        assertTrue(FoodDraft().isEmpty())
+        assertTrue(FoodDraft(batch=FoodBatch()).isEmpty())
+        assertTrue(FoodDraft(editing=true,batch=FoodBatch(kind="manual",results=listOf(FoodItem()),status="review")).isEmpty())
+        assertTrue(FoodDraft(batch=FoodBatch(kind="photo",shareCount=2)).isEmpty())
+    }
+    @Test fun photosTextTagsResultsAndMealItemsAreDraftContent() {
+        assertFalse(FoodDraft(batch=FoodBatch(photos=listOf("/tmp/meal.jpg"))).isEmpty())
+        assertFalse(FoodDraft(batch=FoodBatch(description="少油，米饭半份")).isEmpty())
+        assertFalse(FoodDraft(batch=FoodBatch(tags=setOf("少油"))).isEmpty())
+        assertFalse(FoodDraft(batch=FoodBatch(results=listOf(item()))).isEmpty())
+        assertFalse(FoodDraft(batch=FoodBatch(advice=MealAdvice(healthiness="搭配均衡"))).isEmpty())
+        assertFalse(FoodDraft(meal=Meal(items=listOf(item()))).isEmpty())
+    }
 
 }

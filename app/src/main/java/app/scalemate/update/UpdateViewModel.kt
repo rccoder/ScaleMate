@@ -27,6 +27,7 @@ enum class UpdatePhase {
     CHECKING,
     UP_TO_DATE,
     AVAILABLE,
+    PREPARING,
     DOWNLOADING,
     VERIFYING,
     WAITING_INSTALL,
@@ -55,7 +56,11 @@ data class UpdateUiState(
     val probingRoutes: Boolean = false,
     val probeTag: String = "",
     val routeProbes: Map<String, RouteProbeResult> = emptyMap(),
-    val showChannelWarning: Boolean = false
+    val showChannelWarning: Boolean = false,
+    val activeSourceId: String = "",
+    val downloadStartedAt: Long = 0L,
+    val downloadBytesAtStart: Long = 0L,
+    val downloadSpeedBytesPerSecond: Long = 0L
 ) {
     val progress: Float
         get() = if (totalBytes > 0) {
@@ -70,6 +75,13 @@ data class UpdateUiState(
                 (channel == UpdateChannel.PREVIEW || candidate.channel == UpdateChannel.STABLE)
         }
     } == true
+
+    val remainingSeconds: Long? get() {
+        if (phase != UpdatePhase.DOWNLOADING || downloadSpeedBytesPerSecond <= 0 ||
+            totalBytes <= downloadedBytes
+        ) return null
+        return ((totalBytes - downloadedBytes) / downloadSpeedBytesPerSecond).coerceAtLeast(1)
+    }
 
 }
 
@@ -337,10 +349,14 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
         cancelRouteProbe()
         verifiedFile = null
         mutable.value = mutable.value.copy(
-            phase = UpdatePhase.DOWNLOADING,
+            phase = UpdatePhase.PREPARING,
             message = "",
             downloadedBytes = 0,
-            totalBytes = entry.apkSizeBytes
+            totalBytes = entry.apkSizeBytes,
+            activeSourceId = "",
+            downloadStartedAt = 0L,
+            downloadBytesAtStart = 0L,
+            downloadSpeedBytesPerSecond = 0L
         )
         downloadJob = viewModelScope.launch {
             val operation = currentCoroutineContext()
@@ -350,14 +366,39 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                 val file = repository.download(
                     UpdateCandidate(entry, manifest),
                     onProgress = { downloaded, total ->
-                        if (operation.isActive) mutable.update { state -> state.copy(
-                            downloadedBytes = downloaded,
-                            totalBytes = total.takeIf { it > 0 } ?: entry.apkSizeBytes,
-                            phase = if (downloaded >= entry.apkSizeBytes) UpdatePhase.VERIFYING
-                                else UpdatePhase.DOWNLOADING
-                        ) }
+                        if (operation.isActive) {
+                            val now = System.currentTimeMillis()
+                            mutable.update { state ->
+                                val started = state.downloadStartedAt.takeIf { it > 0 } ?: now
+                                val elapsed = (now - started).coerceAtLeast(1)
+                                val speed = ((downloaded - state.downloadBytesAtStart) * 1000 / elapsed)
+                                    .coerceAtLeast(0)
+                                state.copy(
+                                    downloadedBytes = downloaded,
+                                    totalBytes = total.takeIf { it > 0 } ?: entry.apkSizeBytes,
+                                    downloadStartedAt = started,
+                                    downloadSpeedBytesPerSecond = speed,
+                                    phase = UpdatePhase.DOWNLOADING
+                                )
+                            }
+                        }
                     },
-                    isCancelled = { !operation.isActive }
+                    isCancelled = { !operation.isActive },
+                    onRoute = { source ->
+                        if (operation.isActive) mutable.update { state ->
+                            state.copy(
+                                activeSourceId = source.id,
+                                phase = UpdatePhase.DOWNLOADING,
+                                downloadedBytes = 0,
+                                downloadStartedAt = System.currentTimeMillis(),
+                                downloadBytesAtStart = state.downloadedBytes,
+                                downloadSpeedBytesPerSecond = 0L
+                            )
+                        }
+                    },
+                    onVerifying = {
+                        if (operation.isActive) mutable.update { it.copy(phase = UpdatePhase.VERIFYING) }
+                    }
                 )
                 operation.ensureActive()
                 verifiedFile = file
@@ -387,6 +428,10 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
             phase = if (mutable.value.entry != null) UpdatePhase.AVAILABLE else UpdatePhase.IDLE,
             downloadedBytes = 0,
             totalBytes = 0,
+            activeSourceId = "",
+            downloadStartedAt = 0L,
+            downloadBytesAtStart = 0L,
+            downloadSpeedBytesPerSecond = 0L,
             message = getApplication<Application>().getString(R.string.update_error_cancelled)
         )
     }

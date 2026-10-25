@@ -132,13 +132,16 @@ class UpdateRepository(
     suspend fun download(
         candidate: UpdateCandidate,
         onProgress: (Long, Long) -> Unit,
-        isCancelled: () -> Boolean
+        isCancelled: () -> Boolean,
+        onRoute: (UpdateSource) -> Unit = {},
+        onVerifying: () -> Unit = {}
     ): File = withContext(Dispatchers.IO) {
         val selected = cache.selectedSource()
         val sources = UpdateSources.assetOrder(selected)
         val file = File(context.filesDir, "updates/${candidate.entry.tag}/$UPDATE_APK_NAME")
         currentCoroutineContext().ensureActive()
         if (file.isFile && System.currentTimeMillis() - file.lastModified() < 24 * 60 * 60 * 1000L) {
+            onVerifying()
             if (runCatching { verifyDownloadedApk(file, candidate.manifest) }.isSuccess) return@withContext file
         }
         File(context.filesDir, "updates").listFiles()?.filter { it != file.parentFile }
@@ -146,11 +149,13 @@ class UpdateRepository(
         val errors = mutableListOf<String>()
         for (source in sources) {
             try {
+                onRoute(source)
                 currentCoroutineContext().ensureActive()
                 val url = UpdateSources.assetUrl(source, candidate.entry.tag)
                 require(isAllowedReleaseAssetUrl(url)) { "Unknown download host" }
                 transport.downloadTo(url, file, onProgress, isCancelled)
                 currentCoroutineContext().ensureActive()
+                onVerifying()
                 verifyDownloadedApk(file, candidate.manifest)
                 return@withContext file
             } catch (error: CancellationException) {

@@ -30,6 +30,9 @@ import app.scalemate.food.FoodViewModel
 import app.scalemate.food.FoodScreen
 import app.scalemate.food.Meal
 import app.scalemate.food.Nutrients
+import app.scalemate.food.foodDraftPage
+import app.scalemate.food.foodEntryNeedsChoice
+import app.scalemate.food.SavedMealDetails
 import app.scalemate.update.UpdateScreen
 import app.scalemate.update.UpdateViewModel
 import java.time.LocalDate
@@ -43,6 +46,11 @@ import java.time.format.FormatStyle
 private val Light=lightColorScheme(primary=Color(0xFF376A52),primaryContainer=Color(0xFFCEEBDA),onPrimaryContainer=Color(0xFF123B29),secondaryContainer=Color(0xFFD6E8DA),onSecondaryContainer=Color(0xFF123B29),background=Color(0xFFF7F9F5),surface=Color(0xFFF7F9F5),onSurface=Color(0xFF19221D),onSurfaceVariant=Color(0xFF526158),surfaceVariant=Color(0xFFE2E9E1))
 private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0A3826),primaryContainer=Color(0xFF214F38),onPrimaryContainer=Color(0xFFCEEBDA),secondaryContainer=Color(0xFF263E30),onSecondaryContainer=Color(0xFFD6E8DA),background=Color(0xFF111914),surface=Color(0xFF111914),surfaceVariant=Color(0xFF26372C),onSurfaceVariant=Color(0xFFB8C7BC),outline=Color(0xFF819087),outlineVariant=Color(0xFF3D4D43))
 
+@Composable internal fun scaleMateColorScheme(dark:Boolean,dynamic:Boolean):ColorScheme {
+    val context=LocalContext.current
+    return if(dynamic){if(dark)dynamicDarkColorScheme(context)else dynamicLightColorScheme(context)}else if(dark)Dark else Light
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun ScaleMateApp(vm: ScaleViewModel, foodVm: FoodViewModel, updateVm: UpdateViewModel, healthVm:app.scalemate.health.HealthViewModel, healthEntry:String, consumeHealthEntry:()->Unit, authorizeHealth:(Set<String>)->Unit, authorizeNutrition: ()->Unit, bluetooth: (() -> Unit)->Unit, authorize: ()->Unit, healthSettings: ()->Unit, googleApp: ()->Unit, language: (String)->Unit, privacy: ()->Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -51,14 +59,13 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
     val updateState by updateVm.state.collectAsStateWithLifecycle()
     var weightSyncGuide by remember {mutableStateOf(false)}
     var weightBaseline by remember {mutableStateOf<Set<String>?>(null)}
-    var showAllRecords by rememberSaveable {mutableStateOf(false)}
     var foodServiceSelector by rememberSaveable {mutableStateOf("")}
-    var foodStartPage by rememberSaveable {mutableStateOf("home")}
     var servicesReturnPage by rememberSaveable {mutableStateOf("settings")}
     val healthPageState=androidx.compose.runtime.saveable.rememberSaveableStateHolder()
-    var foodSelection by remember {mutableStateOf<String?>(null)}
+    var foodEditorPage by rememberSaveable {mutableStateOf<String?>(null)}
+    var foodEntryChoice by remember {mutableStateOf(false)}
+    var selectedFoodMeal by remember {mutableStateOf<String?>(null)}
     var devicesReturn by rememberSaveable {mutableStateOf("home")}
-    var foodRecords by rememberSaveable {mutableStateOf(false)}
     var welcomeDone by rememberSaveable { mutableStateOf(false) }
     var candidate by remember {mutableStateOf<String?>(null)}
     var selected by remember {mutableStateOf<Measurement?>(null)}
@@ -82,15 +89,15 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
     val actualPage=if(!state.loaded)"loading" else if(!state.onboarded && !welcomeDone)"welcome" else page
     LaunchedEffect(healthEntry){if(healthEntry.isNotEmpty())page="health"}
     LaunchedEffect(actualPage){if(actualPage=="settings"||actualPage=="food-services")foodVm.refreshServices()}
-    LaunchedEffect(actualPage,showAllRecords,foodRecords){mainScroll.scrollTo(0)}
-    LaunchedEffect(actualPage,foodRecords){vm.foodPage(actualPage.startsWith("food") || actualPage=="records" && foodRecords)}
+    LaunchedEffect(actualPage){mainScroll.scrollTo(0)}
+    LaunchedEffect(actualPage,foodEditorPage,foodEntryChoice){vm.foodPage(pausesScaleListening(actualPage)||foodEditorPage!=null||foodEntryChoice)}
     LaunchedEffect(state.loaded,state.records) {
         if(state.loaded){val ids=state.records.map {it.id}.toSet();val baseline=weightBaseline;if(baseline!=null && (ids-baseline).isNotEmpty() && !state.healthAllowed)weightSyncGuide=true;weightBaseline=(baseline ?: emptySet())+ids}
     }
     val scale=state.scales.find {it.id==state.activeId}
     val settingUp=scale!=null && !scale.verified
     LaunchedEffect(state.activeId,state.session.phase) { if(state.session.phase!=Phase.STABLE)setupChoice=false }
-    val colors=if(state.dynamic) {if(state.dark)dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)} else if(state.dark)Dark else Light
+    val colors=scaleMateColorScheme(state.dark,state.dynamic)
     SideEffect {
         (context as? android.app.Activity)?.window?.let {window->
             androidx.core.view.WindowCompat.getInsetsController(window,window.decorView).apply {
@@ -99,19 +106,26 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
             }
         }
     }
-    fun navigate(next: String) {if(next=="devices")devicesReturn=if(page=="settings")"settings" else "home";if(page=="devices"&&next!="devices")vm.stop();vm.foodPage(next.startsWith("food"));if(next!=page && state.weighing)vm.cancelWeighing();page=next}
-    BackHandler(actualPage in listOf("devices","setup","food-services","sync-settings","health-permissions","update") || actualPage=="records" && showAllRecords) {
-        when(actualPage){"devices"->navigate(devicesReturn);"setup"->navigate("sync-settings");"food-services"->navigate(servicesReturnPage);"health-permissions"->navigate("settings");"sync-settings","update"->navigate("settings");else->showAllRecords=false}
+    fun navigate(next: String) {if(next=="devices")devicesReturn=if(page=="settings")"settings" else "home";if(page=="devices"&&next!="devices")vm.stop();vm.foodPage(pausesScaleListening(next)||foodEditorPage!=null||foodEntryChoice);if(next!=page && state.weighing)vm.cancelWeighing();page=next}
+    fun openFoodEditor(next:String) {vm.foodPage(true);foodEditorPage=next}
+    fun startNewMeal() {foodVm.newMeal();openFoodEditor("editor")}
+    fun requestFoodEntry() {
+        if(!foodState.loaded)return
+        if(foodEntryNeedsChoice(foodState.draft)){vm.foodPage(true);foodEntryChoice=true}else startNewMeal()
     }
-    LaunchedEffect(state.weighing) {if(state.weighing){page="home";selected=null;choose=false;autoDialog=false;rename=null;candidate=null;deleting=null;languageDialog=false}}
+    BackHandler(actualPage in listOf("devices","setup","food-services","sync-settings","health-permissions","update")) {
+        when(actualPage){"devices"->navigate(devicesReturn);"setup"->navigate("sync-settings");"food-services"->navigate(servicesReturnPage);"health-permissions"->navigate("settings");"sync-settings","update"->navigate("settings")}
+    }
+    LaunchedEffect(state.weighing) {if(state.weighing){page="home";selected=null;selectedFoodMeal=null;choose=false;autoDialog=false;rename=null;candidate=null;deleting=null;languageDialog=false}}
     MaterialTheme(colorScheme=colors) {
         val c=MaterialTheme.colorScheme
         Scaffold(topBar={ if(actualPage !in listOf("welcome","loading")) TopAppBar(title={Text(stringResource(when(actualPage){"food"->R.string.food_title;"food-services"->R.string.food_services;"devices"->R.string.devices;"records"->R.string.records;"settings"->R.string.settings;"update"->R.string.update_title;"health"->R.string.health_title;"health-permissions"->R.string.health_permission_settings;"setup"->R.string.prepare_health;"sync-settings"->R.string.settings_sync;"home"->if(settingUp)R.string.finish_scale_setup else R.string.weigh;else->R.string.app_name}),fontWeight=FontWeight.SemiBold)},navigationIcon={if(actualPage in listOf("devices","setup","food-services","sync-settings","health-permissions","update"))IconButton(onClick={navigate(when(actualPage){"devices"->devicesReturn;"setup"->"sync-settings";"food-services"->servicesReturnPage;"health-permissions"->"settings";else->"settings"})}){Icon(Icons.AutoMirrored.Filled.ArrowBack,stringResource(R.string.cancel))}}) },
             bottomBar={if(actualPage in listOf("home","food","records","health","settings"))NavigationBar(containerColor=c.surface){
-                listOf(Triple("records",R.string.records,Icons.AutoMirrored.Filled.List),Triple("food",R.string.food_title,Icons.Default.Add),Triple("home",R.string.weigh,Icons.Default.Home),Triple("health",R.string.health_title,Icons.Default.Favorite),Triple("settings",R.string.settings,Icons.Default.Settings)).forEach{(key,label,icon)->NavigationBarItem(selected=actualPage==key,onClick={if(key=="food"){foodStartPage="home";foodSelection=null};navigate(key)},icon={BadgedBox(badge={if(key=="settings" && updateState.hasUpdate)Badge()}){Icon(icon,stringResource(label))}},label={Text(stringResource(label))})}
+                listOf(Triple("records",R.string.records,Icons.AutoMirrored.Filled.List),Triple("food",R.string.food_title,Icons.Default.Add),Triple("home",R.string.weigh,Icons.Default.Home),Triple("health",R.string.health_title,Icons.Default.Favorite),Triple("settings",R.string.settings,Icons.Default.Settings)).forEach{(key,label,icon)->NavigationBarItem(selected=actualPage==key,onClick={navigate(key)},icon={BadgedBox(badge={if(key=="settings" && updateState.hasUpdate)Badge()}){Icon(icon,stringResource(label))}},label={Text(stringResource(label))})}
             }}
         ) {padding->
-            Column(Modifier.fillMaxSize().padding(padding).verticalScroll(mainScroll).padding(horizontal=24.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
+            Box(Modifier.fillMaxSize().padding(padding)) {
+            Column(Modifier.fillMaxSize().verticalScroll(mainScroll).padding(horizontal=24.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
                 when(actualPage) {
                     "loading"->CircularProgressIndicator()
                     "welcome"->{
@@ -220,9 +234,12 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                             state.records.firstOrNull()?.let{m->Text(stringResource(R.string.recent),style=MaterialTheme.typography.titleMedium);RecordCard(m,number.format(m.kg),dates.format(Instant.ofEpochMilli(m.time))){selected=m}}
                         }
                     }
-                    "food","food-services"->{key(actualPage){FoodScreen(foodVm,authorizeNutrition,if(actualPage=="food-services")"services" else foodStartPage,foodSelection,resetScroll={mainScope.launch {mainScroll.scrollTo(0)}},initialSelector=if(actualPage=="food-services")foodServiceSelector else "")}}
+                    "food","food-services"->{key(actualPage){FoodScreen(foodVm,authorizeNutrition,if(actualPage=="food-services")"services" else "home",resetScroll={mainScope.launch {mainScroll.scrollTo(0)}},initialSelector=if(actualPage=="food-services")foodServiceSelector else "",onStartMeal={requestFoodEntry()},onOpenEditor={openFoodEditor(it)})}}
                     "records"->{
-                        if(!showAllRecords) {
+                            @Composable fun renderEntry(entry:TimelineEntry) {
+                                entry.weight?.let {m->RecordCard(m,number.format(m.kg),dates.format(Instant.ofEpochMilli(m.time))){selected=m}}
+                                entry.meal?.let {meal->Card(onClick={selectedFoodMeal=meal.id},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(22.dp)){Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(dates.format(Instant.ofEpochMilli(meal.time)),style=MaterialTheme.typography.labelMedium);Text(meal.title,style=MaterialTheme.typography.titleLarge);Text((meal.nutrients.kcal?.let {foodNumber.format(it)} ?: "—")+" kcal");Text(stringResource(when(meal.status){"synced"->R.string.status_synced;"writing"->R.string.status_writing;"permission"->R.string.status_permission;"unavailable"->R.string.food_health_unavailable;"failed"->R.string.status_failed;else->R.string.status_pending}),style=MaterialTheme.typography.bodySmall,color=c.primary)}}}
+                            }
                             val today=LocalDate.now()
                             val todayMeals=foodState.meals.filter {!it.deleted && Instant.ofEpochMilli(it.time).atZone(ZoneId.systemDefault()).toLocalDate()==today}
                             val todayWeights=state.records.filter {Instant.ofEpochMilli(it.time).atZone(ZoneId.systemDefault()).toLocalDate()==today}
@@ -238,33 +255,39 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                                 }
                             }
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                                Button(onClick={if(foodState.draft==null)foodVm.newMeal();foodStartPage="editor";foodSelection=null;navigate("food")},modifier=Modifier.weight(1f).heightIn(min=52.dp)){Text(stringResource(if(foodState.draft==null)R.string.food_add else R.string.food_resume))}
+                                Button(enabled=foodState.loaded,onClick={requestFoodEntry()},modifier=Modifier.weight(1f).heightIn(min=52.dp)){Text(stringResource(R.string.food_add))}
                                 OutlinedButton(onClick={navigate("home")},modifier=Modifier.weight(1f).heightIn(min=52.dp)){Text(stringResource(R.string.weigh))}
                             }
                             val pending=state.records.count {it.status!="synced"}+foodState.meals.count {it.status!="synced"}
-                            OutlinedCard(modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp)) {
-                                Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                                    Text(stringResource(R.string.records_pending,pending),fontWeight=FontWeight.Medium)
-                                    Text(stringResource(R.string.records_sync_hint),style=MaterialTheme.typography.bodySmall)
-                                    TextButton(onClick={navigate("sync-settings")}){Text(stringResource(R.string.records_sync_settings))}
+                            if(pending>0) {
+                                OutlinedCard(modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp)) {
+                                    Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                                        Text(stringResource(R.string.records_pending,pending),fontWeight=FontWeight.Medium)
+                                        Text(stringResource(R.string.records_sync_hint),style=MaterialTheme.typography.bodySmall)
+                                        TextButton(onClick={navigate("sync-settings")}){Text(stringResource(R.string.records_sync_settings))}
+                                    }
                                 }
                             }
-                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text(stringResource(R.string.records_timeline),style=MaterialTheme.typography.titleLarge);TextButton(onClick={showAllRecords=true}){Text(stringResource(R.string.all_records))}}
-                            val entries=(todayWeights.map {TimelineEntry(it.time,weight=it)}+todayMeals.map {TimelineEntry(it.time,meal=it)}).sortedByDescending {it.at}
-                            if(entries.isEmpty())Text(stringResource(R.string.records_empty_today),color=c.onSurfaceVariant)
-                            entries.forEach {entry->
-                                entry.weight?.let {m->RecordCard(m,number.format(m.kg),dates.format(Instant.ofEpochMilli(m.time))){selected=m}}
-                                entry.meal?.let {meal->Card(onClick={foodStartPage="home";foodSelection=meal.id;navigate("food")},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(22.dp)){Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(dates.format(Instant.ofEpochMilli(meal.time)),style=MaterialTheme.typography.labelMedium);Text(meal.title,style=MaterialTheme.typography.titleLarge);Text((meal.nutrients.kcal?.let {foodNumber.format(it)} ?: "—")+" kcal");Text(stringResource(when(meal.status){"synced"->R.string.status_synced;"writing"->R.string.status_writing;"permission"->R.string.status_permission;"unavailable"->R.string.food_health_unavailable;"failed"->R.string.status_failed;else->R.string.status_pending}),style=MaterialTheme.typography.bodySmall,color=c.primary)}}}
+                            val todayEntries=(todayWeights.map {TimelineEntry(it.time,weight=it)}+todayMeals.map {TimelineEntry(it.time,meal=it)}).sortedByDescending {it.at}
+                            if(todayEntries.isNotEmpty()) {
+                                Text(stringResource(R.string.records_timeline),style=MaterialTheme.typography.titleLarge)
+                                todayEntries.forEach {renderEntry(it)}
                             }
-                        } else {
-                            TextButton(onClick={showAllRecords=false}){Text(stringResource(R.string.records_back_today))}
-                            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){FilterChip(selected=!foodRecords,onClick={foodRecords=false;vm.foodPage(false)},label={Text(stringResource(R.string.weigh))});FilterChip(selected=foodRecords,onClick={foodRecords=true;vm.foodPage(true)},label={Text(stringResource(R.string.food_title))})}
-                            if(foodRecords) FoodScreen(foodVm,authorizeNutrition,"mealHistory",resetScroll={mainScope.launch {mainScroll.scrollTo(0)}})
-                            else {
-                                if(state.records.isEmpty())Text(stringResource(R.string.empty_records),color=c.onSurfaceVariant)
-                                state.records.forEach{m->RecordCard(m,number.format(m.kg),dates.format(Instant.ofEpochMilli(m.time))){selected=m}}
+                            val historyWeights=state.records.filter {Instant.ofEpochMilli(it.time).atZone(ZoneId.systemDefault()).toLocalDate()!=today}
+                            val historyMeals=foodState.meals.filter {!it.deleted && Instant.ofEpochMilli(it.time).atZone(ZoneId.systemDefault()).toLocalDate()!=today}
+                            val history=(historyWeights.map {TimelineEntry(it.time,weight=it)}+historyMeals.map {TimelineEntry(it.time,meal=it)}).sortedByDescending {it.at}
+                            if(history.isNotEmpty()) {
+                                Text(stringResource(R.string.records_history),style=MaterialTheme.typography.titleLarge)
+                                var lastDay:String?=null
+                                history.forEach {entry->
+                                    val day=Instant.ofEpochMilli(entry.at).atZone(ZoneId.systemDefault()).toLocalDate().toString()
+                                    if(day!=lastDay) {
+                                        Text(day,style=MaterialTheme.typography.labelLarge,color=c.primary,modifier=Modifier.padding(top=4.dp))
+                                        lastDay=day
+                                    }
+                                    renderEntry(entry)
+                                }
                             }
-                        }
                     }
                     "health"->healthPageState.SaveableStateProvider("health") {app.scalemate.health.HealthScreen(healthVm,authorizeHealth,managePermissions={navigate("health-permissions")},manageServices={foodServiceSelector="";servicesReturnPage="health";navigate("food-services")},initialReminderId=healthEntry,consumeReminder=consumeHealthEntry,resetScroll={mainScope.launch {mainScroll.scrollTo(0)}})}
                     "health-permissions"->app.scalemate.health.HealthPermissionsScreen(healthVm,authorizeHealth,openHealthSettings=healthSettings,back={navigate("settings")},resetScroll={mainScope.launch {mainScroll.scrollTo(0)}})
@@ -325,7 +348,7 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                             SettingsRow(stringResource(R.string.settings_nutrition),stringResource(if(!foodState.healthAvailable)R.string.food_health_unavailable else if(foodState.permitted)R.string.settings_permission_enabled else R.string.settings_permission_disabled)){if(!foodState.healthAvailable||foodState.permitted)healthSettings() else authorizeNutrition()}
                         }
                         SettingsGroup(stringResource(R.string.settings_sync_records)) {
-                            SettingsRow(stringResource(R.string.settings_view_records),stringResource(R.string.records_pending,state.records.count {it.status!="synced"}+foodState.meals.count {it.status!="synced"})){showAllRecords=true;foodRecords=foodState.meals.any {it.status!="synced"};navigate("records")}
+                            SettingsRow(stringResource(R.string.settings_view_records),stringResource(R.string.records_pending,state.records.count {it.status!="synced"}+foodState.meals.count {it.status!="synced"})){navigate("records")}
                         }
                         SettingsGroup(stringResource(R.string.settings_sync_help)) {
                             SettingsRow(stringResource(R.string.health_settings),"",healthSettings)
@@ -341,7 +364,16 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                 state.message?.let{Text(stringResource(it),color=c.error,style=MaterialTheme.typography.bodyMedium)}
                 Spacer(Modifier.height(24.dp))
             }
+            }
         }
+        foodEditorPage?.let {entry->FoodScreen(foodVm,authorizeNutrition,initialPage=entry,editorPanel=true,onCloseEditor={foodEditorPage=null},onMealSaved={foodEditorPage=null})}
+        if(foodEntryChoice)AlertDialog(
+            onDismissRequest={foodEntryChoice=false},title={Text(stringResource(R.string.food_draft_exists))},
+            text={Text(stringResource(R.string.food_start_or_resume))},
+            confirmButton={TextButton(onClick={foodEntryChoice=false;openFoodEditor(foodDraftPage(foodState.draft).takeUnless {it=="home"} ?: "editor")}){Text(stringResource(R.string.food_resume))}},
+            dismissButton={TextButton(onClick={foodEntryChoice=false;startNewMeal()}){Text(stringResource(R.string.food_start_fresh))}}
+        )
+        selectedFoodMeal?.let {id->SavedMealDetails(foodVm,id,onDismiss={selectedFoodMeal=null},onEditDraft={openFoodEditor("editor")},authorize=authorizeNutrition)}
         if(weightSyncGuide)AlertDialog(onDismissRequest={weightSyncGuide=false},title={Text(stringResource(R.string.records_weight_saved))},text={Text(stringResource(R.string.records_weight_sync_guide))},confirmButton={TextButton(onClick={weightSyncGuide=false;authorize()}){Text(stringResource(R.string.authorize))}},dismissButton={TextButton(onClick={weightSyncGuide=false}){Text(stringResource(R.string.food_continue_local))}})
         if(candidate!=null)AlertDialog(onDismissRequest={candidate=null},title={Text(stringResource(R.string.confirm_scale))},text={Text(stringResource(R.string.confirm_model,modelName,model.internalModel))},confirmButton={TextButton(onClick={vm.bind(candidate!!,replacing?.name ?: model.id,replacing?.id);candidate=null;replacing=null;navigate("home")}){Text(stringResource(R.string.bind))}},dismissButton={TextButton(onClick={candidate=null}){Text(stringResource(R.string.cancel))}})
         if(rename!=null)AlertDialog(onDismissRequest={rename=null},title={Text(stringResource(R.string.rename))},text={OutlinedTextField(value=name,onValueChange={name=it.take(60)},label={Text(stringResource(R.string.name))},singleLine=true)},confirmButton={TextButton(enabled=name.isNotBlank(),onClick={vm.rename(rename!!.id,name);rename=null}){Text(stringResource(R.string.save))}},dismissButton={TextButton(onClick={rename=null}){Text(stringResource(R.string.cancel))}})

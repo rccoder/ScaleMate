@@ -30,7 +30,7 @@ class AiFormatTest {
         assertEquals("one\ntwo",AiWire.text("anthropic",JSONObject("""{"stop_reason":"end_turn","content":[{"type":"thinking","thinking":"private"},{"type":"text","text":"one"},{"type":"text","text":"two"}]}""")))
         assertEquals("ok",AiWire.text("openai",JSONObject("""{"choices":[{"finish_reason":"stop","message":{"content":"ok"}}]}""")))
         for((format,raw) in listOf("anthropic" to """{"stop_reason":"max_tokens","content":[{"type":"text","text":"partial"}]}""","openai" to """{"choices":[{"finish_reason":"length","message":{"content":"partial"}}]}""")) {
-            try {AiWire.text(format,JSONObject(raw));fail("Truncated response accepted")}catch(_:IllegalArgumentException){}
+            try {AiWire.text(format,JSONObject(raw));fail("Truncated response accepted")}catch(_:AiWire.IncompleteResponse){}
         }
     }
     @Test fun versionTwoServicesKeepCredentialsAndDefaults() {

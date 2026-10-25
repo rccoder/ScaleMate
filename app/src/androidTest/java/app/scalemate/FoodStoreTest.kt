@@ -33,11 +33,17 @@ class FoodStoreTest {
         SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(name),null).use {db->
             db.execSQL("CREATE TABLE scales(id TEXT PRIMARY KEY,name TEXT NOT NULL,address TEXT UNIQUE NOT NULL,verified INTEGER NOT NULL)")
             db.execSQL("CREATE TABLE measurements(id TEXT PRIMARY KEY,deviceId TEXT NOT NULL,source TEXT NOT NULL,kg REAL NOT NULL,time INTEGER NOT NULL,offset INTEGER NOT NULL,status TEXT NOT NULL,platformId TEXT NOT NULL,attempts INTEGER NOT NULL)")
+            db.execSQL("CREATE TABLE food_meals(id TEXT PRIMARY KEY,revision INTEGER NOT NULL,time INTEGER NOT NULL,payload TEXT NOT NULL,status TEXT NOT NULL,platformId TEXT NOT NULL DEFAULT '',attempts INTEGER NOT NULL DEFAULT 0,deleted INTEGER NOT NULL DEFAULT 0)")
+            db.execSQL("CREATE INDEX food_meals_time ON food_meals(time)")
+            db.execSQL("CREATE TABLE food_templates(id TEXT PRIMARY KEY,payload TEXT NOT NULL)")
+            db.execSQL("CREATE TABLE ai_services(id TEXT PRIMARY KEY,name TEXT NOT NULL,url TEXT NOT NULL,model TEXT NOT NULL,secret TEXT NOT NULL,images INTEGER NOT NULL,version INTEGER NOT NULL,consent INTEGER NOT NULL,format TEXT NOT NULL DEFAULT 'openai')")
+            db.execSQL("CREATE TABLE food_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
+            db.execSQL("CREATE TABLE food_library(id TEXT PRIMARY KEY,nameKey TEXT NOT NULL UNIQUE,payload TEXT NOT NULL,favorite INTEGER NOT NULL DEFAULT 0,useCount INTEGER NOT NULL DEFAULT 0,lastUsed INTEGER NOT NULL DEFAULT 0)")
             db.execSQL("CREATE TABLE health_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
             db.execSQL("INSERT INTO scales VALUES('scale','home','A',1)")
             db.execSQL("INSERT INTO measurements VALUES('weight','scale','home',71.2,1000,28800,'synced','platform',1)")
             db.execSQL("INSERT INTO health_settings VALUES('sentinel','kept')")
-            db.version=5
+            db.version=4
         }
         Store(context,name).use {db->
             assertEquals(71.2,db.records().single().kg,0.001)
@@ -124,7 +130,7 @@ class FoodStoreTest {
         assertEquals("先吃蔬菜，酱汁按需蘸取。",recognized.advice.balance)
         val usage=FoodJson.usage(raw)
         assertEquals(1200L,usage.inputTokens);assertEquals(240L,usage.outputTokens);assertEquals(1440L,usage.totalTokens)
-        val batch=FoodBatch(results=recognized.items,status="review",advice=recognized.advice,usage=usage,analysisMs=12_345)
+        val batch=FoodBatch(results=recognized.items.map {it.copy(needsPortionReview=false)},status="review",advice=recognized.advice,usage=usage,analysisMs=12_345)
         val draft=FoodDraft(batch=batch)
         assertEquals(draft,FoodJson.draft(FoodJson.draft(draft)))
         val committed=draft.commitBatch()

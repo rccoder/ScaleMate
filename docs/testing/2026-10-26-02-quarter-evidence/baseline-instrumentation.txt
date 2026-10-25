@@ -1,0 +1,65 @@
+INSTRUMENTATION_STATUS: class=app.scalemate.HealthQuarterDeviceTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=1
+INSTRUMENTATION_STATUS: stream=
+app.scalemate.HealthQuarterDeviceTest:
+INSTRUMENTATION_STATUS: test=fullQuarterThenNoopRestartAndSparseChanges
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: quarterPhase=bootstrap
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterProgress=bootstrap 10041 ms; requests=552
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterProgress=bootstrap 20079 ms; requests=873
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterProgress=bootstrap 30092 ms; requests=912
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterResult={"phase":"bootstrap","elapsedMs":33514,"platformRequests":{"token":42,"records":481,"aggregate":377,"medical":12},"platformErrors":{"Steps:records:IllegalStateException":29},"fullCategories":["ActiveCaloriesBurned","ActivityIntensity","BasalBodyTemperature","BasalMetabolicRate","BloodGlucose","BloodPressure","BodyFat","BodyTemperature","BodyWaterMass","BoneMass","CervicalMucus","CyclingPedalingCadence","Distance","ElevationGained","ExerciseRoute","ExerciseSession","FloorsClimbed","HeartRate","HeartRateVariabilityRmssd","Height","Hydration","IntermenstrualBleeding","LeanBodyMass","Medical_ALLERGIES_INTOLERANCES","Medical_CONDITIONS","Medical_LABORATORY_RESULTS","Medical_MEDICATIONS","Medical_PERSONAL_DETAILS","Medical_PRACTITIONER_DETAILS","Medical_PREGNANCY","Medical_PROCEDURES","Medical_SOCIAL_HISTORY","Medical_VACCINES","Medical_VISITS","Medical_VITAL_SIGNS","MenstruationFlow","MenstruationPeriod","MindfulnessSession","Nutrition","OvulationTest","OxygenSaturation","PlannedExerciseSession","Power","RespiratoryRate","RestingHeartRate","SexualActivity","SkinTemperature","SleepSession","Speed","Steps","StepsCadence","TotalCaloriesBurned","Vo2Max","Weight","WheelchairPushes"],"coverageFailures":{"Steps":"partial"},"errorResource":null,"heapUsedBytes":76236784,"cachedRows":24199,"rawFileBytes":6350446}
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterPhase=unchanged-1
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterProgress=unchanged-1 10005 ms; requests=89
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterResult={"phase":"unchanged-1","elapsedMs":16894,"platformRequests":{"records":93,"medical":12,"token":1,"aggregate":6,"changes":41},"platformErrors":{"Steps:records:IllegalStateException":29},"fullCategories":["ExerciseRoute","Medical_ALLERGIES_INTOLERANCES","Medical_CONDITIONS","Medical_LABORATORY_RESULTS","Medical_MEDICATIONS","Medical_PERSONAL_DETAILS","Medical_PRACTITIONER_DETAILS","Medical_PREGNANCY","Medical_PROCEDURES","Medical_SOCIAL_HISTORY","Medical_VACCINES","Medical_VISITS","Medical_VITAL_SIGNS","Steps"],"coverageFailures":{"Steps":"partial"},"errorResource":null,"heapUsedBytes":52492240,"cachedRows":24199,"rawFileBytes":6350446}
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterPhase=unchanged-2
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterProgress=unchanged-2 10005 ms; requests=90
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterResult={"phase":"unchanged-2","elapsedMs":16543,"platformRequests":{"records":93,"medical":12,"token":1,"aggregate":6,"changes":41},"platformErrors":{"Steps:records:IllegalStateException":29},"fullCategories":["ExerciseRoute","Medical_ALLERGIES_INTOLERANCES","Medical_CONDITIONS","Medical_LABORATORY_RESULTS","Medical_MEDICATIONS","Medical_PERSONAL_DETAILS","Medical_PRACTITIONER_DETAILS","Medical_PREGNANCY","Medical_PROCEDURES","Medical_SOCIAL_HISTORY","Medical_VACCINES","Medical_VISITS","Medical_VITAL_SIGNS","Steps"],"coverageFailures":{"Steps":"partial"},"errorResource":null,"heapUsedBytes":51124208,"cachedRows":24199,"rawFileBytes":6350446}
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterPhase=range-90
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterProgress=range-90 10003 ms; requests=91
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterProgress=range-90 20008 ms; requests=153
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterResult={"phase":"range-90","elapsedMs":21217,"platformRequests":{"records":93,"medical":12,"token":1,"aggregate":6,"changes":41},"platformErrors":{"Steps:records:IllegalStateException":29},"fullCategories":["ExerciseRoute","Medical_ALLERGIES_INTOLERANCES","Medical_CONDITIONS","Medical_LABORATORY_RESULTS","Medical_MEDICATIONS","Medical_PERSONAL_DETAILS","Medical_PRACTITIONER_DETAILS","Medical_PREGNANCY","Medical_PROCEDURES","Medical_SOCIAL_HISTORY","Medical_VACCINES","Medical_VISITS","Medical_VITAL_SIGNS","Steps"],"coverageFailures":{"Steps":"partial"},"errorResource":null,"heapUsedBytes":76199920,"cachedRows":24199,"rawFileBytes":20527348}
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterPhase=range-7
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterProgress=range-7 10002 ms; requests=90
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterResult={"phase":"range-7","elapsedMs":16485,"platformRequests":{"records":93,"medical":12,"token":1,"aggregate":6,"changes":41},"platformErrors":{"Steps:records:IllegalStateException":29},"fullCategories":["ExerciseRoute","Medical_ALLERGIES_INTOLERANCES","Medical_CONDITIONS","Medical_LABORATORY_RESULTS","Medical_MEDICATIONS","Medical_PERSONAL_DETAILS","Medical_PRACTITIONER_DETAILS","Medical_PREGNANCY","Medical_PROCEDURES","Medical_SOCIAL_HISTORY","Medical_VACCINES","Medical_VISITS","Medical_VITAL_SIGNS","Steps"],"coverageFailures":{"Steps":"partial"},"errorResource":null,"heapUsedBytes":47024112,"cachedRows":24199,"rawFileBytes":6350446}
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterPhase=after-restart
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterProgress=after-restart 10049 ms; requests=91
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: quarterResult={"phase":"after-restart","elapsedMs":16332,"platformRequests":{"records":93,"medical":12,"token":1,"aggregate":6,"changes":41},"platformErrors":{"Steps:records:IllegalStateException":29},"fullCategories":["ExerciseRoute","Medical_ALLERGIES_INTOLERANCES","Medical_CONDITIONS","Medical_LABORATORY_RESULTS","Medical_MEDICATIONS","Medical_PERSONAL_DETAILS","Medical_PRACTITIONER_DETAILS","Medical_PREGNANCY","Medical_PROCEDURES","Medical_SOCIAL_HISTORY","Medical_VACCINES","Medical_VISITS","Medical_VITAL_SIGNS","Steps"],"coverageFailures":{"Steps":"partial"},"errorResource":null,"heapUsedBytes":38889456,"cachedRows":24199,"rawFileBytes":6350446}
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: class=app.scalemate.HealthQuarterDeviceTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=1
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=fullQuarterThenNoopRestartAndSparseChanges
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_RESULT: stream=
+
+Time: 122.587
+
+OK (1 test)
+
+
+INSTRUMENTATION_CODE: -1

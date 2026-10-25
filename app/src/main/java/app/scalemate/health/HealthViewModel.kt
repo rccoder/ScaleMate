@@ -29,8 +29,8 @@ data class HealthState(
     val exports:List<File> = emptyList(),val selectedEvidence:HealthEvidence?=null,val selectedEvidencePeriod:String="",val selectedEvidenceRecords:List<HealthRecord> = emptyList(),val selectedEvidenceRecordCount:Int=0,val selectedEvidenceReferences:List<HealthDetailReference> = emptyList(),val lastCheck:Long?=null,val sources:Map<String,String> = emptyMap(),val routeRequests:List<HealthRouteRequest> = emptyList(),val pendingRoute:HealthRouteRequest?=null,val syncStatus:String="idle",val syncProgress:String=""
 )
 
-class HealthViewModel @JvmOverloads constructor(application:Application,private val syncSource:HealthSyncSource?=null):AndroidViewModel(application) {
-    private val db=Store(application);private val store=HealthStore(db);private val food=FoodStore(db)
+class HealthViewModel @JvmOverloads constructor(application:Application,private val syncSource:HealthSyncSource?=null,databaseName:String="scalemate.db"):AndroidViewModel(application) {
+    private val db=Store(application,databaseName);private val store=HealthStore(db);private val food=FoodStore(db)
     private val reader=HealthReader(application);private val ai=AiClient()
     private val mutable=MutableStateFlow(HealthState());val state=mutable.asStateFlow()
     private var operation:Job?=null;private var generationId:String?=null
@@ -103,19 +103,24 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
         val (snapshot,fromCache)=withContext(Dispatchers.IO) {
             val sync=HealthSync(store,syncSource ?: reader)
             val cached=preferCache&&sync.canUseCache(requested,current.categories)
-            val result=if(cached)sync.cached(requested,current.categories,current.sources) else sync.refresh(requested,current.categories,current.sources) {progress->
+            val rawRoot=File(getApplication<Application>().cacheDir,"health_raw").apply {mkdirs()}
+            val previous=current.snapshot?.takeIf {s->
+                s.rawFile.matches(Regex("snapshot-[A-Za-z0-9-]+\\.jsonl"))&&File(rawRoot,s.rawFile).let {it.isFile&&System.currentTimeMillis()-it.lastModified()<86400000}
+            }
+            val result=if(cached)sync.cached(requested,current.categories,current.sources) else sync.refresh(requested,current.categories,current.sources,previous) {progress->
                 val app=getApplication<Application>()
                 val label=HealthCatalog.kinds.find {it.id==progress.detail}?.label(app.resources.configuration.locales[0].language=="zh") ?: progress.detail
                 val text=app.getString(if(progress.history)R.string.health_sync_history else R.string.health_sync_changes)+label.takeIf {it.isNotBlank()}?.let {" · $it"}.orEmpty()
                 mutable.update {it.copy(progress=text,syncProgress=text,syncStatus="syncing")}
             }
-            val rawRoot=File(getApplication<Application>().cacheDir,"health_raw").apply {mkdirs()}
+            if(result.unchanged) {
+                store.transaction {store.snapshot(result.snapshot);store.setting("activeSnapshot",result.snapshot.id)}
+                return@withContext result.snapshot to cached
+            }
             val raw=File.createTempFile("snapshot-",".jsonl",rawRoot)
             val snapshot=try {
-                raw.bufferedWriter().use {out->result.records.filterNot {it.id.startsWith("aggregate:")}.forEach {record->
-                    currentCoroutineContext().ensureActive()
-                    out.write(HealthJson.cacheRecord(record).toString());out.newLine()
-                }}
+                raw.bufferedWriter().use {out->store.writeCachedRaw(result.records,out)}
+                currentCoroutineContext().ensureActive()
                 result.snapshot.copy(rawFile=raw.name).also {snapshot->
                     store.transaction {store.snapshot(snapshot);store.setting("activeSnapshot",snapshot.id)}
                 }

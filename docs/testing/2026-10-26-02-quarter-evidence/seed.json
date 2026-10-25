@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "action": "seed",
+  "start": "2026-07-26",
+  "endExclusive": "2026-10-26",
+  "days": 92,
+  "records": {
+    "ActiveCaloriesBurnedRecord": 8832,
+    "DistanceRecord": 8832,
+    "ExerciseSessionRecord": 46,
+    "HeartRateRecord": 2208,
+    "HeartRateVariabilityRmssdRecord": 3312,
+    "NutritionRecord": 276,
+    "SleepSessionRecord": 92,
+    "StepsRecord": 26496,
+    "WeightRecord": 92
+  },
+  "heartSamples": 132480
+}

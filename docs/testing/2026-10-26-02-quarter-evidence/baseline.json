@@ -1,0 +1,325 @@
+{
+  "mode": "baseline",
+  "phases": [
+    {
+      "phase": "bootstrap",
+      "elapsedMs": 33514,
+      "platformRequests": {
+        "token": 42,
+        "records": 481,
+        "aggregate": 377,
+        "medical": 12
+      },
+      "platformErrors": {
+        "Steps:records:IllegalStateException": 29
+      },
+      "fullCategories": [
+        "ActiveCaloriesBurned",
+        "ActivityIntensity",
+        "BasalBodyTemperature",
+        "BasalMetabolicRate",
+        "BloodGlucose",
+        "BloodPressure",
+        "BodyFat",
+        "BodyTemperature",
+        "BodyWaterMass",
+        "BoneMass",
+        "CervicalMucus",
+        "CyclingPedalingCadence",
+        "Distance",
+        "ElevationGained",
+        "ExerciseRoute",
+        "ExerciseSession",
+        "FloorsClimbed",
+        "HeartRate",
+        "HeartRateVariabilityRmssd",
+        "Height",
+        "Hydration",
+        "IntermenstrualBleeding",
+        "LeanBodyMass",
+        "Medical_ALLERGIES_INTOLERANCES",
+        "Medical_CONDITIONS",
+        "Medical_LABORATORY_RESULTS",
+        "Medical_MEDICATIONS",
+        "Medical_PERSONAL_DETAILS",
+        "Medical_PRACTITIONER_DETAILS",
+        "Medical_PREGNANCY",
+        "Medical_PROCEDURES",
+        "Medical_SOCIAL_HISTORY",
+        "Medical_VACCINES",
+        "Medical_VISITS",
+        "Medical_VITAL_SIGNS",
+        "MenstruationFlow",
+        "MenstruationPeriod",
+        "MindfulnessSession",
+        "Nutrition",
+        "OvulationTest",
+        "OxygenSaturation",
+        "PlannedExerciseSession",
+        "Power",
+        "RespiratoryRate",
+        "RestingHeartRate",
+        "SexualActivity",
+        "SkinTemperature",
+        "SleepSession",
+        "Speed",
+        "Steps",
+        "StepsCadence",
+        "TotalCaloriesBurned",
+        "Vo2Max",
+        "Weight",
+        "WheelchairPushes"
+      ],
+      "coverageFailures": {
+        "Steps": "partial"
+      },
+      "errorResource": null,
+      "heapUsedBytes": 76236784,
+      "cachedRows": 24199,
+      "rawFileBytes": 6350446
+    },
+    {
+      "phase": "unchanged-1",
+      "elapsedMs": 16894,
+      "platformRequests": {
+        "records": 93,
+        "medical": 12,
+        "token": 1,
+        "aggregate": 6,
+        "changes": 41
+      },
+      "platformErrors": {
+        "Steps:records:IllegalStateException": 29
+      },
+      "fullCategories": [
+        "ExerciseRoute",
+        "Medical_ALLERGIES_INTOLERANCES",
+        "Medical_CONDITIONS",
+        "Medical_LABORATORY_RESULTS",
+        "Medical_MEDICATIONS",
+        "Medical_PERSONAL_DETAILS",
+        "Medical_PRACTITIONER_DETAILS",
+        "Medical_PREGNANCY",
+        "Medical_PROCEDURES",
+        "Medical_SOCIAL_HISTORY",
+        "Medical_VACCINES",
+        "Medical_VISITS",
+        "Medical_VITAL_SIGNS",
+        "Steps"
+      ],
+      "coverageFailures": {
+        "Steps": "partial"
+      },
+      "errorResource": null,
+      "heapUsedBytes": 52492240,
+      "cachedRows": 24199,
+      "rawFileBytes": 6350446
+    },
+    {
+      "phase": "unchanged-2",
+      "elapsedMs": 16543,
+      "platformRequests": {
+        "records": 93,
+        "medical": 12,
+        "token": 1,
+        "aggregate": 6,
+        "changes": 41
+      },
+      "platformErrors": {
+        "Steps:records:IllegalStateException": 29
+      },
+      "fullCategories": [
+        "ExerciseRoute",
+        "Medical_ALLERGIES_INTOLERANCES",
+        "Medical_CONDITIONS",
+        "Medical_LABORATORY_RESULTS",
+        "Medical_MEDICATIONS",
+        "Medical_PERSONAL_DETAILS",
+        "Medical_PRACTITIONER_DETAILS",
+        "Medical_PREGNANCY",
+        "Medical_PROCEDURES",
+        "Medical_SOCIAL_HISTORY",
+        "Medical_VACCINES",
+        "Medical_VISITS",
+        "Medical_VITAL_SIGNS",
+        "Steps"
+      ],
+      "coverageFailures": {
+        "Steps": "partial"
+      },
+      "errorResource": null,
+      "heapUsedBytes": 51124208,
+      "cachedRows": 24199,
+      "rawFileBytes": 6350446
+    },
+    {
+      "phase": "range-90",
+      "elapsedMs": 21217,
+      "platformRequests": {
+        "records": 93,
+        "medical": 12,
+        "token": 1,
+        "aggregate": 6,
+        "changes": 41
+      },
+      "platformErrors": {
+        "Steps:records:IllegalStateException": 29
+      },
+      "fullCategories": [
+        "ExerciseRoute",
+        "Medical_ALLERGIES_INTOLERANCES",
+        "Medical_CONDITIONS",
+        "Medical_LABORATORY_RESULTS",
+        "Medical_MEDICATIONS",
+        "Medical_PERSONAL_DETAILS",
+        "Medical_PRACTITIONER_DETAILS",
+        "Medical_PREGNANCY",
+        "Medical_PROCEDURES",
+        "Medical_SOCIAL_HISTORY",
+        "Medical_VACCINES",
+        "Medical_VISITS",
+        "Medical_VITAL_SIGNS",
+        "Steps"
+      ],
+      "coverageFailures": {
+        "Steps": "partial"
+      },
+      "errorResource": null,
+      "heapUsedBytes": 76199920,
+      "cachedRows": 24199,
+      "rawFileBytes": 20527348
+    },
+    {
+      "phase": "range-7",
+      "elapsedMs": 16485,
+      "platformRequests": {
+        "records": 93,
+        "medical": 12,
+        "token": 1,
+        "aggregate": 6,
+        "changes": 41
+      },
+      "platformErrors": {
+        "Steps:records:IllegalStateException": 29
+      },
+      "fullCategories": [
+        "ExerciseRoute",
+        "Medical_ALLERGIES_INTOLERANCES",
+        "Medical_CONDITIONS",
+        "Medical_LABORATORY_RESULTS",
+        "Medical_MEDICATIONS",
+        "Medical_PERSONAL_DETAILS",
+        "Medical_PRACTITIONER_DETAILS",
+        "Medical_PREGNANCY",
+        "Medical_PROCEDURES",
+        "Medical_SOCIAL_HISTORY",
+        "Medical_VACCINES",
+        "Medical_VISITS",
+        "Medical_VITAL_SIGNS",
+        "Steps"
+      ],
+      "coverageFailures": {
+        "Steps": "partial"
+      },
+      "errorResource": null,
+      "heapUsedBytes": 47024112,
+      "cachedRows": 24199,
+      "rawFileBytes": 6350446
+    },
+    {
+      "phase": "after-restart",
+      "elapsedMs": 16332,
+      "platformRequests": {
+        "records": 93,
+        "medical": 12,
+        "token": 1,
+        "aggregate": 6,
+        "changes": 41
+      },
+      "platformErrors": {
+        "Steps:records:IllegalStateException": 29
+      },
+      "fullCategories": [
+        "ExerciseRoute",
+        "Medical_ALLERGIES_INTOLERANCES",
+        "Medical_CONDITIONS",
+        "Medical_LABORATORY_RESULTS",
+        "Medical_MEDICATIONS",
+        "Medical_PERSONAL_DETAILS",
+        "Medical_PRACTITIONER_DETAILS",
+        "Medical_PREGNANCY",
+        "Medical_PROCEDURES",
+        "Medical_SOCIAL_HISTORY",
+        "Medical_VACCINES",
+        "Medical_VISITS",
+        "Medical_VITAL_SIGNS",
+        "Steps"
+      ],
+      "coverageFailures": {
+        "Steps": "partial"
+      },
+      "errorResource": null,
+      "heapUsedBytes": 38889456,
+      "cachedRows": 24199,
+      "rawFileBytes": 6350446
+    }
+  ],
+  "categories": [
+    "ActiveCaloriesBurned",
+    "ActivityIntensity",
+    "BasalBodyTemperature",
+    "BasalMetabolicRate",
+    "BloodGlucose",
+    "BloodPressure",
+    "BodyFat",
+    "BodyTemperature",
+    "BodyWaterMass",
+    "BoneMass",
+    "CervicalMucus",
+    "CyclingPedalingCadence",
+    "Distance",
+    "ElevationGained",
+    "ExerciseRoute",
+    "ExerciseSession",
+    "FloorsClimbed",
+    "HeartRate",
+    "HeartRateVariabilityRmssd",
+    "Height",
+    "Hydration",
+    "IntermenstrualBleeding",
+    "LeanBodyMass",
+    "Medical_ALLERGIES_INTOLERANCES",
+    "Medical_CONDITIONS",
+    "Medical_LABORATORY_RESULTS",
+    "Medical_MEDICATIONS",
+    "Medical_PERSONAL_DETAILS",
+    "Medical_PRACTITIONER_DETAILS",
+    "Medical_PREGNANCY",
+    "Medical_PROCEDURES",
+    "Medical_SOCIAL_HISTORY",
+    "Medical_VACCINES",
+    "Medical_VISITS",
+    "Medical_VITAL_SIGNS",
+    "MenstruationFlow",
+    "MenstruationPeriod",
+    "MindfulnessSession",
+    "Nutrition",
+    "OvulationTest",
+    "OxygenSaturation",
+    "PlannedExerciseSession",
+    "Power",
+    "RespiratoryRate",
+    "RestingHeartRate",
+    "SexualActivity",
+    "SkinTemperature",
+    "SleepSession",
+    "Speed",
+    "Steps",
+    "StepsCadence",
+    "TotalCaloriesBurned",
+    "Vo2Max",
+    "Weight",
+    "WheelchairPushes"
+  ],
+  "historyGranted": true
+}

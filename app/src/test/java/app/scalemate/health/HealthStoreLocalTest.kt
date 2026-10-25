@@ -132,17 +132,33 @@ class HealthStoreLocalTest {
             val health=HealthStore(db)
             val original=HealthRecord("original","Steps","watch",1000,platformId="platform-original")
             val state=HealthSyncState("Steps","original",123,"permission","2026-10-01","2026-10-25",true)
-            health.upsert(listOf(original));health.syncState(state)
+            health.upsert(listOf(original));health.syncState(state);health.markCacheChanged()
+            val revision=health.cacheRevision()
             db.writableDatabase.execSQL("CREATE TRIGGER reject_cursor BEFORE INSERT ON health_sync_state WHEN NEW.token='rejected' BEGIN SELECT RAISE(ABORT,'Synthetic storage failure'); END")
             try {
                 health.transaction {
                     health.applyIncremental(listOf(original.copy(start=2000,end=2000)),emptyList(),emptyMap(),java.time.ZoneOffset.UTC)
+                    health.markCacheChanged()
                     health.syncState(state.copy(token="rejected"))
                 }
                 fail("Cursor write should fail")
             }catch(_:android.database.sqlite.SQLiteException){}
             assertEquals(listOf(original),health.records())
             assertEquals(state,health.syncState("Steps"))
+            assertEquals(revision,health.cacheRevision())
+        }
+    }
+    @Test fun streamedRawSnapshotKeepsSamplesAndPrivateIdsButExcludesAggregates()=kotlinx.coroutines.runBlocking {
+        Store(context,name).use {db->
+            val store=HealthStore(db)
+            val record=HealthRecord("raw","HeartRate","watch",1000,2000,points=listOf(HealthPoint(1200,70.0,"bpm")),platformId="local-only")
+            val aggregate=record.copy(id="aggregate:HeartRate:1000")
+            store.upsert(listOf(record,aggregate))
+            val out=java.io.StringWriter();store.writeCachedRaw(listOf(record,aggregate),out)
+            val lines=out.toString().lineSequence().filter {it.isNotBlank()}.toList()
+            assertEquals(1,lines.size)
+            assertEquals(record,HealthJson.cachedRecord(org.json.JSONObject(lines.single())))
+            assertFalse(HealthJson.record(record).has("platformId"))
         }
     }
 }

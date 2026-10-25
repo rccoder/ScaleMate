@@ -116,6 +116,23 @@ class HealthMetricsTest {
         assertEquals(begin,slices.first().first);assertEquals(finish,slices.last().second)
         assertTrue(slices.zipWithNext().all {(a,b)->a.second==b.first})
     }
+    @Test fun aggregateBatchesPreservePartialDaysAndBothDstTransitions() {
+        val z=ZoneId.of("America/New_York")
+        for((begin,end) in listOf("2026-03-06T17:00:00Z" to "2026-03-11T17:00:00Z","2026-10-30T16:00:00Z" to "2026-11-04T17:00:00Z")) {
+            val start=Instant.parse(begin);val finish=Instant.parse(end)
+            val batches=healthDayBatches(start,finish,z)
+            assertEquals(healthDaySlices(start,finish,z),batches.flatten())
+            assertTrue(batches.all {batch->batch.map {java.time.Duration.between(it.first,it.second)}.distinct().size==1})
+            assertTrue(batches.flatten().any {java.time.Duration.between(it.first,it.second).toHours() in setOf(23L,25L)})
+        }
+        val start=Instant.parse("2026-06-01T00:00:00Z")
+        val batches=healthDayBatches(start,start.plusSeconds(185*86400),ZoneId.of("UTC"))
+        assertEquals(listOf(90,90,5),batches.map {it.size})
+    }
+    @Test fun healthHashesKeepStableSha256IdsAfterHexEncodingOptimization() {
+        assertEquals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",healthHash(""))
+        assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",healthHash("abc"))
+    }
     @Test fun unsetNutritionDenormalsAreRejectedAtTheNativeUnitBoundary() {
         val stored=HealthRecordMapper.value(HealthValue(Double.MIN_VALUE,"g"))
         assertNull(stored)

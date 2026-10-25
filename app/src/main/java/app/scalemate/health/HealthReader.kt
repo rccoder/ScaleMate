@@ -16,8 +16,32 @@ import java.time.*
 import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import java.util.concurrent.ConcurrentHashMap
 
-class HealthReader(private val context:Context):HealthSyncSource {
+data class HealthReadEvent(val category:String,val operation:String,val elapsedMs:Long,val errorCode:Int?=null,val failure:String="")
+
+internal fun <T:Record> healthPageRequest(type:Class<T>,start:Instant?,end:Instant,token:Long?=null,size:Int=1000):ReadRecordsRequestUsingFilters<T> =
+    ReadRecordsRequestUsingFilters.Builder(type)
+        .setTimeRangeFilter(TimeInstantRangeFilter.Builder().apply {if(start!=null)setStartTime(start);setEndTime(end)}.build())
+        .setPageSize(size).apply {
+            // A page token already includes the ordering; Android rejects setting both.
+            if(token==null)setAscending(true) else setPageToken(token)
+        }.build()
+
+class HealthReader(private val context:Context,private val observer:((HealthReadEvent)->Unit)?=null):HealthSyncSource {
+    private val sourceLabels=ConcurrentHashMap<String,String>()
+    private suspend fun <T> measured(category:String,operation:String,read:suspend ()->T):T {
+        if(observer==null)return read()
+        val start=System.nanoTime()
+        try {
+            val result=read()
+            observer.invoke(HealthReadEvent(category,operation,(System.nanoTime()-start)/1000000))
+            return result
+        }catch(e:Exception){
+            observer.invoke(HealthReadEvent(category,operation,(System.nanoTime()-start)/1000000,(e as? HealthConnectException)?.errorCode,e.javaClass.simpleName))
+            throw e
+        }
+    }
     data class ChangeBatch(val records:List<HealthRecord>,val deletedPlatformIds:List<String>,val nextToken:String)
     private var cachedManager:HealthConnectManager?=null
     private var checkedAt=0L
@@ -39,22 +63,47 @@ class HealthReader(private val context:Context):HealthSyncSource {
     override fun fingerprint(category:String)="${status(category)}|history=${granted(HealthCatalog.HISTORY)}"
     override fun incremental(category:String)=category!="ExerciseRoute"&&HealthCatalog.kind(category).medicalType.isEmpty()
     override suspend fun full(window:HealthWindow,categories:Set<String>,sources:Map<String,String>,progress:(String)->Unit):HealthSyncRead {
+        require(window.allHistory)
+        val now=Instant.now();val zone=ZoneId.of(window.zone)
+        val end=minOf(window.endInstant.atZone(zone).plusDays(1).toInstant(),now)
         val results=healthParallelRead(categories) {category->
-            val snapshot=read(window,setOf(category),sources,progress,captureTokenFirst=true)
-            val file=File(context.cacheDir,"health_raw/${snapshot.rawFile}")
+            val kind=HealthCatalog.kind(category)
+            progress(kind.label(context.resources.configuration.locales[0].language=="zh"))
             try {
-                HealthSyncRead(snapshot,file.useLines {lines->lines.map {HealthJson.cachedRecord(org.json.JSONObject(it))}.toList()})
-            }finally {file.delete()}
+                // Capture the cursor before reading so writes during bootstrap replay next time.
+                val token=if(incremental(category))checkNotNull(changeToken(listOf(kind))) else ""
+                val rows=if(kind.medicalType.isEmpty())raw(kind,null,end) else measured(category,"medical"){HealthMedicalReader(context).read(kind)}
+                val first=rows.filter {it.start!=0L}.minOfOrNull {it.start}?.let {Instant.ofEpochMilli(it).atZone(zone).toLocalDate()}
+                val actual=window.copy(start=first?.toString()?.let {minOf(it,window.start)} ?: window.start)
+                val aggregated=if(rows.isEmpty()||kind.medicalType.isNotEmpty())emptyList() else totals(kind,actual.startInstant,end,zone)
+                val warnings=buildList {
+                    if(kind.id=="ExerciseRoute"&&rows.any {it.values.containsKey("routeRequiresConsent")})add("Exercise routes require additional system consent; missing locations are not an empty route.")
+                    if(rows.any {it.start==0L})add("${kind.id}: undated records are detail-only; no date-based conclusion.")
+                }
+                HealthSyncRead(HealthSnapshot(window=actual,categories=setOf(category),evidence=emptyList(),coverage=listOf(healthCoverage(category,rows)),warnings=warnings,syncTokens=if(token.isEmpty())emptyMap() else mapOf(category to token)),rows+aggregated)
+            }catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){
+                val status=if(e is HealthConnectException&&e.errorCode==HealthConnectException.ERROR_UNSUPPORTED_OPERATION)"unsupported" else "read_failed"
+                HealthSyncRead(HealthSnapshot(window=window,categories=setOf(category),evidence=emptyList(),coverage=listOf(HealthCoverage(category,status))),emptyList())
+            }catch(_:LinkageError){
+                HealthSyncRead(HealthSnapshot(window=window,categories=setOf(category),evidence=emptyList(),coverage=listOf(HealthCoverage(category,"unsupported"))),emptyList())
+            }
         }
         val snapshots=results.map {it.snapshot}
         val actual=window.copy(start=snapshots.minOfOrNull {it.window.start} ?: window.start)
         // Cross-category metrics are computed from the merged cache by HealthSync.
         return HealthSyncRead(HealthSnapshot(window=actual,categories=categories,evidence=emptyList(),
-            coverage=snapshots.flatMap {it.coverage},warnings=snapshots.flatMap {it.warnings}.distinct(),
+            coverage=snapshots.flatMap {it.coverage},warnings=(snapshots.flatMap {it.warnings}+listOfNotNull(
+                "History access is limited by Health Connect; this is not a cloud archive.".takeIf {!granted(HealthCatalog.HISTORY)},
+                "Nutrition represents recorded intake, not complete actual intake.".takeIf {"Nutrition" in categories},
+                "Sleep/HRV coverage gates are product quality rules, not medical thresholds."
+            )).distinct(),
             syncTokens=snapshots.flatMap {it.syncTokens.entries}.associate {it.key to it.value}),results.flatMap {it.records})
     }
     override suspend fun changes(category:String,token:String):HealthChanges {
-        val batch=changes(token,setOf(category))
+        val batch=try {changes(token,setOf(category))}catch(e:HealthConnectException){
+            if(e.errorCode==HealthConnectException.ERROR_INVALID_ARGUMENT)throw HealthChangeTokenInvalid(e)
+            throw e
+        }
         return HealthChanges(batch.records,batch.deletedPlatformIds,batch.nextToken)
     }
     override suspend fun totals(category:String,start:Instant,end:Instant,zone:ZoneId)=totals(HealthCatalog.kind(category),start,end,zone)
@@ -76,12 +125,12 @@ class HealthReader(private val context:Context):HealthSyncSource {
         val types=syncKinds(kinds)
         if(types.isEmpty())return null
         val request=ChangeLogTokenRequest.Builder().apply {types.forEach {addRecordType(recordClass(it))}}.build()
-        return suspendCancellableCoroutine {c->
+        return measured(types.joinToString(","){it.id},"token"){suspendCancellableCoroutine {c->
             try {manager.getChangeLogToken(request,context.mainExecutor,object:OutcomeReceiver<android.health.connect.changelog.ChangeLogTokenResponse,HealthConnectException>{
                 override fun onResult(result:android.health.connect.changelog.ChangeLogTokenResponse){if(c.isActive)c.resume(result.token)}
                 override fun onError(error:HealthConnectException){if(c.isActive)c.resumeWithException(error)}
             })}catch(e:Exception){if(c.isActive)c.resumeWithException(e)}
-        }
+        }}
     }
     suspend fun changeTokens(kinds:Collection<HealthKind>):Map<String,String> {
         val result=linkedMapOf<String,String>()
@@ -96,12 +145,12 @@ class HealthReader(private val context:Context):HealthSyncSource {
         do {
             coroutineContext.ensureActive()
             val request=ChangeLogsRequest.Builder(cursor).setPageSize(1000).build()
-            val response:ChangeLogsResponse=suspendCancellableCoroutine {c->
+            val response:ChangeLogsResponse=measured(types.joinToString(","),"changes"){suspendCancellableCoroutine {c->
                 try {manager.getChangeLogs(request,context.mainExecutor,object:OutcomeReceiver<ChangeLogsResponse,HealthConnectException>{
                     override fun onResult(value:ChangeLogsResponse){if(c.isActive)c.resume(value)}
                     override fun onError(error:HealthConnectException){if(c.isActive)c.resumeWithException(error)}
                 })}catch(e:Exception){if(c.isActive)c.resumeWithException(e)}
-            }
+            }}
             response.upsertedRecords.forEach {native->
                 val kind=HealthCatalog.kinds.firstOrNull {it.id in types&&it.id!="ExerciseRoute"&&it.medicalType.isEmpty()&&it.className==native.javaClass.name} ?: return@forEach
                 records[native.metadata.id]=HealthRecordMapper.map(native,kind,source(native.metadata.dataOrigin.packageName))
@@ -115,25 +164,28 @@ class HealthReader(private val context:Context):HealthSyncSource {
         return ChangeBatch(records.values.toList(),deleted.toList(),cursor)
     }
     private fun filter(start:Instant?,end:Instant)=TimeInstantRangeFilter.Builder().apply {if(start!=null)setStartTime(start);setEndTime(end)}.build()
-    private suspend fun page(kind:HealthKind,start:Instant?,end:Instant,token:Long?=null,size:Int=1000):ReadRecordsResponse<Record> = suspendCancellableCoroutine {c->
+    private suspend fun page(kind:HealthKind,start:Instant?,end:Instant,token:Long?=null,size:Int=1000):ReadRecordsResponse<Record> = measured(kind.id,"records"){suspendCancellableCoroutine {c->
         try {
-            val request=ReadRecordsRequestUsingFilters.Builder(recordClass(kind)).setTimeRangeFilter(filter(start,end)).setAscending(true).setPageSize(size).apply {if(token!=null)setPageToken(token)}.build()
+            val request=healthPageRequest(recordClass(kind),start,end,token,size)
             manager.readRecords(request,context.mainExecutor,object:OutcomeReceiver<ReadRecordsResponse<Record>,HealthConnectException> {
                 override fun onResult(result:ReadRecordsResponse<Record>){if(c.isActive)c.resume(result)}
                 override fun onError(error:HealthConnectException){if(c.isActive)c.resumeWithException(error)}
             })
         }catch(e:Exception){if(c.isActive)c.resumeWithException(e)}
+    }}
+    private fun source(packageName:String):String=sourceLabels.computeIfAbsent(context.resources.configuration.locales.toLanguageTags()+"|"+packageName) {
+        (try {context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(packageName,0)).toString().take(80)}catch(_:PackageManager.NameNotFoundException){"Source"})+" · "+healthHash(packageName).take(8)
     }
-    private fun source(packageName:String):String=(try {context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(packageName,0)).toString().take(80)}catch(_:PackageManager.NameNotFoundException){"Source"})+" · "+healthHash(packageName).take(8)
-    private suspend fun raw(kind:HealthKind,start:Instant,end:Instant):List<HealthRecord> {
-        var token:Long?=null;val seen=mutableSetOf<Long>();val result=mutableListOf<HealthRecord>();var points=0
+    private suspend fun raw(kind:HealthKind,start:Instant?,end:Instant):List<HealthRecord> {
+        var token:Long?=null;val seen=mutableSetOf<Long>();val result=mutableListOf<HealthRecord>()
         do {
             coroutineContext.ensureActive()
             val response=page(kind,start,end,token)
+            var points=0
             response.records.forEach {record->
                 if(kind.id=="ExerciseRoute"&&record is android.health.connect.datatypes.ExerciseSessionRecord&&!record.hasRoute())return@forEach
                 val r=HealthRecordMapper.map(record,kind,source(record.metadata.dataOrigin.packageName));points+=r.points.size
-                check(points<=1000000&&result.size<100000){"Health chunk too large"};result+=r
+                check(points<=1000000){"Health page too large"};result+=r
             }
             token=response.nextPageToken.takeIf {it!=-1L}
             check(token==null||seen.add(token!!)){"Repeated health page"}
@@ -146,21 +198,35 @@ class HealthReader(private val context:Context):HealthSyncSource {
         if(fields.isEmpty())return emptyList()
         val types=fields.map {it.name to (it.get(null) as AggregationType<Any>)}
         val result=mutableListOf<HealthRecord>()
-        for(slice in healthDaySlices(start,end,zone)) {
+        for(batch in healthDayBatches(start,end,zone)) {
             coroutineContext.ensureActive()
-            val request=AggregateRecordsRequest.Builder<Any>(filter(slice.first,slice.second)).apply {types.forEach {addAggregationType(it.second)}}.build()
-            val response:AggregateRecordsResponse<Any> = suspendCancellableCoroutine {c->
-                try {manager.aggregate(request,context.mainExecutor,object:OutcomeReceiver<AggregateRecordsResponse<Any>,HealthConnectException>{
-                    override fun onResult(value:AggregateRecordsResponse<Any>){if(c.isActive)c.resume(value)}
-                    override fun onError(error:HealthConnectException){if(c.isActive)c.resumeWithException(error)}
-                })}catch(e:Exception){if(c.isActive)c.resumeWithException(e)}
-            }
-            val values=types.mapNotNull {(name,type)->HealthRecordMapper.value(response.get(type))?.let {v->
+            val request=AggregateRecordsRequest.Builder<Any>(filter(batch.first().first,batch.last().second)).apply {types.forEach {addAggregationType(it.second)}}.build()
+            fun row(slice:Pair<Instant,Instant>,get:(AggregationType<Any>)->Any?):HealthRecord? {
+                val values=types.mapNotNull {(name,type)->HealthRecordMapper.value(get(type))?.let {v->
                 val parts=name.removeSuffix("_TOTAL").lowercase().split('_')
                 val field=when(kind.id){"ActiveCaloriesBurned","TotalCaloriesBurned"->"energy";"Distance"->"distance";"Hydration"->"volume";"FloorsClimbed"->"floors";"ElevationGained"->"elevation";"WheelchairPushes","Steps"->"count";else->parts.first()+parts.drop(1).joinToString(""){it.replaceFirstChar {ch->ch.uppercase()}}}
                 field to when {name.contains("DURATION")->v.copy(value=v.value/60000,unit="min");kind.id=="Steps"->v.copy(unit="steps");kind.id=="WheelchairPushes"->v.copy(unit="pushes");else->v}
-            }}.toMap()
-            if(values.isNotEmpty())result+=HealthRecord("aggregate:${kind.id}:${slice.first}",kind.id,"Health Connect",slice.first.toEpochMilli(),slice.second.toEpochMilli(),values)
+                }}.toMap()
+                return if(values.isEmpty())null else HealthRecord("aggregate:${kind.id}:${slice.first}",kind.id,"Health Connect",slice.first.toEpochMilli(),slice.second.toEpochMilli(),values)
+            }
+            if(batch.size==1) {
+                val response:AggregateRecordsResponse<Any> = measured(kind.id,"aggregate"){suspendCancellableCoroutine {c->
+                    try {manager.aggregate(request,context.mainExecutor,object:OutcomeReceiver<AggregateRecordsResponse<Any>,HealthConnectException>{
+                        override fun onResult(value:AggregateRecordsResponse<Any>){if(c.isActive)c.resume(value)}
+                        override fun onError(error:HealthConnectException){if(c.isActive)c.resumeWithException(error)}
+                    })}catch(e:Exception){if(c.isActive)c.resumeWithException(e)}
+                }}
+                row(batch.single()){response.get(it)}?.let(result::add)
+            } else {
+                val duration=Duration.between(batch.first().first,batch.first().second)
+                val response:List<AggregateRecordsGroupedByDurationResponse<Any>> = measured(kind.id,"aggregate"){suspendCancellableCoroutine {c->
+                    try {manager.aggregateGroupByDuration(request,duration,context.mainExecutor,object:OutcomeReceiver<List<AggregateRecordsGroupedByDurationResponse<Any>>,HealthConnectException>{
+                        override fun onResult(value:List<AggregateRecordsGroupedByDurationResponse<Any>>){if(c.isActive)c.resume(value)}
+                        override fun onError(error:HealthConnectException){if(c.isActive)c.resumeWithException(error)}
+                    })}catch(e:Exception){if(c.isActive)c.resumeWithException(e)}
+                }}
+                response.forEach {bucket->row(bucket.startTime to bucket.endTime){bucket.get(it)}?.let(result::add)}
+            }
         }
         return result
     }
@@ -231,7 +297,7 @@ class HealthReader(private val context:Context):HealthSyncSource {
                 for(kind in kinds.filter {it.medicalType.isNotEmpty()&&state(it)=="ready"}) {
                     coroutineContext.ensureActive();progress(kind.id)
                     try {
-                        val rows=HealthMedicalReader(context).read(kind)
+                        val rows=measured(kind.id,"medical"){HealthMedicalReader(context).read(kind)}
                         val selected=if(actual.allHistory)rows else rows.filter {it.start==0L||it.start>=begin.toEpochMilli()&&it.start<end.toEpochMilli()}
                         if(actual.allHistory)selected.filter {it.start!=0L}.minOfOrNull {it.start}?.let {first->val day=Instant.ofEpochMilli(first).atZone(zone).toLocalDate().toString();if(day<actual.start)actual=actual.copy(start=day)}
                         selected.forEach {writer.write(HealthJson.record(it).toString());writer.newLine()}

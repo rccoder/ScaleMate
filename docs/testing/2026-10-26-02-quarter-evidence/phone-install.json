@@ -1,0 +1,18 @@
+{
+  "package": "app.scalemate.fooddev",
+  "versionName": "0.3.3",
+  "versionCode": 13,
+  "apkSha256": "499700c6917cc14e098b840c62d559f126b25dc3297546097288e3c7ba2475ae",
+  "businessAndPreferencePreserved": {
+    "scales": true,
+    "measurements": true,
+    "food_meals": true,
+    "food_templates": true,
+    "food_library": true,
+    "ai_services": true,
+    "food_settings": true,
+    "preferences": true
+  },
+  "phoneSyncBenchmarked": false,
+  "phoneSyntheticHealthWrites": false
+}

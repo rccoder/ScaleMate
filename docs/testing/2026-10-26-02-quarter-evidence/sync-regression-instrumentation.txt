@@ -1,0 +1,39 @@
+INSTRUMENTATION_STATUS: class=app.scalemate.HealthSyncDeviceTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=2
+INSTRUMENTATION_STATUS: stream=
+app.scalemate.HealthSyncDeviceTest:
+INSTRUMENTATION_STATUS: test=nativeMultiCategorySyncAndCachedViewingPeriods
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: healthSyncTimings=categories=9, fullMs=11444, changesMs=1559, fourCachedPeriodsMs=19886; period changes made zero platform reads
+INSTRUMENTATION_STATUS_CODE: 2
+INSTRUMENTATION_STATUS: class=app.scalemate.HealthSyncDeviceTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=2
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=nativeMultiCategorySyncAndCachedViewingPeriods
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=app.scalemate.HealthSyncDeviceTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=2
+INSTRUMENTATION_STATUS: stream=
+INSTRUMENTATION_STATUS: test=nativeBootstrapChangesDeletionAndExpiredTokenRecovery
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=app.scalemate.HealthSyncDeviceTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=2
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=nativeBootstrapChangesDeletionAndExpiredTokenRecovery
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_RESULT: stream=
+
+Time: 37.246
+
+OK (2 tests)
+
+
+INSTRUMENTATION_CODE: -1

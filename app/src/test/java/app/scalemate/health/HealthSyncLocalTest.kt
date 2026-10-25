@@ -63,7 +63,7 @@ class HealthSyncLocalTest {
         }
         override suspend fun changes(category:String,token:String):HealthChanges {
             changeRequests+=category
-            check(category !in failChanges){"Expired token"}
+            if(category in failChanges)throw HealthChangeTokenInvalid()
             return pending[category] ?: HealthChanges(emptyList(),emptyList(),"next-$category")
         }
         override suspend fun totals(category:String,start:Instant,end:Instant,zone:ZoneId):List<HealthRecord> {
@@ -109,6 +109,63 @@ class HealthSyncLocalTest {
             source.revisions["Nutrition"]="history-permission-changed"
             assertFalse(sync.canUseCache(window,setOf("Nutrition")))
             assertTrue(source.changeRequests.isEmpty())
+        }
+    }
+    @Test fun unchangedSyncReusesOnlyASameDayHealthySnapshotOfTheSameWindow()=runBlocking {
+        Store(context,name).use {db->
+            val store=HealthStore(db);val source=Source();var clock=now
+            source.rows=listOf(record("meal","2026-10-25",500.0))
+            val sync=HealthSync(store,source){clock}
+            val first=sync.refresh(window,setOf("Nutrition"),emptyMap()).snapshot.copy(rawFile="snapshot-existing.jsonl")
+            clock+=1000
+            val noop=sync.refresh(window,setOf("Nutrition"),emptyMap(),first)
+            assertTrue(noop.unchanged);assertTrue(noop.records.isEmpty())
+            assertEquals(first.evidence,noop.snapshot.evidence);assertEquals(first.rawFile,noop.snapshot.rawFile)
+            assertNotEquals(first.id,noop.snapshot.id);assertEquals(clock,noop.snapshot.readAt)
+            assertFalse(sync.refresh(window.copy(start="2026-10-01"),setOf("Nutrition"),emptyMap(),first).unchanged)
+            assertFalse(sync.refresh(window,setOf("Nutrition"),emptyMap(),first.copy(coverage=listOf(HealthCoverage("Nutrition","read_failed")))).unchanged)
+            source.pending["Nutrition"]=HealthChanges(listOf(record("new","2026-10-25",300.0)),emptyList(),"changed")
+            assertFalse(sync.refresh(window,setOf("Nutrition"),emptyMap(),first).unchanged)
+            source.pending.clear();clock+=86400000
+            assertFalse(sync.refresh(window,setOf("Nutrition"),emptyMap(),first).unchanged)
+        }
+    }
+    @Test fun committedChangesWithoutAPublishedSnapshotCannotReuseTheOldCardsAfterRestart()=runBlocking {
+        Store(context,name).use {db->
+            val store=HealthStore(db);val source=Source()
+            val old=record("meal","2026-10-25",500.0);source.rows=listOf(old)
+            val first=HealthSync(store,source){now}.refresh(window,setOf("Nutrition"),emptyMap()).snapshot
+            store.snapshot(first);store.setting("activeSnapshot",first.id)
+            val updated=old.copy(values=mapOf("energy" to HealthValue(900.0,"kcal")))
+            source.rows=listOf(updated);source.pending["Nutrition"]=HealthChanges(listOf(updated),emptyList(),"changed")
+            // Simulate cancellation/storage failure after category commits but before publishing
+            // the new snapshot. Use the same wall clock to require a durable revision check.
+            HealthSync(store,source){now}.refresh(window,setOf("Nutrition"),emptyMap(),first)
+            source.pending.clear()
+        }
+        Store(context,name).use {db->
+            val store=HealthStore(db);val source=Source();val sync=HealthSync(store,source){now}
+            val first=store.activeSnapshot()!!
+            val recovered=sync.refresh(window,setOf("Nutrition"),emptyMap(),first)
+            assertFalse(recovered.unchanged)
+            assertEquals(900.0,recovered.snapshot.evidence.single {it.field=="energy"}.value,0.0)
+            assertNotEquals(first.cacheRevision,recovered.snapshot.cacheRevision)
+            assertTrue(source.fullRequests.isEmpty())
+            assertTrue(sync.refresh(window,setOf("Nutrition"),emptyMap(),recovered.snapshot).unchanged)
+        }
+    }
+    @Test fun legacyCacheWithoutARevisionRebuildsOnceThenSupportsFastNoopRefresh()=runBlocking {
+        Store(context,name).use {db->
+            val store=HealthStore(db);val source=Source();val sync=HealthSync(store,source){now}
+            source.rows=listOf(record("meal","2026-10-25",500.0))
+            val first=sync.refresh(window,setOf("Nutrition"),emptyMap()).snapshot
+            store.setting("sync:cacheRevision","")
+            val rebuilt=sync.refresh(window,setOf("Nutrition"),emptyMap(),first.copy(cacheRevision=""))
+            assertFalse(rebuilt.unchanged)
+            assertTrue(rebuilt.snapshot.cacheRevision.isNotEmpty())
+            assertEquals(first.evidence,rebuilt.snapshot.evidence)
+            assertTrue(sync.refresh(window,setOf("Nutrition"),emptyMap(),rebuilt.snapshot).unchanged)
+            assertEquals(1,source.fullRequests.size)
         }
     }
     @Test fun parallelChangesAreBoundedAndOneFailedCategoryKeepsItsOwnCursor()=runBlocking {
@@ -195,7 +252,8 @@ class HealthSyncLocalTest {
             val failed=sync.refresh(window,setOf("Nutrition"),emptyMap()).snapshot
             assertEquals(token,store.syncState("Nutrition").token)
             assertEquals(old,store.records().single {it.id==old.id})
-            assertEquals("partial",failed.coverage.single().status)
+            assertEquals("read_failed",failed.coverage.single().status)
+            assertEquals("Aggregate failure must not rescan history",1,source.fullRequests.size)
             source.failTotals.clear();source.failFull.clear()
             val retried=sync.refresh(window,setOf("Nutrition"),emptyMap()).snapshot
             assertEquals(900.0,retried.evidence.single {it.field=="energy"}.value,0.0)
@@ -217,6 +275,51 @@ class HealthSyncLocalTest {
             val revoked=sync.refresh(window,categories,emptyMap()).snapshot
             assertFalse(revoked.evidence.any {it.kind=="Nutrition"})
             assertEquals("not_authorized",revoked.coverage.single {it.kind=="Nutrition"}.status)
+        }
+    }
+    @Test fun transientChangeFailureRetriesTheCursorWithoutScanningHistory()=runBlocking {
+        Store(context,name).use {db->
+            val store=HealthStore(db);val source=Source()
+            source.rows=listOf(record("meal","2026-10-25",500.0))
+            HealthSync(store,source){now}.refresh(window,setOf("Nutrition"),emptyMap())
+            val before=store.syncState("Nutrition")
+            val unavailable=object:HealthSyncSource by source {
+                override suspend fun changes(category:String,token:String):HealthChanges=throw java.io.IOException("Temporarily unavailable")
+            }
+            val result=HealthSync(store,unavailable){now+1000}.refresh(window,setOf("Nutrition"),emptyMap()).snapshot
+            assertEquals(1,source.fullRequests.size)
+            assertEquals(before,store.syncState("Nutrition"))
+            assertEquals("read_failed",result.coverage.single().status)
+            assertEquals(500.0,result.evidence.single {it.field=="energy"}.value,0.0)
+            HealthSync(store,source){now+2000}.refresh(window,setOf("Nutrition"),emptyMap())
+            assertEquals(1,source.fullRequests.size)
+            assertEquals(now+2000,store.syncState("Nutrition").syncedAt)
+        }
+    }
+    @Test fun snapshotOnlyCategoriesUsePersistedCoverageAndReconcileAfterFifteenMinutes()=runBlocking {
+        Store(context,name).use {db->
+            val store=HealthStore(db);val source=Source();var clock=now
+            val snapshots=object:HealthSyncSource by source {
+                override fun incremental(category:String)=false
+                override suspend fun full(window:HealthWindow,categories:Set<String>,sources:Map<String,String>,progress:(String)->Unit):HealthSyncRead {
+                    val result=source.full(window,categories,sources,progress)
+                    return result.copy(snapshot=result.snapshot.copy(syncTokens=emptyMap()))
+                }
+            }
+            val categories=setOf("ExerciseRoute","Medical_AllergiesIntolerances")
+            HealthSync(store,snapshots){clock}.refresh(window,categories,emptyMap())
+            assertTrue(store.syncState("ExerciseRoute").token.isEmpty())
+            clock+=14*60000
+            // A new sync instance must honor persisted coverage, including an empty snapshot.
+            HealthSync(store,snapshots){clock}.refresh(window,categories,emptyMap())
+            assertEquals(1,source.fullRequests.size);assertTrue(source.changeRequests.isEmpty())
+            assertEquals(now,store.syncState("ExerciseRoute").syncedAt)
+            clock+=60000
+            HealthSync(store,snapshots){clock}.refresh(window,categories,emptyMap())
+            assertEquals(2,source.fullRequests.size)
+            source.revisions["ExerciseRoute"]="permission-change"
+            HealthSync(store,snapshots){clock}.refresh(window,categories,emptyMap())
+            assertEquals(setOf("ExerciseRoute"),source.fullRequests.last())
         }
     }
     @Test fun crossMidnightUpdateRebuildsEachCalendarDayAndStopsAtExclusiveEnd()=runBlocking {

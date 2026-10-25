@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "action": "cleanup",
+  "start": "2026-07-26",
+  "endExclusive": "2026-10-26",
+  "days": 92,
+  "records": {},
+  "heartSamples": 132480
+}

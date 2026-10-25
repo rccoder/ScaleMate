@@ -3,6 +3,7 @@ package app.scalemate.health
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -10,9 +11,10 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-data class HealthSyncRead(val snapshot:HealthSnapshot,val records:List<HealthRecord>)
+data class HealthSyncRead(val snapshot:HealthSnapshot,val records:List<HealthRecord>,val unchanged:Boolean=false)
 data class HealthChanges(val records:List<HealthRecord>,val deletedIds:List<String>,val nextToken:String)
 data class HealthSyncProgress(val history:Boolean,val detail:String="")
+class HealthChangeTokenInvalid(cause:Throwable?=null):Exception("Health Connect change token is invalid",cause)
 
 internal suspend fun <T,R> healthParallelRead(items:Collection<T>,read:suspend (T)->R):List<R> = coroutineScope {
     val permits=Semaphore(3)
@@ -44,12 +46,13 @@ class HealthSync(
         val readAt=categories.filter {source.status(it)=="ready"}.maxOfOrNull {store.syncState(it).syncedAt} ?: clock()
         return snapshot(window,categories,sources,readAt)
     }
-    suspend fun refresh(window:HealthWindow,categories:Set<String>,sources:Map<String,String>,progress:(HealthSyncProgress)->Unit={}):HealthSyncRead {
+    suspend fun refresh(window:HealthWindow,categories:Set<String>,sources:Map<String,String>,previous:HealthSnapshot?=null,progress:(HealthSyncProgress)->Unit={}):HealthSyncRead {
         val now=clock();val zone=ZoneId.of(window.zone)
         val readable=categories.filter {source.status(it)=="ready"}.toSet()
         val states=readable.associateWith(store::syncState)
-        val plan=HealthSyncPlan.plan(readable,states,{fingerprint(it,window)},window,readable.filter(source::incremental).toSet())
-        val failures=mutableMapOf<String,String>();val warnings=mutableSetOf<String>()
+        val plan=HealthSyncPlan.plan(readable,states,{fingerprint(it,window)},window,readable.filter(source::incremental).toSet(),now=now)
+        val failures=ConcurrentHashMap<String,String>();val warnings=mutableSetOf<String>()
+        val changed=ConcurrentHashMap.newKeySet<String>()
 
         suspend fun full(selected:Set<String>) {
             if(selected.isEmpty())return
@@ -68,7 +71,9 @@ class HealthSync(
                         store.transaction {
                             store.replaceCategory(category,result.records.filter {it.kind==category})
                             store.syncState(state)
+                            store.markCacheChanged()
                         }
+                        changed+=category
                     }
                 }
             }catch(e:CancellationException){throw e}catch(_:Exception){selected.forEach {failures[it]="read_failed"}}
@@ -95,17 +100,36 @@ class HealthSync(
                         store.replaceAggregates(category,start.toEpochMilli(),start.atZone(zone).plusDays(1).toInstant().toEpochMilli(),rows)
                     }
                     store.syncState(states.getValue(category).copy(token=batch.nextToken,syncedAt=now))
+                    if(batch.records.isNotEmpty()||deletes.isNotEmpty())store.markCacheChanged()
                 }
+                if(batch.records.isNotEmpty()||deletes.isNotEmpty())changed+=category
                 null
-            }catch(e:CancellationException){throw e}catch(_:Exception){category}
+            }catch(e:CancellationException){throw e}catch(_:HealthChangeTokenInvalid){category}catch(_:Exception){
+                // Transient reads, aggregate failures and storage errors must retry the same cursor.
+                failures[category]="read_failed"
+                null
+            }
         }.filterNotNull().toSet()
         full(fallback)
 
+        // A cancelled run may have committed rows without publishing its snapshot. Reuse must
+        // match the durable cache revision, not just this run's empty change log or wall clock.
+        if(previous!=null&&previous.cacheRevision.isNotEmpty()&&previous.cacheRevision==store.cacheRevision()&&
+            changed.isEmpty()&&failures.isEmpty()&&previous.window==window&&previous.categories==categories&&
+            Instant.ofEpochMilli(previous.readAt).atZone(zone).toLocalDate()==Instant.ofEpochMilli(now).atZone(zone).toLocalDate()&&
+            previous.coverage.size==categories.size&&previous.coverage.all {coverage->
+                val status=source.status(coverage.kind)
+                if(status=="ready")coverage.status in setOf("available","no_records") else coverage.status==status
+            })return HealthSyncRead(previous.copy(id=healthId(),readAt=now),emptyList(),unchanged=true)
         return snapshot(window,categories,sources,now,failures,warnings.toList())
     }
 
     private fun snapshot(window:HealthWindow,categories:Set<String>,sources:Map<String,String>,readAt:Long,failures:Map<String,String> = emptyMap(),warnings:List<String> = emptyList()):HealthSyncRead {
         val now=clock();val zone=ZoneId.of(window.zone)
+        val revision=store.cacheRevision().ifEmpty {store.transaction {
+            if(store.cacheRevision().isEmpty())store.markCacheChanged()
+            store.cacheRevision()
+        }}
         val readable=categories.filter {source.status(it)=="ready"}.toSet()
         val actual=if(window.allHistory) {
             val first=store.earliest(readable)?.let {Instant.ofEpochMilli(it).atZone(zone).toLocalDate()}
@@ -122,7 +146,7 @@ class HealthSync(
             val cached=healthCoverage(category,local.filter {it.kind==category})
             cached.copy(status=failures[category] ?: if(status=="ready")cached.status else status)
         }
-        val snapshot=HealthSnapshot(readAt=readAt,window=actual,categories=categories,evidence=evidence,coverage=coverage,warnings=warnings)
+        val snapshot=HealthSnapshot(readAt=readAt,window=actual,categories=categories,evidence=evidence,coverage=coverage,warnings=warnings,cacheRevision=revision)
         return HealthSyncRead(snapshot,local)
     }
 }

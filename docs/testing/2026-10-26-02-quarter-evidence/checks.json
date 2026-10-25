@@ -1,0 +1,22 @@
+{
+  "unit": {
+    "tests": 204,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "lintErrors": 0,
+  "lintWarnings": 133,
+  "i18nPairedStrings": 769,
+  "emulatorApi": 36,
+  "baselineCommit": "672de49",
+  "apkSha256": "499700c6917cc14e098b840c62d559f126b25dc3297546097288e3c7ba2475ae",
+  "quarterDeviceTests": 1,
+  "quarterDeviceFailures": 0,
+  "nativeRegressionTestsBeforeRevision": 2,
+  "noHistoryRegressionTestsBeforeRevision": 2,
+  "emulatorInstrumentationRemoved": true,
+  "isolatedQuarterDatabasesRemoved": true,
+  "quarterSeedCleanupSucceeded": true,
+  "phoneApkMatchesFinalBuild": true
+}

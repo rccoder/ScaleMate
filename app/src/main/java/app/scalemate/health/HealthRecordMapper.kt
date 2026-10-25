@@ -7,6 +7,8 @@ import android.health.connect.datatypes.Record
 import android.health.connect.datatypes.SleepSessionRecord
 import java.time.Instant
 import java.time.ZoneOffset
+import java.lang.reflect.Method
+import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -14,6 +16,10 @@ import org.json.JSONObject
 object HealthRecordMapper {
     private val units=mapOf("Mass" to ("getInGrams" to "g"),"Energy" to ("getInCalories" to "cal"),"Length" to ("getInMeters" to "m"),"Power" to ("getInWatts" to "W"),"Velocity" to ("getInMetersPerSecond" to "m/s"),"Volume" to ("getInLiters" to "L"),"Pressure" to ("getInMillimetersOfMercury" to "mmHg"),"Temperature" to ("getInCelsius" to "C"),"TemperatureDelta" to ("getInCelsius" to "C"),"BloodGlucose" to ("getInMillimolesPerLiter" to "mmol/L"),"Percentage" to ("getValue" to "%"))
     private val excluded=setOf("getClass","getMetadata","getId","getClientRecordId","getPlannedExerciseSessionId","getNotes","getTitle","getMealName","getRoute")
+    private val getterCache=ConcurrentHashMap<Class<*>,List<Method>>()
+    private fun getters(type:Class<*>):List<Method> = getterCache.computeIfAbsent(type) {cls->
+        cls.methods.filter {it.parameterCount==0&&it.name.startsWith("get")&&it.name !in excluded&&it.declaringClass.name.startsWith("android.health.connect.datatypes.")}.sortedBy {it.name}
+    }
     fun value(obj:Any?):HealthValue? {
         if(obj is Number)return obj.toDouble().takeIf {it.isFinite()&&(it==0.0||kotlin.math.abs(it)>=1e-300)}?.let {HealthValue(it,"value")}
         if(obj==null)return null
@@ -24,7 +30,7 @@ object HealthRecordMapper {
         return if(unit=="cal")HealthValue(n/1000.0,"kcal") else HealthValue(n,unit)
     }
     fun numeric(obj:Any):Map<String,HealthValue> = buildMap {
-        obj.javaClass.methods.filter {it.parameterCount==0&&it.name.startsWith("get")&&it.name !in excluded&&it.declaringClass.name.startsWith("android.health.connect.datatypes")}.sortedBy {it.name}.forEach {method->
+        getters(obj.javaClass).forEach {method->
             val field=method.name.removePrefix("get").replaceFirstChar {it.lowercase()}
             value(method.invoke(obj))?.let {put(field,if(field=="heartRateVariabilityMillis")it.copy(unit="ms") else if(field in setOf("beatsPerMinute","rate")&&obj.javaClass.simpleName.contains("HeartRate"))it.copy(unit="bpm") else if(method.returnType==Int::class.javaPrimitiveType)it.copy(unit="enum") else it)}
         }
@@ -38,7 +44,7 @@ object HealthRecordMapper {
         if(obj is Collection<*>){require(obj.size<=10000);return JSONArray(obj.filterNotNull().mapNotNull {detail(it,depth+1)})}
         if(!obj.javaClass.name.startsWith("android.health.connect.datatypes."))return null
         val result=JSONObject()
-        obj.javaClass.methods.filter {it.parameterCount==0&&it.name.startsWith("get")&&it.name !in excluded&&it.name !in setOf("getSamples","getStages","getDeltas")&&!it.name.endsWith("Id")&&it.declaringClass.name.startsWith("android.health.connect.datatypes.")}.sortedBy {it.name}.forEach {m->
+        getters(obj.javaClass).filter {it.name !in setOf("getSamples","getStages","getDeltas")&&!it.name.endsWith("Id")}.forEach {m->
             val child=m.invoke(obj) ?: return@forEach
             detail(child,depth+1)?.let {result.put(m.name.removePrefix("get").replaceFirstChar {c->c.lowercase()},it)}
         }
@@ -76,8 +82,9 @@ object HealthRecordMapper {
             val nested=detail(record) as? JSONObject ?: JSONObject()
             return HealthRecord(healthHash(kind.id+record.metadata.dataOrigin.packageName+record.metadata.id).take(24),kind.id,source,start.toEpochMilli(),end.toEpochMilli(),values,deltas,emptyList(),nested.toString(),offset?.totalSeconds,record.metadata.id)
         }
-        val samples=record.javaClass.methods.firstOrNull {it.name=="getSamples"&&it.parameterCount==0}?.invoke(record) as? List<*>
-            ?: record.javaClass.methods.firstOrNull {it.name=="getDeltas"&&it.parameterCount==0}?.invoke(record) as? List<*>
+        val methods=getters(record.javaClass)
+        val samples=methods.firstOrNull {it.name=="getSamples"}?.invoke(record) as? List<*>
+            ?: methods.firstOrNull {it.name=="getDeltas"}?.invoke(record) as? List<*>
         val points=samples.orEmpty().mapNotNull {sample->
             if(sample==null)return@mapNotNull null
             val time=sample.javaClass.getMethod("getTime").invoke(sample) as Instant

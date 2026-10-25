@@ -7,10 +7,24 @@ import java.time.ZoneId
 import java.util.UUID
 
 fun healthId()=UUID.randomUUID().toString()
-fun healthHash(value:String)=MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString(""){"%02x".format(it)}
+fun healthHash(value:String):String {
+    val hex="0123456789abcdef"
+    val bytes=MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+    return buildString(bytes.size*2){bytes.forEach {byte->val n=byte.toInt() and 255;append(hex[n ushr 4]);append(hex[n and 15])}}
+}
 fun healthDaySlices(start:Instant,end:Instant,zone:ZoneId):List<Pair<Instant,Instant>> = buildList {
     var cursor=start
     while(cursor<end){val next=minOf(cursor.atZone(zone).toLocalDate().plusDays(1).atStartOfDay(zone).toInstant(),end);add(cursor to next);cursor=next}
+}
+internal fun healthDayBatches(start:Instant,end:Instant,zone:ZoneId):List<List<Pair<Instant,Instant>>> {
+    val batches=mutableListOf<MutableList<Pair<Instant,Instant>>>()
+    for(slice in healthDaySlices(start,end,zone)) {
+        val previous=batches.lastOrNull()
+        // Keep DST days and partial days separate so native duration buckets stay on local midnights.
+        if(previous==null||previous.size==90||java.time.Duration.between(slice.first,slice.second)!=java.time.Duration.between(previous.first().first,previous.first().second))batches+=mutableListOf(slice)
+        else previous+=slice
+    }
+    return batches
 }
 data class HealthValue(val value:Double,val unit:String) {
     init {require(value.isFinite())}
@@ -56,7 +70,7 @@ data class HealthSnapshot(
     val id:String=healthId(),val readAt:Long=System.currentTimeMillis(),val window:HealthWindow,
     val categories:Set<String>,val evidence:List<HealthEvidence>,val coverage:List<HealthCoverage>,
     val warnings:List<String> = emptyList(),val rawFile:String="",val baselineStart:String=LocalDate.parse(window.start).minusDays(21).toString(),
-    val syncTokens:Map<String,String> = emptyMap()
+    val syncTokens:Map<String,String> = emptyMap(),val cacheRevision:String=""
 ) {
     val dataAsOf get()=coverage.mapNotNull {it.latest}.maxOrNull()
     val hash get()=healthHash(HealthJson.snapshot(this).toString())
@@ -68,7 +82,7 @@ data class HealthSyncState(
 ) {
     val initialized get()=syncedAt>0&&token.isNotEmpty()
     fun covers(window:HealthWindow):Boolean {
-        if(!initialized)return false
+        if(syncedAt<=0)return false
         if(window.allHistory)return allHistory
         return allHistory||rangeStart.isNotEmpty()&&rangeStart<=window.start&&rangeEnd>=window.end
     }
@@ -88,14 +102,17 @@ data class HealthSyncPlan(
             fingerprint:(String)->String,
             window:HealthWindow,
             incrementalCapable:Set<String>,
-            forceFull:Boolean=false
+            forceFull:Boolean=false,
+            now:Long=System.currentTimeMillis()
         ):HealthSyncPlan {
             if(forceFull)return HealthSyncPlan(categories,emptySet(),emptySet())
             val full=categories.filter {category->
                 val state=states[category]
-                category !in incrementalCapable||state==null||!state.covers(window)||state.permissionFingerprint!=fingerprint(category)
+                if(state==null||!state.covers(window)||state.permissionFingerprint!=fingerprint(category))true
+                else if(category in incrementalCapable)state.token.isEmpty()
+                else now<state.syncedAt||now-state.syncedAt>=15*60000
             }.toSet()
-            return HealthSyncPlan(full,categories-full,emptySet())
+            return HealthSyncPlan(full,(categories-full).intersect(incrementalCapable),emptySet())
         }
     }
 }

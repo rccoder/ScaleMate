@@ -4,6 +4,8 @@ import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
 import app.scalemate.data.Store
 import app.scalemate.food.AiService
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -27,6 +29,8 @@ class HealthStore(private val store:Store) {
     }
     fun setting(key:String)=store.readableDatabase.rawQuery("SELECT value FROM health_settings WHERE key=?",arrayOf(key)).use {if(it.moveToFirst())it.getString(0) else ""}
     fun setting(key:String,value:String){store.writableDatabase.insertWithOnConflict("health_settings",null,ContentValues().apply {put("key",key);put("value",value)},SQLiteDatabase.CONFLICT_REPLACE)}
+    fun cacheRevision()=setting("sync:cacheRevision")
+    fun markCacheChanged()=setting("sync:cacheRevision",healthId())
     fun categories()=setting("categories").takeIf {it.isNotBlank()}?.let {HealthJson.strings(JSONArray(it)).toSet()} ?: emptySet()
     fun categories(ids:Set<String>)=setting("categories",JSONArray(ids.sorted()).toString())
     fun goals():HealthGoals {val o=setting("goals").takeIf {it.isNotBlank()}?.let(::JSONObject) ?: return HealthGoals();return HealthGoals(if(o.isNull("sleep"))null else o.getInt("sleep"),if(o.isNull("steps"))null else o.getLong("steps"))}
@@ -59,6 +63,17 @@ class HealthStore(private val store:Store) {
         end?.let {clauses+="start<?";args+=it.toString()}
         val where=clauses.takeIf {it.isNotEmpty()}?.joinToString(" AND ").orEmpty()
         return store.readableDatabase.rawQuery("SELECT payload FROM health_records${if(where.isEmpty())"" else " WHERE $where"} ORDER BY start",args.toTypedArray()).use {c->buildList {while(c.moveToNext())add(HealthJson.cachedRecord(JSONObject(c.getString(0))))}}
+    }
+    suspend fun writeCachedRaw(records:List<HealthRecord>,writer:java.io.Writer) {
+        // Payloads are already normalized JSON. Stream them without encoding every sample again.
+        records.filterNot {it.id.startsWith("aggregate:")}.map {it.id}.distinct().chunked(400).forEach {ids->
+            currentCoroutineContext().ensureActive()
+            store.readableDatabase.rawQuery("SELECT payload FROM health_records WHERE recordId IN (${ids.joinToString(","){"?"}})",ids.toTypedArray()).use {cursor->
+                while(cursor.moveToNext()) {
+                    writer.write(cursor.getString(0));writer.write("\n")
+                }
+            }
+        }
     }
     fun earliest(categories:Set<String>):Long? {
         if(categories.isEmpty())return null

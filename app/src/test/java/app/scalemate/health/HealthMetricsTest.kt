@@ -66,6 +66,13 @@ class HealthMetricsTest {
         val rows=HealthMetrics.compute(listOf(a,b),zone,end+86400000)
         assertFalse(rows.any {it.field=="exerciseType"});assertTrue(rows.any {it.field=="exerciseType.code1.count"&&it.value==1.0})
     }
+    @Test fun exerciseCardsUseTotalSessionDurationInsteadOfRecordCount() {
+        val a=HealthRecord("a","ExerciseSession","watch",start,start+20*60000,values=mapOf("exerciseType" to HealthValue(53.0,"enum")))
+        val b=a.copy(id="b",start=start+3600000,end=start+3630000,values=mapOf("exerciseType" to HealthValue(45.0,"enum")))
+        val rows=HealthMetrics.compute(listOf(a,b),zone,end+86400000)
+        assertEquals(20.5,rows.single {it.field=="exerciseDuration"}.value,0.0)
+        assertEquals("session-duration-v1",rows.single {it.field=="exerciseDuration"}.algorithm)
+    }
     @Test fun stepsUsePlatformTotalRatherThanSummingRawOrigins() {
         val a=HealthRecord("a","Steps","watch",start,values=emptyMap())
         val total=a.copy(id="aggregate:Steps",source="Health Connect",values=mapOf("count" to HealthValue(7000.0,"steps")))
@@ -73,6 +80,15 @@ class HealthMetricsTest {
         assertEquals(7000.0,rows.single {it.field=="count"}.value,0.0)
         assertEquals("platform-aggregate-v1",rows.single {it.field=="count"}.algorithm)
         assertFalse(rows.any {it.field=="recordCount"&&it.source=="Health Connect"})
+    }
+    @Test fun cachedNutritionAggregateSurvivesIncrementalRecompute() {
+        val first=HealthRecord("first","Nutrition","source",start,start+60000,mapOf("energy" to HealthValue(500.0,"kcal")))
+        val second=first.copy(id="second",start=start+120000,end=start+180000,values=mapOf("energy" to HealthValue(1000.0,"kcal")))
+        val aggregate=HealthRecord("aggregate:Nutrition:$start","Nutrition","Health Connect",start,end,mapOf("energy" to HealthValue(1500.0,"kcal")))
+        val energy=HealthMetrics.compute(listOf(first,second,aggregate),zone,end+86400000)
+            .single {it.kind=="Nutrition"&&it.field=="energy"}
+        assertEquals(1500.0,energy.value,0.0)
+        assertEquals("platform-aggregate-v1",energy.algorithm)
     }
     @Test fun todayIsMarkedPartialAndTimeZoneControlsDate() {
         val r=HealthRecord("w","Weight","scale",at("2026-10-16T17:00:00Z"),values=mapOf("weight" to HealthValue(71000.0,"g")))
@@ -99,5 +115,9 @@ class HealthMetricsTest {
         assertEquals(listOf(24L,23L,24L),slices.map {java.time.Duration.between(it.first,it.second).toHours()})
         assertEquals(begin,slices.first().first);assertEquals(finish,slices.last().second)
         assertTrue(slices.zipWithNext().all {(a,b)->a.second==b.first})
+    }
+    @Test fun unsetNutritionDenormalsAreRejectedAtTheNativeUnitBoundary() {
+        val stored=HealthRecordMapper.value(HealthValue(Double.MIN_VALUE,"g"))
+        assertNull(stored)
     }
 }

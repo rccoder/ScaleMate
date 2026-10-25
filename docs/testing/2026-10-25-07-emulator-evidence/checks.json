@@ -1,0 +1,12 @@
+{
+  "tests": 188,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "i18nPairs": 767,
+  "lint": {
+    "errors": 0,
+    "warnings": 133
+  },
+  "apkSha256": "cc685237755d6f09250a0be14bc736edc3609c71745b0351e505af0cd63b83fe"
+}

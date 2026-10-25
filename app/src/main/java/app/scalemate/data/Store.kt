@@ -9,7 +9,7 @@ data class BoundScale(val id: String, val name: String, val address: String, val
 data class Measurement(val id: String, val deviceId: String, val source: String, val kg: Double, val time: Long, val offset: Int, val status: String = "pending", val platformId: String = "", val attempts: Int = 0)
 
 /** Durable outbox and records share one row, so saving the measurement also saves its write task. */
-class Store(context: Context, name: String = "scalemate.db") : SQLiteOpenHelper(context, name, null, 5) {
+class Store(context: Context, name: String = "scalemate.db") : SQLiteOpenHelper(context, name, null, 6) {
     companion object {private val databaseOpenLock=Any()}
     // Independent feature helpers may open the same database concurrently on first launch.
     override fun getReadableDatabase():SQLiteDatabase=synchronized(databaseOpenLock){super.getReadableDatabase()}
@@ -26,6 +26,7 @@ class Store(context: Context, name: String = "scalemate.db") : SQLiteOpenHelper(
         else if(oldVersion<3) db.execSQL("ALTER TABLE ai_services ADD COLUMN format TEXT NOT NULL DEFAULT 'openai'")
         if(oldVersion<4)createLibraryTables(db)
         if(oldVersion<5)app.scalemate.health.HealthStore.createTables(db)
+        if(oldVersion<6)app.scalemate.health.HealthStore.createSyncTables(db)
     }
     private fun createLibraryTables(db:SQLiteDatabase) {
         db.execSQL("CREATE TABLE IF NOT EXISTS food_library(id TEXT PRIMARY KEY,nameKey TEXT NOT NULL UNIQUE,payload TEXT NOT NULL,favorite INTEGER NOT NULL DEFAULT 0,useCount INTEGER NOT NULL DEFAULT 0,lastUsed INTEGER NOT NULL DEFAULT 0)")

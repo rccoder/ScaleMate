@@ -24,11 +24,11 @@ class HealthStoreLocalTest {
             food.service(AiService(id="service",name="Synthetic service",model="synthetic",encryptedKey="opaque-ciphertext",consentVersion=3,version=3))
             food.setting("draft","synthetic-draft");food.setting("text","service")
             val sql=db.writableDatabase
-            listOf("health_settings","health_snapshots","health_reports","health_conversations","health_reminders").forEach {sql.execSQL("DROP TABLE $it")}
+            listOf("health_settings","health_snapshots","health_reports","health_conversations","health_reminders","health_records","health_sync_state").forEach {sql.execSQL("DROP TABLE $it")}
             sql.version=4
         }
         Store(context,name).use {db->
-            assertEquals(5,db.writableDatabase.version)
+            assertEquals(6,db.writableDatabase.version)
             assertEquals("scale",db.scales().single().id);assertEquals(70.0,db.records().single().kg,0.0)
             val food=FoodStore(db);assertEquals("meal",food.meals().single().id);assertEquals(1,food.library().size)
             assertEquals("opaque-ciphertext",food.services().single().encryptedKey);assertEquals("service",food.setting("text"));assertEquals("synthetic-draft",food.setting("draft"))
@@ -70,7 +70,79 @@ class HealthStoreLocalTest {
         val threads=java.util.concurrent.Executors.newFixedThreadPool(3)
         try {
             val tasks=(1..3).map {threads.submit<Int> {Store(context,name).use {db->db.readableDatabase.version}}}
-            assertEquals(listOf(5,5,5),tasks.map {it.get(10,java.util.concurrent.TimeUnit.SECONDS)})
+            assertEquals(listOf(6,6,6),tasks.map {it.get(10,java.util.concurrent.TimeUnit.SECONDS)})
         }finally {threads.shutdownNow()}
+    }
+    @Test fun syncIndexReplacesOnlyTheRequestedRangeAndKeepsLatestState() {
+        Store(context,name).use {db->
+            val health=HealthStore(db)
+            val start=java.time.Instant.parse("2026-10-10T00:00:00Z").toEpochMilli()
+            val end=start+2*86400000
+            val old=HealthRecord("old","Steps","watch",start)
+            val retained=HealthRecord("retained","Weight","scale",end)
+            val previousAggregate=HealthRecord("aggregate:Steps:${start-86400000}","Steps","Health Connect",start-86400000,end-86400000)
+            val spanning=HealthRecord("spanning","Steps","watch",start-3600000,end-3600000)
+            health.replaceRange(setOf("Steps"),start,end,listOf(old))
+            health.upsert(listOf(retained,previousAggregate,spanning))
+            health.replaceRange(setOf("Steps"),start,end,listOf(old.copy(id="new")))
+            assertEquals(listOf("aggregate:Steps:${start-86400000}","new"),health.records(setOf("Steps")).map {it.id})
+            assertEquals(listOf("retained"),health.records(setOf("Weight")).map {it.id})
+            val state=HealthSyncState("Steps","token",123,"permission","2026-10-01","2026-10-25",false)
+            health.syncState(state)
+            assertEquals(state,health.syncState("Steps"))
+        }
+    }
+    @Test fun syncPlanUsesFullReadForNewOrPermissionChangedCategoriesAndIncrementalForTheRest() {
+        val states=mapOf(
+            "Steps" to HealthSyncState("Steps","token",1,"ready","2026-10-18","2026-10-25"),
+            "SleepSession" to HealthSyncState("SleepSession","token",1,"old","2026-10-18","2026-10-25")
+        )
+        val window=HealthWindow("2026-10-18","2026-10-25")
+        val incremental=setOf("Steps","SleepSession","Weight")
+        val plan=HealthSyncPlan.plan(setOf("Steps","SleepSession","Weight"),states,{if(it=="SleepSession")"new" else "ready"},window,incremental)
+        assertEquals(setOf("SleepSession","Weight"),plan.full)
+        assertEquals(setOf("Steps"),plan.incremental)
+        assertEquals(setOf("Steps","SleepSession","Weight"),HealthSyncPlan.plan(setOf("Steps","SleepSession","Weight"),states,{"ready"},window,incremental,true).full)
+    }
+    @Test fun longerWindowRequiresFullReadEvenWhenTokenIsValid() {
+        val state=HealthSyncState("Steps","token",1,"ready","2026-10-18","2026-10-25")
+        val states=mapOf("Steps" to state)
+        val longer=HealthWindow("2026-07-27","2026-10-25")
+        val plan=HealthSyncPlan.plan(setOf("Steps"),states,{"ready"},longer,setOf("Steps"))
+        assertEquals(setOf("Steps"),plan.full)
+        assertTrue(state.covers(HealthWindow("2026-10-20","2026-10-25")))
+        assertFalse(state.covers(HealthWindow("2026-10-18","2026-10-25").copy(allHistory=true)))
+    }
+    @Test fun incrementalTransactionTracksDeletedDatesAndKeepsPlatformIdsLocal() {
+        Store(context,name).use {db->
+            val health=HealthStore(db);val zone=java.time.ZoneId.of("Asia/Shanghai")
+            val first=java.time.Instant.parse("2026-10-24T04:00:00Z").toEpochMilli()
+            val second=java.time.Instant.parse("2026-10-25T04:00:00Z").toEpochMilli()
+            val old=HealthRecord("old","Steps","watch",first,first,platformId="platform-old")
+            health.upsert(listOf(old))
+            val affected=health.applyIncremental(listOf(old.copy(id="new",start=second,end=second,platformId="platform-new")),listOf(old),mapOf("Steps" to emptySet()),zone)
+            assertEquals(setOf("2026-10-24","2026-10-25"),affected.getValue("Steps"))
+            assertEquals(listOf("new"),health.records(setOf("Steps")).map {it.id})
+            assertFalse(HealthJson.record(health.records().single()).has("platformId"))
+            assertTrue(HealthJson.cacheRecord(health.records().single()).has("platformId"))
+        }
+    }
+    @Test fun failedCursorWriteRollsBackRecordChangesInTheSameTransaction() {
+        Store(context,name).use {db->
+            val health=HealthStore(db)
+            val original=HealthRecord("original","Steps","watch",1000,platformId="platform-original")
+            val state=HealthSyncState("Steps","original",123,"permission","2026-10-01","2026-10-25",true)
+            health.upsert(listOf(original));health.syncState(state)
+            db.writableDatabase.execSQL("CREATE TRIGGER reject_cursor BEFORE INSERT ON health_sync_state WHEN NEW.token='rejected' BEGIN SELECT RAISE(ABORT,'Synthetic storage failure'); END")
+            try {
+                health.transaction {
+                    health.applyIncremental(listOf(original.copy(start=2000,end=2000)),emptyList(),emptyMap(),java.time.ZoneOffset.UTC)
+                    health.syncState(state.copy(token="rejected"))
+                }
+                fail("Cursor write should fail")
+            }catch(_:android.database.sqlite.SQLiteException){}
+            assertEquals(listOf(original),health.records())
+            assertEquals(state,health.syncState("Steps"))
+        }
     }
 }

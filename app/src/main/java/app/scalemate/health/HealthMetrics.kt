@@ -34,11 +34,17 @@ object HealthMetrics {
         fun add(kind:String,date:String,source:String,field:String,value:Double,unit:String,count:Int=1,coverage:Double?=null,algorithm:String="daily-v1",complete:Boolean=false) {
             if(value.isFinite())result+=HealthEvidence(healthHash("$kind|$date|$source|$field|$algorithm").take(24),kind,date,source,field,value,unit,count,coverage,date==day(now)&&!complete,algorithm)
         }
+        val totalFields=unique.filter {it.id.startsWith("aggregate:")}.groupBy {it.kind to day(it.start)}
+            .mapValues {(_,rows)->rows.flatMap {it.values.keys}.toSet()}
+        val daily=unique.map {r->if(r.id.startsWith("aggregate:"))r else r.copy(values=r.values.filterKeys {it !in totalFields[r.kind to day(r.start)].orEmpty()})}
         val chosen=unique.groupBy {it.kind}.mapValues {(kind,rs)->mainSources[kind]?.takeIf {s->rs.any {it.source==s}} ?: rs.groupBy {it.source}.entries.sortedWith(compareByDescending<Map.Entry<String,List<HealthRecord>>>{it.value.map {r->day(r.end)}.distinct().size}.thenBy {it.key}).first().key}
-        unique.filter {it.kind!="HeartRate"&&it.kind!="SleepSession"&&(it.kind!="Weight"||it.source==chosen["Weight"])}.groupBy {Triple(it.kind,if(it.start==0L&&it.kind.startsWith("Medical_"))"undated" else day(it.start),it.source)}.forEach {(key,rs)->
+        daily.filter {it.kind!="HeartRate"&&it.kind!="SleepSession"&&(it.kind!="Weight"||it.source==chosen["Weight"])}.groupBy {Triple(it.kind,if(it.start==0L&&it.kind.startsWith("Medical_"))"undated" else day(it.start),it.source)}.forEach {(key,rs)->
             val (kind,date,source)=key
             val raw=rs.filterNot {it.id.startsWith("aggregate:")}
             if(raw.isNotEmpty())add(kind,date,source,"recordCount",raw.size.toDouble(),"records")
+            if(kind=="ExerciseSession"&&raw.isNotEmpty()) {
+                add(kind,date,source,"exerciseDuration",raw.sumOf {it.end-it.start}.coerceAtLeast(0)/60000.0,"min",raw.size,algorithm="session-duration-v1")
+            }
             raw.filter {it.kind.startsWith("Medical_")&&it.detail.isNotEmpty()}.forEach {r->
                 result+=HealthEvidence(healthHash("clinical:${r.id}").take(24),kind,if(r.start==0L)"undated" else date,source,"clinicalRecord",1.0,"record",detail=r.detail,algorithm="clinical-redacted-v1")
             }

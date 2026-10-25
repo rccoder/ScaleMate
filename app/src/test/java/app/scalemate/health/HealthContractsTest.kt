@@ -77,11 +77,12 @@ class HealthContractsTest {
     @Test fun detailExportUsesNewAnonymousIdsAndManifestCounts()=runBlocking {
         val root=Files.createTempDirectory("health-detail-test").toFile()
         try {
-            val raw=root.resolve("raw").apply {mkdirs()};val record=HealthRecord("internal-record","Steps","Source alias",java.time.Instant.parse("2026-10-16T12:00:00Z").toEpochMilli())
-            raw.resolve("snapshot-synthetic.jsonl").writeText(HealthJson.record(record).toString()+"\n")
+            val raw=root.resolve("raw").apply {mkdirs()};val record=HealthRecord("internal-record","Steps","Source alias",java.time.Instant.parse("2026-10-16T12:00:00Z").toEpochMilli(),platformId="private-platform-id")
+            raw.resolve("snapshot-synthetic.jsonl").writeText(HealthJson.cacheRecord(record).toString()+"\n")
             val files=HealthExport.write(root.resolve("exports"),raw,snapshot(),"Review",true)
             val manifest=JSONObject(files.single {it.name=="manifest.json"}.readText());assertEquals(1,manifest.getInt("recordCount"));assertEquals(1,manifest.getInt("partCount"))
             val part=JSONObject(files.first().readText());assertNotEquals("internal-record",part.getJSONArray("records").getJSONObject(0).getString("recordId"))
+            assertFalse(files.first().readText().contains("private-platform-id"));assertFalse(part.getJSONArray("records").getJSONObject(0).has("platformId"))
         }finally {root.deleteRecursively()}
     }
     @Test fun expiredRawExportLeavesNoShareablePartialDirectory()=runBlocking {

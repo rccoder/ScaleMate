@@ -28,6 +28,11 @@ class HealthRecordMapperLocalTest {
         val mapped=HealthRecordMapper.map(record,HealthCatalog.kind("Nutrition"),"source alias")
         assertEquals(250.0,mapped.values.getValue("energy").value,0.0);assertEquals("kcal",mapped.values.getValue("energy").unit)
         assertEquals(15.0,mapped.values.getValue("protein").value,0.0);assertFalse(mapped.values.containsKey("totalFat"))
+        assertFalse(mapped.detail.contains("4.9E-324"))
+    }
+    @Test fun zeroEnergyAndTemperatureDeltaAreValuesRatherThanMissingData() {
+        assertEquals(0.0,HealthRecordMapper.value(Energy.fromCalories(0.0))!!.value,0.0)
+        assertEquals(0.0,HealthRecordMapper.value(TemperatureDelta.fromCelsius(0.0))!!.value,0.0)
     }
     @Test fun rawHeartSamplesPreserveTimestampsAndBpm() {
         val r=HeartRateRecord.Builder(metadata(),start,end,listOf(HeartRateRecord.HeartRateSample(60,start),HeartRateRecord.HeartRateSample(75,start.plusSeconds(60)))).build()
@@ -38,5 +43,22 @@ class HealthRecordMapperLocalTest {
         val r=StepsRecord.Builder(metadata(),start,end,7000).build()
         val mapped=HealthRecordMapper.map(r,HealthCatalog.kind("Steps"),"watch alias")
         assertEquals(7000.0,mapped.values.getValue("count").value,0.0);assertNotEquals("enum",mapped.values.getValue("count").unit)
+    }
+    @Test fun skinTemperatureKeepsBaselineSeparateFromRelativeDelta() {
+        val record=SkinTemperatureRecord.Builder(metadata(),start,end)
+            .setBaseline(Temperature.fromCelsius(33.3))
+            .setDeltas(listOf(
+                SkinTemperatureRecord.Delta(TemperatureDelta.fromCelsius(-0.9),start.plusSeconds(600)),
+                SkinTemperatureRecord.Delta(TemperatureDelta.fromCelsius(-1.1),start.plusSeconds(1200))
+            ))
+            .setMeasurementLocation(SkinTemperatureRecord.MEASUREMENT_LOCATION_WRIST)
+            .build()
+        val mapped=HealthRecordMapper.map(record,HealthCatalog.kind("SkinTemperature"),"watch alias")
+        assertEquals(33.3,mapped.values.getValue("skinTemperatureBaseline").value,.0001)
+        assertEquals(-1.0,mapped.values.getValue("skinTemperatureDelta").value,.0001)
+        assertEquals(-1.1,mapped.values.getValue("skinTemperatureDeltaMin").value,.0001)
+        assertEquals(-0.9,mapped.values.getValue("skinTemperatureDeltaMax").value,.0001)
+        assertEquals(2,mapped.points.size)
+        assertEquals("C",mapped.points.first().unit)
     }
 }

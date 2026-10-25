@@ -48,7 +48,8 @@ Do not diagnose, prescribe medication changes or assume a calorie deficit from i
                 open()
                 try {input.bufferedReader().useLines {lines->lines.forEach {line->
                     coroutineContext.ensureActive()
-                    val row=JSONObject(line)
+                    val row=JSONObject(line).apply {remove("platformId")}
+                    if(row.getString("recordId").startsWith("aggregate:"))return@forEach
                     row.put("recordId",healthHash(id+row.getString("recordId")).take(24))
                     val start=if(row.isNull("start"))Instant.EPOCH else Instant.parse(row.getString("start"));val day=start.atZone(java.time.ZoneId.of(s.window.zone)).toLocalDate().toString()
                     row.put("baseline",start.toEpochMilli()!=0L&&day<s.window.start)

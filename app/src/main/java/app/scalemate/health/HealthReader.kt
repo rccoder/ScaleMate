@@ -5,6 +5,9 @@ import android.content.pm.PackageManager
 import android.health.connect.*
 import android.health.connect.datatypes.AggregationType
 import android.health.connect.datatypes.Record
+import android.health.connect.changelog.ChangeLogTokenRequest
+import android.health.connect.changelog.ChangeLogsRequest
+import android.health.connect.changelog.ChangeLogsResponse
 import android.os.OutcomeReceiver
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -14,7 +17,8 @@ import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-class HealthReader(private val context:Context) {
+class HealthReader(private val context:Context):HealthSyncSource {
+    data class ChangeBatch(val records:List<HealthRecord>,val deletedPlatformIds:List<String>,val nextToken:String)
     private var cachedManager:HealthConnectManager?=null
     private var checkedAt=0L
     private fun connection():HealthConnectManager? {val now=System.currentTimeMillis();if(now-checkedAt>1000){cachedManager=context.getSystemService(HealthConnectManager::class.java);checkedAt=now};return cachedManager}
@@ -31,6 +35,19 @@ class HealthReader(private val context:Context) {
         else->"ready"
     }
     fun canUseCached(kind:HealthKind)=state(kind) in setOf("ready","route_consent_required")
+    override fun status(category:String)=state(HealthCatalog.kind(category))
+    override fun fingerprint(category:String)="${status(category)}|history=${granted(HealthCatalog.HISTORY)}"
+    override fun incremental(category:String)=category!="ExerciseRoute"&&HealthCatalog.kind(category).medicalType.isEmpty()
+    override suspend fun full(window:HealthWindow,categories:Set<String>,sources:Map<String,String>,progress:(String)->Unit):HealthSyncRead {
+        val snapshot=read(window,categories,sources,progress,captureTokenFirst=true)
+        val records=File(context.cacheDir,"health_raw/${snapshot.rawFile}").useLines {lines->lines.map {HealthJson.cachedRecord(org.json.JSONObject(it))}.toList()}
+        return HealthSyncRead(snapshot,records)
+    }
+    override suspend fun changes(category:String,token:String):HealthChanges {
+        val batch=changes(token,setOf(category))
+        return HealthChanges(batch.records,batch.deletedPlatformIds,batch.nextToken)
+    }
+    override suspend fun totals(category:String,start:Instant,end:Instant,zone:ZoneId)=totals(HealthCatalog.kind(category),start,end,zone)
     suspend fun routeRequests(window:HealthWindow):List<HealthRouteRequest> {
         if(!granted("android.permission.health.READ_EXERCISE"))return emptyList()
         var token:Long?=null;val seen=mutableSetOf<Long>();val requests=mutableListOf<HealthRouteRequest>()
@@ -43,6 +60,50 @@ class HealthReader(private val context:Context) {
         return requests.distinctBy {it.platformId}
     }
     @Suppress("UNCHECKED_CAST") private fun recordClass(kind:HealthKind)=Class.forName(kind.className) as Class<Record>
+    fun syncKinds(kinds:Collection<HealthKind>)=kinds.filter {it.id!="ExerciseRoute"&&it.medicalType.isEmpty()&&state(it)=="ready"}.distinctBy {it.className}
+    fun incrementalKinds(kinds:Collection<HealthKind>)=syncKinds(kinds).map {it.id}.toSet()
+    suspend fun changeToken(kinds:Collection<HealthKind>):String? {
+        val types=syncKinds(kinds)
+        if(types.isEmpty())return null
+        val request=ChangeLogTokenRequest.Builder().apply {types.forEach {addRecordType(recordClass(it))}}.build()
+        return suspendCancellableCoroutine {c->
+            try {manager.getChangeLogToken(request,context.mainExecutor,object:OutcomeReceiver<android.health.connect.changelog.ChangeLogTokenResponse,HealthConnectException>{
+                override fun onResult(result:android.health.connect.changelog.ChangeLogTokenResponse){if(c.isActive)c.resume(result.token)}
+                override fun onError(error:HealthConnectException){if(c.isActive)c.resumeWithException(error)}
+            })}catch(e:Exception){if(c.isActive)c.resumeWithException(e)}
+        }
+    }
+    suspend fun changeTokens(kinds:Collection<HealthKind>):Map<String,String> {
+        val result=linkedMapOf<String,String>()
+        syncKinds(kinds).forEach {kind->
+            try {changeToken(listOf(kind))?.let {result[kind.id]=it}}
+            catch(e:kotlinx.coroutines.CancellationException){throw e}catch(_:Exception){}
+        }
+        return result
+    }
+    suspend fun changes(token:String,types:Set<String>):ChangeBatch {
+        val records=linkedMapOf<String,HealthRecord>();val deleted=linkedSetOf<String>();var cursor=token;var pages=0
+        do {
+            coroutineContext.ensureActive()
+            val request=ChangeLogsRequest.Builder(cursor).setPageSize(1000).build()
+            val response:ChangeLogsResponse=suspendCancellableCoroutine {c->
+                try {manager.getChangeLogs(request,context.mainExecutor,object:OutcomeReceiver<ChangeLogsResponse,HealthConnectException>{
+                    override fun onResult(value:ChangeLogsResponse){if(c.isActive)c.resume(value)}
+                    override fun onError(error:HealthConnectException){if(c.isActive)c.resumeWithException(error)}
+                })}catch(e:Exception){if(c.isActive)c.resumeWithException(e)}
+            }
+            response.upsertedRecords.forEach {native->
+                val kind=HealthCatalog.kinds.firstOrNull {it.id in types&&it.id!="ExerciseRoute"&&it.medicalType.isEmpty()&&it.className==native.javaClass.name} ?: return@forEach
+                records[native.metadata.id]=HealthRecordMapper.map(native,kind,source(native.metadata.dataOrigin.packageName))
+                deleted-=native.metadata.id
+            }
+            response.deletedLogs.forEach {deleted+=it.deletedRecordId;records.remove(it.deletedRecordId)}
+            cursor=response.nextChangesToken
+            pages++
+            check(cursor.isNotBlank()&&pages<10000){"Invalid Health Connect change log"}
+        }while(response.hasMorePages())
+        return ChangeBatch(records.values.toList(),deleted.toList(),cursor)
+    }
     private fun filter(start:Instant?,end:Instant)=TimeInstantRangeFilter.Builder().apply {if(start!=null)setStartTime(start);setEndTime(end)}.build()
     private suspend fun page(kind:HealthKind,start:Instant?,end:Instant,token:Long?=null,size:Int=1000):ReadRecordsResponse<Record> = suspendCancellableCoroutine {c->
         try {
@@ -93,12 +154,21 @@ class HealthReader(private val context:Context) {
         }
         return result
     }
-    suspend fun read(window:HealthWindow,categories:Set<String>,mainSources:Map<String,String> = emptyMap(),progress:(String)->Unit={}):HealthSnapshot {
+    suspend fun read(
+        window:HealthWindow,
+        categories:Set<String>,
+        mainSources:Map<String,String> = emptyMap(),
+        progress:(String)->Unit={},
+        baselineDays:Long=21,
+        discoverEarliest:Boolean=true,
+        captureTokenFirst:Boolean=false
+    ):HealthSnapshot {
         val now=Instant.now();val zone=ZoneId.of(window.zone);val kinds=HealthCatalog.kinds.filter {it.id in categories}
+        val syncTokens=if(captureTokenFirst)changeTokens(kinds) else emptyMap()
         var actual=window
         val status=kinds.associate {it.id to HealthCoverage(it.id,state(it))}.toMutableMap()
         val earliestByKind=mutableMapOf<String,Instant>()
-        if(window.allHistory||!granted(HealthCatalog.HISTORY)) {
+        if(discoverEarliest&&(window.allHistory||!granted(HealthCatalog.HISTORY))) {
             val earliest=mutableListOf<Instant>()
             for(kind in kinds.filter {state(it)=="ready"&&it.medicalType.isEmpty()}) {
                 coroutineContext.ensureActive()
@@ -111,7 +181,7 @@ class HealthReader(private val context:Context) {
         cache.listFiles()?.filter {it.lastModified()<System.currentTimeMillis()-86400000}?.forEach {it.delete()}
         val rawFile=File.createTempFile("snapshot-",".jsonl",cache)
         val evidence=mutableListOf<HealthEvidence>();val warnings=mutableListOf<String>();val rawSeen=mutableSetOf<String>();val selectedSources=mainSources.toMutableMap()
-        val begin=if(actual.allHistory)actual.startInstant else actual.startInstant.atZone(zone).minusDays(21).toInstant()
+        val begin=if(actual.allHistory)actual.startInstant else actual.startInstant.atZone(zone).minusDays(baselineDays).toInstant()
         val end=minOf(actual.endInstant.plus(Duration.ofDays(1)),now)
         try {
             rawFile.bufferedWriter().use {writer->
@@ -132,13 +202,13 @@ class HealthReader(private val context:Context) {
                                 if(r.end<=begin.toEpochMilli()&&r.start<begin.toEpochMilli()||r.start>=end.toEpochMilli())continue
                                 val old=status.getValue(kind.id)
                                 status[kind.id]=old.copy(status=if(old.status in setOf("read_failed","partial"))"partial" else "available",records=old.records+1,points=old.points+r.points.size,sources=(old.sources+r.source).distinct(),latest=maxOf(old.latest ?: 0,minOf(r.end,now.toEpochMilli())))
-                                writer.write(HealthJson.record(r).toString());writer.newLine()
+                                writer.write(HealthJson.cacheRecord(r).toString());writer.newLine()
                             }
                             val aggregated=if(rows.isEmpty())emptyList() else totals(kind,maxOf(cursor,first ?: Instant.MIN),next,zone)
                             // Keep raw rows for detail export, but use platform totals for cumulative metrics.
-                            val totalFields=aggregated.flatMap {it.values.keys}.toSet()
-                            chunk+=rows.map {it.copy(values=it.values.filterKeys {key->key !in totalFields})}
+                            chunk+=rows
                             chunk+=aggregated
+                            aggregated.forEach {r->writer.write(HealthJson.cacheRecord(r).toString());writer.newLine()}
                             if(rows.isEmpty()&&status.getValue(kind.id).status=="ready")status[kind.id]=HealthCoverage(kind.id,"no_records")
                         }catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){
                             val old=status.getValue(kind.id);status[kind.id]=old.copy(status=if(e is HealthConnectException&&e.errorCode==HealthConnectException.ERROR_UNSUPPORTED_OPERATION)"unsupported" else if(old.records>0)"partial" else "read_failed")
@@ -166,7 +236,7 @@ class HealthReader(private val context:Context) {
             warnings+="Sleep/HRV coverage gates are product quality rules, not medical thresholds."
             val baselineStart=LocalDate.parse(actual.start).minusDays(21).toString()
             val bounded=evidence.distinctBy {it.id}.filterNot {e->e.date==baselineStart&&(e.kind=="SleepSession"||e.field in setOf("sleepBpm","sessionBpm","nightRmssd"))}
-            return HealthSnapshot(window=actual,categories=categories,evidence=bounded,coverage=status.values.toList(),warnings=warnings,rawFile=rawFile.name)
+            return HealthSnapshot(window=actual,categories=categories,evidence=bounded,coverage=status.values.toList(),warnings=warnings,rawFile=rawFile.name,syncTokens=syncTokens)
         }catch(e:Throwable){rawFile.delete();throw e}
     }
 }

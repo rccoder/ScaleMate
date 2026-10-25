@@ -26,7 +26,7 @@ class MainActivity: ComponentActivity() {
     private lateinit var updateModel: UpdateViewModel
     private lateinit var healthModel: HealthViewModel
     private var healthEntry by mutableStateOf("")
-    private val healthReadPermissions=registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){healthModel.reload()}
+    private val healthReadPermissions=registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){healthModel.onReadPermissionsResult()}
     private val nutritionPermission=registerForActivityResult(ActivityResultContracts.RequestPermission()){foodModel.refreshPermissions()}
     private var afterBluetooth: (() -> Unit)? = null
     private val bluetoothPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->

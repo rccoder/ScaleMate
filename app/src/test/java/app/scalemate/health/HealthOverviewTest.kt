@@ -21,14 +21,14 @@ class HealthOverviewTest {
             row("SleepSession","sessionMinutes","2026-10-25",480.0,"min"),
             row("SleepSession","sleepMinutes","2026-10-25",450.0,"min"),
             row("Steps","count","2026-10-25",6800.0,"steps",partial=true),
-            row("ExerciseSession","recordCount","2026-10-25",1.0,"records",partial=true),
+            row("ExerciseSession","exerciseDuration","2026-10-25",35.0,"min",partial=true),
             row("Steps","count","2026-10-24",9000.0,"steps")
         )
         val cards=HealthOverview.today(snapshot,LocalDate.parse("2026-10-25"))
         assertEquals(listOf("SleepSession","Steps","ExerciseSession"),cards.map {it.kind})
         assertEquals("sleepMinutes",cards.first().field)
         assertEquals("count",cards.single {it.kind=="Steps"}.field)
-        assertEquals("recordCount",cards.single {it.kind=="ExerciseSession"}.field)
+        assertEquals("exerciseDuration",cards.single {it.kind=="ExerciseSession"}.field)
     }
 
     @Test fun missingCategoriesAreNotInventedAsZeroCards() {
@@ -58,5 +58,43 @@ class HealthOverviewTest {
         }
         assertEquals(HealthPrivacyGroup.BODY,HealthCatalog.privacyGroup(HealthCatalog.kind("Weight")))
         assertEquals(HealthPrivacyGroup.ACTIVITY,HealthCatalog.privacyGroup(HealthCatalog.kind("Steps")))
+    }
+
+    @Test fun stackedMetricsUseBarsWhileMeasurementsAndSleepUseLines() {
+        val snapshot=snapshot(
+            row("Steps","count","2026-10-24",9000.0,"steps"),
+            row("Steps","count","2026-10-25",6800.0,"steps",partial=true),
+            row("SleepSession","sleepMinutes","2026-10-24",450.0,"min"),
+            row("ExerciseSession","exerciseDuration","2026-10-24",35.0,"min"),
+            row("Weight","weight","2026-10-24",72_000.0,"g")
+        )
+        assertEquals(HealthChartKind.BAR,HealthOverview.trend(snapshot,"Steps")!!.chartKind)
+        assertEquals(HealthChartKind.BAR,HealthOverview.trend(snapshot,"ExerciseSession")!!.chartKind)
+        assertEquals(HealthChartKind.LINE,HealthOverview.trend(snapshot,"SleepSession")!!.chartKind)
+        assertEquals(HealthChartKind.LINE,HealthOverview.trend(snapshot,"Weight")!!.chartKind)
+    }
+
+    @Test fun skinTemperatureStartsWithRelativeDeltaNotBaselineTemperature() {
+        val snapshot=snapshot(
+            row("SkinTemperature","skinTemperatureBaseline","2026-10-25",33.3,"C"),
+            row("SkinTemperature","skinTemperatureDelta","2026-10-25",-.97,"C")
+        )
+        val card=HealthOverview.today(snapshot,LocalDate.parse("2026-10-25")).single {it.kind=="SkinTemperature"}
+        assertEquals("skinTemperatureDelta",card.field)
+        assertEquals(-.97,card.value,0.0)
+        assertEquals("C",card.unit)
+    }
+
+    @Test fun recentTrendsWithoutTodayIncludeWeightAndTotalEnergy() {
+        val snapshot=snapshot(
+            row("Weight","weight","2026-10-22",72_000.0,"g"),
+            row("TotalCaloriesBurned","energy","2026-10-22",2200.0,"kcal"),
+            row("Weight","weight","2026-10-24",71_800.0,"g"),
+            row("TotalCaloriesBurned","energy","2026-10-24",2400.0,"kcal")
+        )
+        val trends=HealthOverview.trendKinds.mapNotNull {kind->HealthOverview.trend(snapshot,kind)?.let {kind to it}}
+        assertTrue(trends.any {it.first=="Weight"})
+        assertTrue(trends.any {it.first=="TotalCaloriesBurned"})
+        assertTrue(HealthOverview.today(snapshot,LocalDate.parse("2026-10-25")).isEmpty())
     }
 }

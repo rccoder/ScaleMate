@@ -20,11 +20,20 @@ data class HealthStage(val start:Long,val end:Long,val stage:Int)
 data class HealthRecord(
     val id:String,val kind:String,val source:String,val start:Long,val end:Long=start,
     val values:Map<String,HealthValue> = emptyMap(),val points:List<HealthPoint> = emptyList(),
-    val stages:List<HealthStage> = emptyList(),val detail:String="",val offsetSeconds:Int?=null
-)
+    val stages:List<HealthStage> = emptyList(),val detail:String="",val offsetSeconds:Int?=null,
+    val platformId:String=""
+) {
+    fun sleepMinutes():Double {
+        val valid=stages.filter {it.end>it.start&&it.start>=start&&it.end<=end}
+        return HealthMetrics.unionMillis(valid.filter {it.stage in setOf(2,4,5,6)}.map {it.start to it.end})/60000.0
+    }
+}
 data class HealthEvidence(
     val id:String,val kind:String,val date:String,val source:String,val field:String,val value:Double,val unit:String,
     val count:Int=1,val coverage:Double?=null,val partial:Boolean=false,val algorithm:String="daily-v1",val detail:String=""
+)
+data class HealthDetailReference(
+    val kind:String,val minimum:Double,val maximum:Double,val unit:String,val count:Int
 )
 fun HealthEvidence.period(window:HealthWindow):String {
     if(date=="undated")return "undated"
@@ -46,19 +55,70 @@ data class HealthWindow(val start:String,val end:String,val zone:String=ZoneId.s
 data class HealthSnapshot(
     val id:String=healthId(),val readAt:Long=System.currentTimeMillis(),val window:HealthWindow,
     val categories:Set<String>,val evidence:List<HealthEvidence>,val coverage:List<HealthCoverage>,
-    val warnings:List<String> = emptyList(),val rawFile:String="",val baselineStart:String=LocalDate.parse(window.start).minusDays(21).toString()
+    val warnings:List<String> = emptyList(),val rawFile:String="",val baselineStart:String=LocalDate.parse(window.start).minusDays(21).toString(),
+    val syncTokens:Map<String,String> = emptyMap()
 ) {
     val dataAsOf get()=coverage.mapNotNull {it.latest}.maxOrNull()
     val hash get()=healthHash(HealthJson.snapshot(this).toString())
     fun analysisEvidence()=evidence.filter {it.period(window)=="analysis"&&!it.partial}
 }
+data class HealthSyncState(
+    val category:String,val token:String="",val syncedAt:Long=0,val permissionFingerprint:String="",
+    val rangeStart:String="",val rangeEnd:String="",val allHistory:Boolean=false
+) {
+    val initialized get()=syncedAt>0&&token.isNotEmpty()
+    fun covers(window:HealthWindow):Boolean {
+        if(!initialized)return false
+        if(window.allHistory)return allHistory
+        return allHistory||rangeStart.isNotEmpty()&&rangeStart<=window.start&&rangeEnd>=window.end
+    }
+}
+fun healthRecordDates(record:HealthRecord,zone:ZoneId):Set<String> {
+    var day=Instant.ofEpochMilli(record.start).atZone(zone).toLocalDate()
+    val last=Instant.ofEpochMilli(if(record.end>record.start)record.end-1 else record.start).atZone(zone).toLocalDate()
+    return buildSet {while(day<=last){add(day.toString());day=day.plusDays(1)}}
+}
+data class HealthSyncPlan(
+    val full:Set<String>,val incremental:Set<String>,val failed:Set<String>
+) {
+    companion object {
+        fun plan(
+            categories:Set<String>,
+            states:Map<String,HealthSyncState>,
+            fingerprint:(String)->String,
+            window:HealthWindow,
+            incrementalCapable:Set<String>,
+            forceFull:Boolean=false
+        ):HealthSyncPlan {
+            if(forceFull)return HealthSyncPlan(categories,emptySet(),emptySet())
+            val full=categories.filter {category->
+                val state=states[category]
+                category !in incrementalCapable||state==null||!state.covers(window)||state.permissionFingerprint!=fingerprint(category)
+            }.toSet()
+            return HealthSyncPlan(full,categories-full,emptySet())
+        }
+    }
+}
+fun healthCoverage(kind:String,records:List<HealthRecord>):HealthCoverage {
+    val raw=records.filter {!it.id.startsWith("aggregate:")}
+    return HealthCoverage(
+        kind,
+        if(raw.isEmpty())"no_records" else "available",
+        raw.size.toLong(),
+        raw.sumOf {it.points.size.toLong()},
+        raw.map {it.source}.distinct(),
+        raw.maxOfOrNull {it.end}
+    )
+}
 data class HealthSummaryMetric(
     val kind:String,val field:String,val label:String,val value:Double,val unit:String,val date:String,
     val partial:Boolean,val coverage:Double?,val evidenceId:String
 )
+enum class HealthChartKind { LINE, BAR }
 data class HealthTrendPoint(val date:LocalDate,val value:Double,val partial:Boolean)
 data class HealthTrendSeries(
-    val kind:String,val field:String,val unit:String,val points:List<HealthTrendPoint>,val missingDates:List<LocalDate> = emptyList(),val goal:Double?=null
+    val kind:String,val field:String,val unit:String,val points:List<HealthTrendPoint>,val missingDates:List<LocalDate> = emptyList(),
+    val goal:Double?=null,val chartKind:HealthChartKind=HealthChartKind.LINE,val lastEvidenceId:String=""
 ) {
     fun segments():List<List<HealthTrendPoint>> {
         val result=mutableListOf<List<HealthTrendPoint>>()
@@ -78,36 +138,60 @@ object HealthOverview {
         "HeartRate" to listOf("sleepBpm","bpm"),
         "HeartRateVariabilityRmssd" to listOf("nightRmssd","sampleMedian"),
         "Steps" to listOf("count"),
-        "ExerciseSession" to listOf("recordCount"),
+        "ExerciseSession" to listOf("exerciseDuration"),
         "Weight" to listOf("weight"),
         "Nutrition" to listOf("energy"),
         "ActiveCaloriesBurned" to listOf("energy"),
         "TotalCaloriesBurned" to listOf("energy"),
-        "Distance" to listOf("distance")
+        "Distance" to listOf("distance"),
+        "SkinTemperature" to listOf("skinTemperatureDelta","skinTemperatureBaseline")
     )
     private val trendFields=mapOf(
         "SleepSession" to "sleepMinutes",
-        "HeartRate" to "sleepBpm",
-        "HeartRateVariabilityRmssd" to "nightRmssd",
+        "ExerciseSession" to "exerciseDuration",
+        "HeartRate" to "bpm",
+        "HeartRateVariabilityRmssd" to "sampleMedian",
         "Steps" to "count",
         "Weight" to "weight",
         "Nutrition" to "energy",
-        "ActiveCaloriesBurned" to "energy"
+        "ActiveCaloriesBurned" to "energy",
+        "TotalCaloriesBurned" to "energy",
+        "Distance" to "distance",
+        "ElevationGained" to "elevation",
+        "FloorsClimbed" to "floors",
+        "RestingHeartRate" to "beatsPerMinute",
+        "OxygenSaturation" to "percentage",
+        "RespiratoryRate" to "rate",
+        "BodyTemperature" to "temperature",
+        "BasalBodyTemperature" to "temperature",
+        "SkinTemperature" to "skinTemperatureDelta",
+        "MindfulnessSession" to "sessionMinutes"
+    )
+    val trendKinds=trendFields.keys.toList()
+    private val barKinds=setOf(
+        "Steps","Nutrition","ActiveCaloriesBurned","TotalCaloriesBurned","Distance",
+        "ElevationGained","FloorsClimbed","ExerciseSession","WheelchairPushes"
     )
     fun today(snapshot:HealthSnapshot?,today:LocalDate):List<HealthSummaryMetric> {
         if(snapshot==null)return emptyList()
         return priority.mapNotNull {(kind,fields)->
             val candidates=fields.mapNotNull {field->
-                snapshot.evidence.filter {it.kind==kind&&it.field==field&&it.date==today.toString()}
+                val matches=snapshot.evidence.filter {it.kind==kind&&it.field==field&&it.date==today.toString()}
                     .maxByOrNull {it.id}?.let {field to it}
+                if(matches==null&&kind=="SkinTemperature"&&field=="skinTemperatureBaseline") {
+                    val delta=snapshot.evidence.filter {it.kind==kind&&it.field=="skinTemperatureDelta"&&it.date==today.toString()}.maxByOrNull {it.id}
+                    if(delta!=null)return@mapNotNull "skinTemperatureDelta" to delta
+                }
+                matches
             }
             val (field,e)=candidates.firstOrNull() ?: return@mapNotNull null
             HealthSummaryMetric(kind,field,metricLabel(e),e.value,e.unit,e.date,e.partial,e.coverage,e.id)
         }
     }
     fun trend(snapshot:HealthSnapshot?,kind:String):HealthTrendSeries? {
-        val fields=trendFields[kind]?.let(::listOf) ?: return null
-        val field=fields.firstOrNull {candidate->snapshot?.evidence?.any {it.kind==kind&&it.field==candidate}==true} ?: return null
+        val field=trendFields[kind]?.takeIf {candidate->snapshot?.evidence?.any {it.kind==kind&&it.field==candidate}==true}
+            ?: snapshot?.evidence?.find {it.kind==kind&&it.field!="recordCount"&&it.field!="clinicalRecord"&&!it.field.startsWith("exerciseType.code")&&it.algorithm!="platform-aggregate-v1"}?.field
+            ?: return null
         val rows=snapshot?.evidence?.filter {it.kind==kind&&it.field==field&&it.period(snapshot.window) in setOf("analysis","partial")}.orEmpty()
         if(rows.isEmpty())return null
         val points=rows.filterNot {it.field=="recordCount"}.mapNotNull {e->
@@ -121,11 +205,16 @@ object HealthOverview {
             var date=first
             while(date<=last){if(date !in byDate)add(date);date=date.plusDays(1)}
         }
-        return HealthTrendSeries(kind,field,rows.first().unit,points,missing)
+        return HealthTrendSeries(
+            kind,field,rows.first().unit,points,missing,
+            chartKind=if(kind in barKinds)HealthChartKind.BAR else HealthChartKind.LINE,
+            lastEvidenceId=rows.maxByOrNull {it.date}?.id.orEmpty()
+        )
     }
     fun metricLabel(e:HealthEvidence)=when {
         e.field=="sleepMinutes"->"sleep"
         e.field=="sessionMinutes"->"session"
+        e.field=="exerciseDuration"->"exercise_duration"
         e.field=="sleepBpm"->"sleep_hr"
         e.field=="bpm"->"heart_rate"
         e.field=="nightRmssd"->"hrv"
@@ -133,6 +222,8 @@ object HealthOverview {
         e.field=="weight"->"weight"
         e.field=="energy"->"energy"
         e.field=="distance"->"distance"
+        e.field=="skinTemperatureBaseline"->"skin_temperature_baseline"
+        e.field=="skinTemperatureDelta"->"skin_temperature_delta"
         e.field=="recordCount"->"records"
         e.algorithm=="platform-aggregate-v1"->"daily_total"
         else->"daily_median"

@@ -109,7 +109,14 @@ If no personal data exists, explain that you are answering general questions wit
     }
     private fun healthMetricDisplay(e:HealthEvidence):String {
         val number=java.text.NumberFormat.getNumberInstance().apply {maximumFractionDigits=2}
-        return if(e.kind=="Weight"&&e.field=="weight"&&e.unit=="g")number.format(e.value/1000)+" kg" else number.format(e.value)+" "+e.unit
+        return when {
+            e.kind=="Weight"&&e.field=="weight"&&e.unit=="g"->number.format(e.value/1000)+" kg"
+            e.kind=="SleepSession"&&e.unit=="min"->number.format(e.value/60)+" h"
+            e.kind=="Distance"&&e.field=="distance"&&e.unit=="m"->number.format(e.value/1000)+" km"
+            e.field=="skinTemperatureBaseline"->number.format(e.value)+"°C (local skin baseline, not body temperature)"
+            e.field.startsWith("skinTemperatureDelta")->(if(e.value>0)"+" else "")+number.format(e.value)+"°C"
+            else->number.format(e.value)+" "+e.unit
+        }
     }
     fun preview(raw:String):String {
         val start=Regex("\"text\"\\s*:\\s*\"").find(raw)?.range?.last?.plus(1) ?: return ""

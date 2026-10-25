@@ -163,12 +163,18 @@ import kotlinx.coroutines.launch
             if(s.busy)FoodAnalysisStatus(s.analysisStage,s.analysisAttempt,s.analysisStartedAt,vm::cancelAi)
             when(page) {
                 "home" -> {
-                    Text(stringResource(R.string.food_today),style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.SemiBold)
-                    TextButton(onClick={val day=LocalDate.parse(date);DatePickerDialog(context,{_,y,m,d->date=LocalDate.of(y,m+1,d).toString()},day.year,day.monthValue-1,day.dayOfMonth).show()}){Text(date)}
                     val meals=s.meals.filter {!it.deleted && Instant.ofEpochMilli(it.time).atZone(ZoneId.systemDefault()).toLocalDate().toString()==date}
                     val totals=Nutrients.sum(meals.map {it.nutrients})
                     val hasDraft=draft?.isEmpty()==false
-                    FoodCard(color=MaterialTheme.colorScheme.primaryContainer){Text("${fmt(totals.kcal)} kcal",fontSize=42.sp,fontWeight=FontWeight.Light);NutritionRow(totals);Text(stringResource(R.string.food_day_incomplete),style=MaterialTheme.typography.bodySmall)}
+                    FoodCard(color=MaterialTheme.colorScheme.primaryContainer,padding=PaddingValues(horizontal=18.dp,vertical=14.dp)){
+                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                            Text(stringResource(if(date==LocalDate.now().toString())R.string.records_today_intake else R.string.food_day_intake),Modifier.weight(1f),style=MaterialTheme.typography.labelLarge)
+                            TextButton(onClick={val day=LocalDate.parse(date);DatePickerDialog(context,{_,y,m,d->date=LocalDate.of(y,m+1,d).toString()},day.year,day.monthValue-1,day.dayOfMonth).show()}){Text(date)}
+                        }
+                        Text("${fmt(totals.kcal)} kcal",fontSize=42.sp,fontWeight=FontWeight.Light)
+                        NutritionRow(totals)
+                        Text(stringResource(R.string.food_day_incomplete),style=MaterialTheme.typography.bodySmall)
+                    }
                     Button(enabled=s.loaded,onClick=onStartMeal,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)){Icon(Icons.Default.Add,null);Text(stringResource(R.string.food_add))}
                     if(hasDraft) {
                         TextButton(onClick={onOpenEditor(foodDraftPage(draft))}){Text(stringResource(R.string.food_resume))}
@@ -422,7 +428,7 @@ private val FoodStarOutline by lazy {
 private val FoodCardShape=RoundedCornerShape(22.dp)
 private val FoodImageShape=RoundedCornerShape(12.dp)
 
-@Composable private fun FoodCard(color:androidx.compose.ui.graphics.Color=lerp(MaterialTheme.colorScheme.surface,MaterialTheme.colorScheme.surfaceVariant,.42f),content:@Composable ColumnScope.()->Unit) {Surface(shape=FoodCardShape,color=color,modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp),content=content)}}
+@Composable private fun FoodCard(color:androidx.compose.ui.graphics.Color=lerp(MaterialTheme.colorScheme.surface,MaterialTheme.colorScheme.surfaceVariant,.42f),padding:PaddingValues=PaddingValues(18.dp),content:@Composable ColumnScope.()->Unit) {Surface(shape=FoodCardShape,color=color,modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(padding),verticalArrangement=Arrangement.spacedBy(12.dp),content=content)}}
 /** One food presentation shared by pending analysis and confirmed meal items. */
 @Composable private fun FoodItemCard(
     food:FoodItem,favorite:Boolean,onFavorite:(Boolean)->Unit,onEdit:()->Unit,onRemove:()->Unit,

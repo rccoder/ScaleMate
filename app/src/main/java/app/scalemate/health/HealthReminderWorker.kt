@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.work.*
+import app.scalemate.BuildConfig
 import app.scalemate.MainActivity
 import app.scalemate.R
 import app.scalemate.data.Store
@@ -20,7 +21,7 @@ object HealthReminders {
     private const val WORK="health-coach-local-rules"
     fun schedule(context:Context,enabled:Boolean) {
         val wm=WorkManager.getInstance(context)
-        if(enabled)wm.enqueueUniquePeriodicWork(WORK,ExistingPeriodicWorkPolicy.UPDATE,PeriodicWorkRequestBuilder<HealthReminderWorker>(1,TimeUnit.HOURS).build())
+        if(BuildConfig.HEALTH_AI_ENABLED&&enabled)wm.enqueueUniquePeriodicWork(WORK,ExistingPeriodicWorkPolicy.UPDATE,PeriodicWorkRequestBuilder<HealthReminderWorker>(1,TimeUnit.HOURS).build())
         else {wm.cancelUniqueWork(WORK);(context.getSystemService(NotificationManager::class.java)).cancel(7401)}
     }
     fun notify(context:Context,r:HealthReminder,showDetails:Boolean) {
@@ -37,6 +38,7 @@ object HealthReminders {
 
 class HealthReminderWorker(context:Context,params:WorkerParameters):CoroutineWorker(context,params) {
     override suspend fun doWork():Result {
+        if(!BuildConfig.HEALTH_AI_ENABLED)return Result.success()
         val db=Store(applicationContext)
         try {
             val store=HealthStore(db);val settings=store.reminderSettings()

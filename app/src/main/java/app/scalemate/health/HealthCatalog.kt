@@ -5,6 +5,11 @@ data class HealthKind(val id:String,val permissionSuffix:String,val english:Stri
     val className get()="android.health.connect.datatypes.${if(id=="ExerciseRoute")"ExerciseSession" else id}Record"
     fun label(chineseLanguage:Boolean)=if(chineseLanguage)chinese else english
 }
+enum class HealthPrivacyGroup(val english:String,val chinese:String) {
+    ACTIVITY("Everyday activity","日常活动"),
+    BODY("Body and nutrition","身体与营养"),
+    CLINICAL("Sensitive or clinical records","敏感或临床记录")
+}
 
 object HealthCatalog {
     const val HISTORY="android.permission.health.READ_HEALTH_DATA_HISTORY"
@@ -69,4 +74,14 @@ object HealthCatalog {
     val defaults=kinds.filterNot {it.sensitive}.map {it.id}.toSet()
     val common=listOf("SleepSession","HeartRate","HeartRateVariabilityRmssd","Steps","ExerciseSession","Weight","Nutrition")
     fun kind(id:String)=kinds.single {it.id==id}
+    val clinical=setOf(
+        "Medical_ALLERGIES_INTOLERANCES","Medical_CONDITIONS","Medical_LABORATORY_RESULTS","Medical_MEDICATIONS",
+        "Medical_PERSONAL_DETAILS","Medical_PRACTITIONER_DETAILS","Medical_PREGNANCY","Medical_PROCEDURES",
+        "Medical_SOCIAL_HISTORY","Medical_VACCINES","Medical_VISITS","Medical_VITAL_SIGNS"
+    )
+    fun privacyGroup(kind:HealthKind)=when {
+        kind.sensitive||kind.id in clinical->HealthPrivacyGroup.CLINICAL
+        kind.id in setOf("Weight","Nutrition","Hydration","BodyFat","BodyWaterMass","BoneMass","LeanBodyMass","Height","BasalMetabolicRate","BloodPressure","BloodGlucose","OxygenSaturation","RespiratoryRate","BodyTemperature","BasalBodyTemperature","SkinTemperature","RestingHeartRate","Vo2Max")->HealthPrivacyGroup.BODY
+        else->HealthPrivacyGroup.ACTIVITY
+    }
 }

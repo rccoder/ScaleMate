@@ -11,6 +11,9 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.pullToRefresh
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -124,8 +127,21 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                 listOf(Triple("records",R.string.records,Icons.AutoMirrored.Filled.List),Triple("food",R.string.food_title,Icons.Default.Add),Triple("home",R.string.weigh,Icons.Default.Home),Triple("health",R.string.health_title,Icons.Default.Favorite),Triple("settings",R.string.settings,Icons.Default.Settings)).forEach{(key,label,icon)->NavigationBarItem(selected=actualPage==key,onClick={navigate(key)},icon={BadgedBox(badge={if(key=="settings" && updateState.hasUpdate)Badge()}){Icon(icon,stringResource(label))}},label={Text(stringResource(label))})}
             }}
         ) {padding->
+            val healthState by healthVm.state.collectAsStateWithLifecycle()
+            val healthPullState=rememberPullToRefreshState()
             Box(Modifier.fillMaxSize().padding(padding)) {
-            Column(Modifier.fillMaxSize().verticalScroll(mainScroll).padding(horizontal=24.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
+            Column(
+                Modifier.fillMaxSize()
+                    .then(if(actualPage=="health") Modifier.pullToRefresh(
+                            isRefreshing=healthState.busy,
+                            state=healthPullState,
+                            threshold=120.dp,
+                            onRefresh={mainScope.launch {mainScroll.scrollTo(0)};healthVm.refresh()}
+                        ) else Modifier)
+                    .verticalScroll(mainScroll)
+                    .padding(horizontal=24.dp),
+                verticalArrangement=Arrangement.spacedBy(18.dp)
+            ) {
                 when(actualPage) {
                     "loading"->CircularProgressIndicator()
                     "welcome"->{
@@ -243,12 +259,10 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                             val today=LocalDate.now()
                             val todayMeals=foodState.meals.filter {!it.deleted && Instant.ofEpochMilli(it.time).atZone(ZoneId.systemDefault()).toLocalDate()==today}
                             val todayWeights=state.records.filter {Instant.ofEpochMilli(it.time).atZone(ZoneId.systemDefault()).toLocalDate()==today}
-                            Text(today.toString(),style=MaterialTheme.typography.labelLarge,color=c.primary)
-                            Text(stringResource(R.string.records_today),style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.SemiBold)
                             Card(colors=CardDefaults.cardColors(containerColor=c.primaryContainer),shape=RoundedCornerShape(24.dp),modifier=Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
                                     val nutrition=Nutrients.sum(todayMeals.map {it.nutrients})
-                                    Text(stringResource(R.string.food_today),style=MaterialTheme.typography.labelLarge)
+                                    Text(stringResource(R.string.records_today_intake),style=MaterialTheme.typography.labelLarge)
                                     Text((nutrition.kcal?.let {foodNumber.format(it)} ?: "—")+" kcal",fontSize=38.sp)
                                     Text(stringResource(R.string.records_count,todayMeals.size,todayWeights.size))
                                     Text(stringResource(R.string.food_day_incomplete),style=MaterialTheme.typography.bodySmall)
@@ -301,12 +315,19 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                             SettingsDivider()
                             SettingsRow(stringResource(R.string.settings_text_default),modelName(foodState.defaultText) ?: stringResource(R.string.food_not_set)){services("text-default")}
                         }
-                        SettingsGroup(stringResource(R.string.settings_sync)) {
-                            SettingsRow("Health Connect",if(!foodState.healthAvailable)stringResource(R.string.food_health_unavailable) else stringResource(R.string.settings_sync_summary,stringResource(if(state.healthAllowed)R.string.settings_allowed else R.string.settings_not_allowed),stringResource(if(foodState.permitted)R.string.settings_allowed else R.string.settings_not_allowed))){navigate("sync-settings")}
-                        }
                         val healthState by healthVm.state.collectAsStateWithLifecycle()
-                        SettingsGroup(stringResource(R.string.health_title)) {
-                            SettingsRow(stringResource(R.string.health_permission_settings),if(healthState.categories.isEmpty())stringResource(R.string.health_permission_none) else stringResource(R.string.health_permission_summary,healthState.categories.size,stringResource(if(healthState.categories.all {healthState.permissions[it]=="ready"})R.string.health_permission_ready else R.string.health_permission_needs_grant))){navigate("health-permissions")}
+                        SettingsGroup(stringResource(R.string.settings_sync)) {
+                            SettingsRow(
+                                "Health Connect",
+                                if(!foodState.healthAvailable)stringResource(R.string.food_health_unavailable)
+                                else stringResource(
+                                    R.string.settings_health_connect_summary,
+                                    stringResource(if(state.healthAllowed)R.string.settings_allowed else R.string.settings_not_allowed),
+                                    stringResource(if(foodState.permitted)R.string.settings_allowed else R.string.settings_not_allowed),
+                                    if(healthState.categories.isEmpty())stringResource(R.string.health_permission_none)
+                                    else stringResource(R.string.health_permission_summary,healthState.categories.size,stringResource(if(healthState.categories.all {healthState.permissions[it]=="ready"})R.string.health_permission_ready else R.string.health_permission_needs_grant))
+                                )
+                            ){navigate("sync-settings")}
                         }
                         SettingsGroup(stringResource(R.string.weigh)) {
                             SettingsRow(stringResource(R.string.devices),scale?.let {scaleDisplayName(it.name)} ?: stringResource(R.string.add_scale)){navigate("devices")}
@@ -342,11 +363,19 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                     }
                     "sync-settings"->{
                         Text(stringResource(R.string.settings_sync_intro),style=MaterialTheme.typography.bodyMedium,color=c.onSurfaceVariant)
-                        SettingsGroup(stringResource(R.string.settings_permissions)) {
+                        val healthState by healthVm.state.collectAsStateWithLifecycle()
+                        SettingsGroup(stringResource(R.string.settings_sync_permissions)) {
                             SettingsRow(stringResource(R.string.settings_weight),stringResource(if(!foodState.healthAvailable)R.string.food_health_unavailable else if(state.healthAllowed)R.string.settings_permission_enabled else R.string.settings_permission_disabled)){if(!foodState.healthAvailable||state.healthAllowed)healthSettings() else authorize()}
                             SettingsDivider()
                             SettingsRow(stringResource(R.string.settings_nutrition),stringResource(if(!foodState.healthAvailable)R.string.food_health_unavailable else if(foodState.permitted)R.string.settings_permission_enabled else R.string.settings_permission_disabled)){if(!foodState.healthAvailable||foodState.permitted)healthSettings() else authorizeNutrition()}
+                            SettingsDivider()
+                            SettingsRow(
+                                stringResource(R.string.settings_health_analysis),
+                                if(healthState.categories.isEmpty())stringResource(R.string.health_permission_none)
+                                else stringResource(R.string.health_permission_summary,healthState.categories.size,stringResource(if(healthState.categories.all {healthState.permissions[it]=="ready"})R.string.health_permission_ready else R.string.health_permission_needs_grant))
+                            ){navigate("health-permissions")}
                         }
+                        Text(stringResource(R.string.settings_health_analysis_note),Modifier.padding(horizontal=16.dp),style=MaterialTheme.typography.bodySmall,color=c.onSurfaceVariant)
                         SettingsGroup(stringResource(R.string.settings_sync_records)) {
                             SettingsRow(stringResource(R.string.settings_view_records),stringResource(R.string.records_pending,state.records.count {it.status!="synced"}+foodState.meals.count {it.status!="synced"})){navigate("records")}
                         }
@@ -363,6 +392,13 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                 }
                 state.message?.let{Text(stringResource(it),color=c.error,style=MaterialTheme.typography.bodyMedium)}
                 Spacer(Modifier.height(24.dp))
+            }
+            if(actualPage=="health") {
+                PullToRefreshDefaults.Indicator(
+                    state=healthPullState,
+                    isRefreshing=healthState.busy,
+                    modifier=Modifier.align(Alignment.TopCenter)
+                )
             }
             }
         }

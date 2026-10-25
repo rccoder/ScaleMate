@@ -8,24 +8,35 @@ import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.scalemate.BuildConfig
 import app.scalemate.R
 import app.scalemate.SettingsGroup
 import app.scalemate.SettingsRow
@@ -34,11 +45,12 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class,ExperimentalMaterial3Api::class)
 @Composable fun HealthScreen(vm:HealthViewModel,authorize:(Set<String>)->Unit,managePermissions:()->Unit,manageServices:()->Unit,initialReminderId:String="",consumeReminder:()->Unit={},resetScroll:()->Unit={}) {
     val s by vm.state.collectAsStateWithLifecycle();val context=LocalContext.current;val scope=rememberCoroutineScope()
     val chinese=LocalConfiguration.current.locales[0].language=="zh"
@@ -47,19 +59,24 @@ import kotlinx.coroutines.withContext
     var page by rememberSaveable {mutableStateOf("home")};var question by rememberSaveable {mutableStateOf("")}
     var customStart by remember {mutableStateOf(s.window.start)};var customEnd by remember {mutableStateOf(s.window.end)};var customZone by remember {mutableStateOf(s.window.zone)}
     var deleteHistory by remember {mutableStateOf(false)};var localError by remember {mutableStateOf<Int?>(null)}
+    var localMessage by remember {mutableStateOf<Int?>(null)}
     var selectedReport by rememberSaveable {mutableStateOf<String?>(null)};var selectedReminder by rememberSaveable {mutableStateOf<String?>(null)}
     var raw by rememberSaveable {mutableStateOf(false)};var exportingFile by remember {mutableStateOf<File?>(null)}
     var preview by remember {mutableStateOf("")}
     var visibleMessages by remember(s.conversation.id){mutableIntStateOf(50)}
     var loadedReminder by remember {mutableStateOf("")}
-    var showAllCoverage by rememberSaveable {mutableStateOf(false)}
     var showAllMetrics by rememberSaveable {mutableStateOf(false)}
+    var view by rememberSaveable {mutableStateOf("cards")}
+    val today=LocalDate.now()
+    val todayMetrics=HealthOverview.today(s.snapshot,today)
+    val configuredService=s.serviceId.takeIf {id->s.services.any {it.id==id}}
     val save=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")){uri->
         val file=exportingFile
         if(uri!=null&&file!=null)scope.launch {try {withContext(Dispatchers.IO){context.contentResolver.openOutputStream(uri)?.use {out->file.inputStream().use {it.copyTo(out)}} ?: error("No output")}}catch(_:Exception){localError=R.string.health_export_error}}
     }
     fun date(time:Long?)=time?.let {DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it))} ?: "—"
     fun go(next:String){page=next}
+    fun disabledPage(next:String)=!BuildConfig.HEALTH_AI_ENABLED&&next in setOf("chat","conversations","reports","report","export","reminders","goals","privacy")
     fun settings(){try {context.startActivity(Intent("android.health.connect.action.HEALTH_HOME_SETTINGS"))}catch(_:Exception){localError=R.string.open_error}}
     fun share() {try {
         val uris=ArrayList(s.exports.map {FileProvider.getUriForFile(context,"${context.packageName}.foodphotos",it)})
@@ -71,7 +88,8 @@ import kotlinx.coroutines.withContext
     LaunchedEffect(Unit){vm.reload()}
     LaunchedEffect(page){resetScroll()}
     LaunchedEffect(s.conversation.messages.lastOrNull()?.status,s.conversation.messages.lastOrNull()?.id){if(s.conversation.messages.lastOrNull()?.status=="complete"&&s.conversation.messages.lastOrNull()?.role=="assistant"&&s.conversation.messages.lastOrNull {it.role=="user"}?.text==question.trim())question=""}
-    LaunchedEffect(initialReminderId){if(initialReminderId.isNotEmpty()){selectedReminder=initialReminderId;page="reminders";consumeReminder()}}
+    LaunchedEffect(Unit){if(disabledPage(page))page="home"}
+    LaunchedEffect(initialReminderId){if(initialReminderId.isNotEmpty()){if(BuildConfig.HEALTH_AI_ENABLED){selectedReminder=initialReminderId;page="reminders"};consumeReminder()}}
     LaunchedEffect(selectedReminder,s.reminders){s.reminders.find {it.id==selectedReminder&&it.id!=loadedReminder}?.let {r->loadedReminder=r.id;if(r.snapshotId.isNotEmpty())vm.openSnapshot(r.snapshotId)}}
     BackHandler(page!="home"){if(s.generating)vm.cancel();page="home"}
     DisposableEffect(Unit){onDispose {vm.cancel()}}
@@ -79,63 +97,102 @@ import kotlinx.coroutines.withContext
     Column(verticalArrangement=Arrangement.spacedBy(16.dp)) {
         if(page!="home")TextButton(onClick={if(s.generating)vm.cancel();page="home"}){Text("‹ "+stringResource(R.string.health_title))}
         if(error!=null)HealthCard {Text(stringResource(error),color=MaterialTheme.colorScheme.error);TextButton(onClick={localError=null;vm.clearError()}){Text(stringResource(R.string.done))}}
+        if(localMessage!=null)HealthCard {Text(stringResource(localMessage!!),color=MaterialTheme.colorScheme.primary);TextButton(onClick={localMessage=null}){Text(stringResource(R.string.done))}}
         if(!s.available)HealthCard {Text(stringResource(R.string.health_unavailable));TextButton(onClick=::settings){Text(stringResource(R.string.health_open_settings))}}
         if(s.busy){LinearProgressIndicator(Modifier.fillMaxWidth());if(s.progress.isNotEmpty())Text(s.progress,style=MaterialTheme.typography.bodySmall);TextButton(onClick=vm::cancel){Text(stringResource(if(s.generating)R.string.health_stop else R.string.cancel))}}
         when(page) {
             "home"->{
-                Text(stringResource(R.string.health_intro),style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.SemiBold)
-                Text(stringResource(R.string.health_analysis_source_note),color=MaterialTheme.colorScheme.onSurfaceVariant)
-                HealthCard(MaterialTheme.colorScheme.primaryContainer) {
-                    Text("${s.window.start} — ${s.window.end}",style=MaterialTheme.typography.titleMedium)
-                    Text(stringResource(R.string.health_range_note),style=MaterialTheme.typography.bodySmall)
-                    if(s.snapshot!=null){HealthLabel(stringResource(R.string.health_read_at),date(s.snapshot!!.readAt));HealthLabel(stringResource(R.string.health_data_as_of),date(s.snapshot!!.dataAsOf))}
-                    else Text(stringResource(R.string.health_no_data))
-                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){TextButton(enabled=!s.busy,onClick={go("range")}){Text(stringResource(R.string.health_range))};TextButton(enabled=!s.busy&&s.categories.isNotEmpty(),onClick=vm::refresh){Text(stringResource(R.string.health_refresh_short))}}
-                }
-                HealthCard {
-                    Text(stringResource(R.string.health_permissions),fontWeight=FontWeight.Medium)
-                    Text(permissionSummary(s),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    TextButton(onClick=managePermissions){Text(stringResource(R.string.health_manage_permissions))}
-                }
-                s.snapshot?.let {snapshot->
-                    val priority=listOf("sleepMinutes","sessionMinutes","sleepBpm","nightRmssd","count","weight","energy","volume","distance")
-                    val kindOrder=listOf("SleepSession","HeartRate","HeartRateVariabilityRmssd","Steps","ExerciseSession","Weight","Nutrition","ActiveCaloriesBurned","TotalCaloriesBurned","Distance")
-                    val metricGroups=snapshot.evidence.filter {it.period(snapshot.window) in setOf("analysis","partial")}.filter {it.field!="recordCount"&&!it.algorithm.startsWith("range-")}.groupBy {it.kind}
-                    val orderedMetrics=metricGroups.entries.sortedWith(compareBy({kindOrder.indexOf(it.key).let {index->if(index<0)Int.MAX_VALUE else index}},{it.key}))
-                    val visibleMetrics=if(showAllMetrics)orderedMetrics else orderedMetrics.take(5)
-                    visibleMetrics.forEach {(kind,rows)->
-                        val field=priority.firstOrNull {p->rows.any {it.field==p}} ?: rows.first().field
-                        val e=rows.filter {it.field==field}.maxBy {it.date}
-                        HealthCard {
-                            Text(HealthCatalog.kind(kind).label(chinese),style=MaterialTheme.typography.titleMedium)
-                            Text(stringResource(when(e.field){"sleepMinutes"->R.string.health_metric_sleep;"sessionMinutes"->R.string.health_metric_session;"sleepBpm"->R.string.health_metric_sleep_hr;else->if(e.algorithm=="daily-median-v1")R.string.health_metric_daily_median else R.string.health_evidence}),style=MaterialTheme.typography.labelMedium)
-                            Text(healthMetricDisplay(e),style=MaterialTheme.typography.headlineMedium)
-                            if(e.partial)Text(stringResource(R.string.health_partial),style=MaterialTheme.typography.bodySmall)
-                            Text(e.date+" · "+e.source,style=MaterialTheme.typography.bodySmall)
-                            TextButton(onClick={vm.evidence(e.id)}){Text(stringResource(R.string.health_evidence))}
+                HealthHomeHeader(s,readAt=date(s.snapshot?.readAt),asOf=date(s.snapshot?.dataAsOf),view=view,onView={view=it},onRange={go("range")},onRefresh=vm::refresh,onPermissions=managePermissions)
+                if(todayMetrics.isEmpty()) {
+                    HealthCard {
+                        Text(stringResource(R.string.health_no_data),fontWeight=FontWeight.Medium)
+                        Text(stringResource(R.string.health_no_data_today_hint),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){TextButton(onClick=managePermissions){Text(stringResource(R.string.health_manage_permissions))};TextButton(enabled=!s.busy&&s.categories.isNotEmpty(),onClick=vm::refresh){Text(stringResource(R.string.health_refresh_short))}}
+                    }
+                } else if(view=="cards") {
+                    Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                        todayMetrics.chunked(2).forEach {row->
+                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                row.forEach {metric->HealthMetricCard(metric,chinese,Modifier.weight(1f)){vm.evidence(metric.evidenceId)}}
+                                if(row.size==1)Spacer(Modifier.weight(1f))
+                            }
                         }
                     }
-                    if(orderedMetrics.size>visibleMetrics.size)TextButton(onClick={showAllMetrics=true}){Text(stringResource(R.string.health_metrics_all,orderedMetrics.size-visibleMetrics.size))}
-                    else if(showAllMetrics&&orderedMetrics.size>5)TextButton(onClick={showAllMetrics=false}){Text(stringResource(R.string.health_metrics_fewer))}
-                    if(snapshot.warnings.isNotEmpty())Text(stringResource(R.string.health_limitations)+" · "+stringResource(R.string.health_range_note),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    Text(stringResource(R.string.health_trend_missing),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    val trends=listOf("SleepSession","Steps","HeartRateVariabilityRmssd","HeartRate","Weight","Nutrition","ActiveCaloriesBurned").mapNotNull {kind->HealthOverview.trend(s.snapshot,kind)?.let {kind to it}}
+                    if(trends.isEmpty())HealthCard {Text(stringResource(R.string.health_trend_empty),color=MaterialTheme.colorScheme.onSurfaceVariant)}
+                    trends.forEach {(kind,trend)->HealthCard {Text(HealthCatalog.kind(kind).label(chinese),style=MaterialTheme.typography.titleMedium);Text(stringResource(metricLabelResource(kind,trend.field)),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant);HealthTrendChart(trend,chinese,Modifier.fillMaxWidth().height(180.dp));val first=trend.points.firstOrNull();val last=trend.points.lastOrNull();if(first!=null&&last!=null)Text(trend.points.size.toString()+" · "+first.date+" → "+last.date,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}}
                 }
-                Button(enabled=!s.busy&&s.snapshot?.analysisEvidence()?.isNotEmpty()==true,onClick={vm.ask(reportQuestion,true);go("chat")},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_report))}
-                OutlinedButton(onClick={go("chat")},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_chat))}
-                for(preset in listOf(R.string.health_preset_sleep,R.string.health_preset_activity,R.string.health_preset_intake)){val presetQuestion=stringResource(preset);TextButton(onClick={question=presetQuestion;go("chat")}){Text(presetQuestion)}}
-                SettingsGroup(stringResource(R.string.health_title)) {
-                    SettingsRow(stringResource(R.string.health_reports),"${s.reports.size}"){go("reports")}
-                    SettingsRow(stringResource(R.string.health_export),stringResource(R.string.health_export_note)){go("export")}
-                    SettingsRow(stringResource(R.string.health_reminders),stringResource(R.string.health_reminders_note)){go("reminders")}
-                    SettingsRow(stringResource(R.string.health_goals),stringResource(R.string.health_goals_note)){go("goals")}
-                    SettingsRow(stringResource(R.string.health_privacy),stringResource(R.string.health_retention)){go("privacy")}
-                }
+                Text(stringResource(R.string.health_last_synced,date(s.snapshot?.readAt),date(s.snapshot?.dataAsOf)),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 s.snapshot?.let {snapshot->
-                    Text(stringResource(R.string.health_coverage),style=MaterialTheme.typography.titleLarge)
-                    val notable=snapshot.coverage.filter {it.status in setOf("available","partial","read_failed")}
-                    val shown=if(showAllCoverage)snapshot.coverage else notable
-                    if(shown.isEmpty())HealthCard {Text(stringResource(R.string.health_coverage_none),style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)}
-                    shown.forEach {c->HealthCard {Text(HealthCatalog.kind(c.kind).label(chinese),fontWeight=FontWeight.Medium);Text(stringResource(statusResource(c.status)));HealthLabel(stringResource(R.string.health_records),c.records.toString());HealthLabel(stringResource(R.string.health_points),c.points.toString());if(c.sources.isNotEmpty())Text(c.sources.joinToString(" · "),style=MaterialTheme.typography.bodySmall)}}
-                    if(snapshot.coverage.size>notable.size)TextButton(onClick={showAllCoverage=!showAllCoverage}){Text(stringResource(if(showAllCoverage)R.string.health_coverage_fewer else R.string.health_coverage_all,snapshot.coverage.size-notable.size))}
+                    if(showAllMetrics) {
+                        val priority=listOf("sleepMinutes","sessionMinutes","sleepBpm","nightRmssd","count","weight","energy","volume","distance")
+                        val rows=snapshot.evidence.filter {it.period(snapshot.window) in setOf("analysis","partial")}.filter {it.field!="recordCount"&&!it.algorithm.startsWith("range-")}.groupBy {it.kind}
+                        val metrics=rows.map {(kind,kindRows)->
+                            val field=priority.firstOrNull {p->kindRows.any {it.field==p}} ?: kindRows.first().field
+                            kindRows.filter {it.field==field}.maxBy {it.date}
+                        }
+                        Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                            metrics.chunked(2).forEach {row->
+                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                    row.forEach {e->HealthDetailCard(e,chinese,Modifier.weight(1f)){vm.evidence(e.id)}}
+                                    if(row.size==1)Spacer(Modifier.weight(1f))
+                                }
+                            }
+                        }
+                        TextButton(onClick={showAllMetrics=false}){Text(stringResource(R.string.health_metrics_fewer))}
+                    } else {
+                        TextButton(onClick={showAllMetrics=true}){Text(stringResource(R.string.health_metrics_all,snapshot.evidence.map {it.kind}.distinct().size))}
+                    }
+                }
+                if(BuildConfig.HEALTH_AI_ENABLED) {
+                    HealthAiSection(enabled=!s.busy&&s.snapshot?.analysisEvidence()?.isNotEmpty()==true,configured=!configuredService.isNullOrEmpty(),onReport={vm.ask(reportQuestion,true);go("chat")},onChat={go("chat")},onConfigure=manageServices,onPreset={question=it;go("chat")},presets=listOf(
+                        stringResource(R.string.health_preset_sleep),
+                        stringResource(R.string.health_preset_activity),
+                        stringResource(R.string.health_preset_intake)
+                    ))
+                }
+                if(s.snapshot?.warnings?.isNotEmpty()==true)Text(stringResource(R.string.health_limitations)+" · "+stringResource(R.string.health_partial_note),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                s.snapshot?.let {snapshot->
+                    if(snapshot.coverage.any {it.status=="partial"||it.status=="read_failed"}) {
+                        Text(stringResource(R.string.health_partial),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error)
+                    }
+                }
+                if(BuildConfig.HEALTH_AI_ENABLED||s.snapshot?.coverage?.any {it.sources.size>1}==true) {
+                    SettingsGroup(stringResource(R.string.health_title)) {
+                        if(BuildConfig.HEALTH_AI_ENABLED) {
+                            SettingsRow(stringResource(R.string.health_reports),"${s.reports.size}"){go("reports")}
+                            SettingsRow(stringResource(R.string.health_export),stringResource(R.string.health_export_note)){go("export")}
+                            SettingsRow(stringResource(R.string.health_reminders),stringResource(R.string.health_reminders_note)){go("reminders")}
+                            SettingsRow(stringResource(R.string.health_goals),stringResource(R.string.health_goals_note)){go("goals")}
+                            SettingsRow(stringResource(R.string.health_privacy),stringResource(R.string.health_retention)){go("privacy")}
+                        }
+                        if(s.snapshot?.coverage?.any {it.sources.size>1}==true) {
+                            SettingsRow(
+                                stringResource(R.string.health_main_source),
+                                stringResource(R.string.health_main_source_note)
+                            ){go("sources")}
+                        }
+                    }
+                }
+            }
+            "sources"->{
+                Text(stringResource(R.string.health_main_source),style=MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.health_main_source_note),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                s.snapshot?.let {snapshot->
+                    snapshot.coverage.filter {it.kind in setOf("SleepSession","HeartRate","HeartRateVariabilityRmssd","Weight")&&it.sources.isNotEmpty()}.forEach {coverage->
+                        HealthCard {
+                            Text(HealthCatalog.kind(coverage.kind).label(chinese),style=MaterialTheme.typography.titleSmall)
+                            coverage.sources.forEach {source->
+                                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                                    RadioButton(selected=s.sources[coverage.kind]==source,onClick={vm.source(coverage.kind,source)})
+                                    Text(source,Modifier.weight(1f),style=MaterialTheme.typography.bodySmall,maxLines=1,overflow=TextOverflow.Ellipsis)
+                                }
+                            }
+                            TextButton(enabled=s.sources.containsKey(coverage.kind),onClick={vm.clearSource(coverage.kind)}){Text(stringResource(R.string.health_source_auto))}
+                        }
+                    }
                 }
             }
             "range"->{
@@ -161,6 +218,11 @@ import kotlinx.coroutines.withContext
                 Text(stringResource(R.string.health_service_switch_note),style=MaterialTheme.typography.bodySmall)
                 FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){s.services.forEach {service->FilterChip(enabled=!s.busy,selected=s.serviceId==service.id,onClick={vm.selectService(service.id)},label={Text(service.name+" · "+service.model)})}}
                 Row {TextButton(onClick=manageServices){Text(stringResource(R.string.health_manage_services))};TextButton(enabled=!s.busy&&s.serviceId.isNotEmpty(),onClick={vm.selectService(s.serviceId,true)}){Text(stringResource(R.string.health_service_default))}}
+                if(configuredService==null)HealthCard(MaterialTheme.colorScheme.primaryContainer) {
+                    Text(stringResource(R.string.health_ai_not_configured),fontWeight=FontWeight.Medium)
+                    Text(stringResource(R.string.health_ai_not_configured_hint),style=MaterialTheme.typography.bodySmall)
+                    Button(onClick=manageServices,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_configure_ai))}
+                }
                 s.snapshot?.let {Text("${it.window.start} — ${it.window.end} · "+date(it.dataAsOf),style=MaterialTheme.typography.bodySmall)}
                 if(s.snapshot?.analysisEvidence().isNullOrEmpty())Text(stringResource(R.string.health_no_personal_data))
                 Row {TextButton(enabled=!s.busy,onClick=vm::newConversation){Text(stringResource(R.string.health_new_chat))};TextButton(onClick={go("conversations")}){Text(stringResource(R.string.health_conversations))}}
@@ -173,7 +235,8 @@ import kotlinx.coroutines.withContext
                     FlowRow {message.evidenceIds.forEach {id->val e=s.snapshot?.evidence?.find {it.id==id};TextButton(onClick={vm.evidence(id,message.snapshotId)}){Text(e?.let {HealthCatalog.kind(it.kind).label(chinese)+" · "+healthMetricDisplay(it)} ?: stringResource(R.string.health_evidence))}}}
                 }}
                 OutlinedTextField(value=question,onValueChange={question=it},enabled=!s.busy,label={Text(stringResource(R.string.health_question))},modifier=Modifier.fillMaxWidth(),minLines=2)
-                Button(enabled=!s.busy&&question.isNotBlank(),onClick={vm.ask(question)},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_send))}
+                if(configuredService==null)Text(stringResource(R.string.health_no_service),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(enabled=!s.busy&&question.isNotBlank()&&configuredService!=null,onClick={vm.ask(question)},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_send))}
                 TextButton(enabled=!s.busy&&s.conversation.messages.any {it.role=="user"},onClick={s.conversation.messages.lastOrNull {it.role=="user"}?.let {vm.ask(it.text)}}){Text(stringResource(R.string.health_retry))}
                 TextButton(onClick={go("export")}){Text(stringResource(R.string.health_export))}
             }
@@ -201,11 +264,11 @@ import kotlinx.coroutines.withContext
                 Button(enabled=!s.busy&&s.snapshot!=null,onClick={vm.export(question.ifBlank {reportQuestion},raw)},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_export_prepare))}
                 s.exports.forEach {f->HealthCard {Text(f.name);Text("${f.length()/1024+1} KB",style=MaterialTheme.typography.bodySmall);Row {
                     TextButton(onClick={exportingFile=f;save.launch(f.name)}){Text(stringResource(R.string.health_save_file))}
-                    TextButton(onClick={scope.launch {preview=withContext(Dispatchers.IO){f.bufferedReader().use {reader->val chars=CharArray(4000);val n=reader.read(chars);if(n>0)String(chars,0,n) else ""}}}}){Text(stringResource(R.string.health_evidence))}
+                    TextButton(onClick={scope.launch {preview=withContext(Dispatchers.IO){f.bufferedReader().use {reader->val chars=CharArray(4000);val n=reader.read(chars);if(n>0)String(chars,0,n) else ""}}}}){Text(stringResource(R.string.health_preview))}
                 }}}
                 if(s.exports.isNotEmpty()) {
                     Button(onClick=::share,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_share))}
-                    TextButton(onClick={s.exports.find {it.name=="prompt.txt"}?.let {f->scope.launch {val text=withContext(Dispatchers.IO){f.readText()};context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Health prompt",text))}}}){Text(stringResource(R.string.health_copy_prompt))}
+                    TextButton(onClick={s.exports.find {it.name=="prompt.txt"}?.let {f->scope.launch {val text=withContext(Dispatchers.IO){f.readText()};context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Health prompt",text));localMessage=R.string.health_copied}}}){Text(stringResource(R.string.health_copy_prompt))}
                 }
             }
             "goals"->{
@@ -257,11 +320,37 @@ import kotlinx.coroutines.withContext
     }
     if(deleteHistory)AlertDialog(onDismissRequest={deleteHistory=false},title={Text(stringResource(R.string.health_clear_history))},text={Text(stringResource(R.string.health_clear_confirm))},confirmButton={TextButton(onClick={deleteHistory=false;vm.clearHistory()}){Text(stringResource(R.string.health_delete))}},dismissButton={TextButton(onClick={deleteHistory=false}){Text(stringResource(R.string.cancel))}})
     s.consent?.let {pending->AlertDialog(onDismissRequest=vm::cancelConsent,title={Text(stringResource(R.string.health_consent_title))},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(pending.service.name+" · "+pending.service.model);Text(pending.service.baseUrl);Text("${pending.window.start} — ${pending.window.end}");Text(pending.categories.map {HealthCatalog.kind(it).label(chinese)}.joinToString(" · "));Text(stringResource(R.string.health_consent_note))}},confirmButton={TextButton(onClick=vm::consent){Text(stringResource(R.string.health_consent_agree))}},dismissButton={TextButton(onClick=vm::cancelConsent){Text(stringResource(R.string.cancel))}})}
-    s.selectedEvidence?.let {e->AlertDialog(onDismissRequest=vm::closeEvidence,title={Text(stringResource(R.string.health_evidence))},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text(HealthCatalog.kind(e.kind).label(chinese));Text(e.date);Text("${e.field}: ${e.value} ${e.unit}");HealthLabel(stringResource(R.string.health_source),e.source);HealthLabel(stringResource(R.string.health_algorithm),e.algorithm);HealthLabel(stringResource(R.string.health_points),e.count.toString());e.coverage?.let {Text("${(it*100).toInt()}%")};if(e.partial)Text(stringResource(R.string.health_partial));if(s.selectedEvidencePeriod=="baseline")Text(stringResource(R.string.health_baseline))}},confirmButton={TextButton(onClick=vm::closeEvidence){Text(stringResource(R.string.done))}})}
+    s.selectedEvidence?.let {e->AlertDialog(onDismissRequest=vm::closeEvidence,title={Text(stringResource(R.string.health_evidence))},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text(HealthCatalog.kind(e.kind).label(chinese));Text(e.date);Text(healthMetricDisplay(e));Text(stringResource(metricLabelResource(e.kind,e.field)));HealthLabel(stringResource(R.string.health_source),e.source);HealthLabel(stringResource(R.string.health_algorithm),e.algorithm);HealthLabel(stringResource(R.string.health_points),e.count.toString());e.coverage?.let {Text("${(it*100).toInt()}%")};if(e.partial)Text(stringResource(R.string.health_partial));if(s.selectedEvidencePeriod=="baseline")Text(stringResource(R.string.health_baseline))}},confirmButton={TextButton(onClick=vm::closeEvidence){Text(stringResource(R.string.done))}})}
     if(preview.isNotEmpty())AlertDialog(onDismissRequest={preview=""},title={Text(stringResource(R.string.health_export))},text={Text(preview,modifier=Modifier.verticalScroll(rememberScrollState()))},confirmButton={TextButton(onClick={preview=""}){Text(stringResource(R.string.done))}})
 }
 
 private fun statusResource(status:String)=when(status){"unsupported"->R.string.health_status_unsupported;"not_authorized"->R.string.health_status_not_authorized;"route_consent_required"->R.string.health_route_consent_note;"ready"->R.string.health_status_ready;"available"->R.string.health_status_available;"no_records"->R.string.health_status_no_records;"partial"->R.string.health_status_partial;"read_failed"->R.string.health_status_read_failed;else->R.string.health_status_unknown}
+private fun metricLabel(kind:String,field:String)=when {
+    field=="sleepMinutes"->"sleep"
+    field=="sessionMinutes"->"session"
+    field=="sleepBpm"->"sleep_hr"
+    field=="bpm"->"heart_rate"
+    field=="nightRmssd"->"hrv"
+    field=="count"&&kind=="Steps"->"steps"
+    field=="weight"->"weight"
+    field=="energy"->"energy"
+    field=="distance"->"distance"
+    field=="recordCount"->"records"
+    else->"daily_median"
+}
+private fun metricLabelResource(kind:String,field:String)=when(metricLabel(kind,field)) {
+    "sleep"->R.string.health_metric_sleep
+    "session"->R.string.health_metric_session
+    "sleep_hr"->R.string.health_metric_sleep_hr
+    "heart_rate"->R.string.health_metric_heart_rate
+    "hrv"->R.string.health_metric_hrv
+    "steps"->R.string.health_metric_steps
+    "weight"->R.string.health_metric_weight
+    "energy"->R.string.health_metric_energy
+    "distance"->R.string.health_metric_distance
+    "records"->R.string.health_metric_records
+    else->R.string.health_metric_daily_median
+}
 @Composable private fun permissionSummary(s:HealthState):String {
     if(s.categories.isEmpty())return stringResource(R.string.health_permission_none)
     val ready=s.categories.count {s.permissions[it]=="ready"}
@@ -275,7 +364,150 @@ private fun statusResource(status:String)=when(status){"unsupported"->R.string.h
 @Composable private fun HealthSwitch(label:Int,value:Boolean,onChange:(Boolean)->Unit){Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text(stringResource(label),Modifier.weight(1f));Switch(value,onChange)}}
 @Composable private fun HealthTime(label:Int,minute:Int,onChange:(Int)->Unit){val context=LocalContext.current;OutlinedButton(onClick={TimePickerDialog(context,{_,h,m->onChange(h*60+m)},minute/60,minute%60,true).show()},modifier=Modifier.fillMaxWidth()){Text(stringResource(label)+" · "+"%02d:%02d".format(minute/60,minute%60))}}
 
-private fun healthMetricDisplay(e:HealthEvidence):String {
+@Composable private fun healthMetricDisplay(e:HealthEvidence):String {
     val number=java.text.NumberFormat.getNumberInstance().apply {maximumFractionDigits=2}
-    return if(e.kind=="Weight"&&e.field=="weight"&&e.unit=="g")number.format(e.value/1000)+" kg" else number.format(e.value)+" "+e.unit
+    return when {
+        e.kind=="Weight"&&e.field=="weight"&&e.unit=="g"->number.format(e.value/1000)+" kg"
+        e.kind=="Steps"&&e.field=="count"->number.format(e.value)+" "+stringResource(R.string.health_unit_steps)
+        e.unit=="min"->number.format(e.value)+" "+stringResource(R.string.health_unit_min)
+        e.field=="recordCount"->number.format(e.value)+" "+stringResource(R.string.health_metric_workouts)
+        else->number.format(e.value)+" "+e.unit
+    }
+}
+@Composable private fun HealthDetailCard(e:HealthEvidence,chinese:Boolean,modifier:Modifier=Modifier,onClick:()->Unit) {
+    Surface(onClick=onClick,modifier=modifier,shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surfaceVariant) {
+        Column(Modifier.padding(horizontal=14.dp,vertical=10.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+            Text(HealthCatalog.kind(e.kind).label(chinese),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,minLines=2,maxLines=2,overflow=TextOverflow.Ellipsis)
+            Text(healthMetricDisplay(e),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class,ExperimentalMaterial3Api::class)
+@Composable private fun HealthHomeHeader(s:HealthState,readAt:String,asOf:String,view:String,onView:(String)->Unit,onRange:()->Unit,onRefresh:()->Unit,onPermissions:()->Unit) {
+    HealthViewTabs(view,onView)
+    if(view=="trends") {
+        Text(stringResource(R.string.health_today_scope),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+            Text(s.window.start+" — "+s.window.end,Modifier.weight(1f),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
+            TextButton(enabled=!s.busy,onClick=onRange){Text(stringResource(R.string.health_range))}
+        }
+    }
+    if(s.categories.isEmpty()||s.categories.any {s.permissions[it]!="ready"}) {
+        HealthCard(MaterialTheme.colorScheme.errorContainer) {
+            Text(stringResource(if(s.categories.isEmpty())R.string.health_permission_none else R.string.health_permission_needs_grant),fontWeight=FontWeight.Medium)
+            Text(stringResource(R.string.health_permission_needed_hint),style=MaterialTheme.typography.bodySmall)
+            TextButton(onClick=onPermissions){Text(stringResource(R.string.health_manage_permissions))}
+        }
+    }
+}
+
+@Composable private fun HealthViewTabs(view:String,onView:(String)->Unit) {
+    val colors=MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(22.dp)).background(colors.surfaceVariant.copy(alpha=.28f))
+    ) {
+        HealthViewTab(stringResource(R.string.health_view_cards),view=="cards",Modifier.weight(1f)){onView("cards")}
+        HealthViewTab(stringResource(R.string.health_view_trends),view=="trends",Modifier.weight(1f)){onView("trends")}
+    }
+}
+
+@Composable private fun HealthViewTab(label:String,selected:Boolean,modifier:Modifier=Modifier,onClick:()->Unit) {
+    val colors=MaterialTheme.colorScheme
+    Box(
+        modifier.fillMaxHeight().clip(RoundedCornerShape(22.dp))
+            .background(if(selected)colors.primaryContainer.copy(alpha=.72f) else androidx.compose.ui.graphics.Color.Transparent)
+            .selectable(selected=selected,onClick=onClick,role=Role.Tab),
+        contentAlignment=Alignment.Center
+    ) {
+        Text(label,style=MaterialTheme.typography.labelLarge,fontWeight=if(selected)FontWeight.SemiBold else FontWeight.Normal,color=if(selected)colors.primary else colors.onSurfaceVariant)
+    }
+}
+
+@Composable private fun HealthMetricCard(metric:HealthSummaryMetric,chinese:Boolean,modifier:Modifier=Modifier,onClick:()->Unit) {
+    Surface(onClick=onClick,modifier=modifier,shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surfaceVariant) {
+        Column(Modifier.padding(horizontal=14.dp,vertical=10.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+            Text(HealthCatalog.kind(metric.kind).label(chinese),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,minLines=2,maxLines=2,overflow=TextOverflow.Ellipsis)
+            Row(Modifier.fillMaxWidth().height(32.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+                Text(metricValueLabel(metric),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis)
+                Text(metricUnitLabel(metric),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1)
+            }
+        }
+    }
+}
+
+@Composable private fun metricValueLabel(metric:HealthSummaryMetric):String {
+    val number=java.text.NumberFormat.getNumberInstance().apply {maximumFractionDigits=if(metric.kind=="Weight")1 else 0}
+    return when {
+        metric.kind=="Weight"&&metric.unit=="g"->number.format(metric.value/1000)
+        else->number.format(metric.value)
+    }
+}
+
+@Composable private fun metricUnitLabel(metric:HealthSummaryMetric)=when {
+    metric.kind=="Weight"&&metric.unit=="g"->"kg"
+    metric.field=="count"&&metric.kind=="Steps"->stringResource(R.string.health_unit_steps)
+    metric.unit=="min"->stringResource(R.string.health_unit_min)
+    metric.unit=="records"->stringResource(R.string.health_metric_workouts)
+    metric.field=="recordCount"->stringResource(R.string.health_metric_workouts)
+    metric.unit.isEmpty()->""
+    else->metric.unit
+}
+
+@Composable private fun HealthTrendChart(trend:HealthTrendSeries,chinese:Boolean,modifier:Modifier=Modifier) {
+    val primary=MaterialTheme.colorScheme.primary
+    val muted=MaterialTheme.colorScheme.onSurfaceVariant
+    val grid=MaterialTheme.colorScheme.outlineVariant
+    val blank=MaterialTheme.colorScheme.onSurface.copy(alpha=.16f)
+    if(trend.points.isEmpty()){Box(modifier,contentAlignment=Alignment.Center){Text(stringResource(R.string.health_trend_empty),color=muted)};return}
+    val values=trend.points.map {it.value}
+    val upper=values.maxOrNull()?.takeIf {it.isFinite()} ?: return
+    val lower=values.minOrNull()?.takeIf {it.isFinite()} ?: return
+    val span=(upper-lower).takeIf {it>0} ?: 1.0
+    val top=upper+span*.12
+    val bottom=lower-span*.12
+    val range=(top-bottom).takeIf {it>0} ?: 1.0
+    Canvas(modifier) {
+        val left=8.dp.toPx();val right=size.width-8.dp.toPx();val topY=8.dp.toPx();val bottomY=size.height-20.dp.toPx()
+        repeat(3){i->
+            val y=topY+(bottomY-topY)*i/2f
+            drawLine(grid,Offset(left,y),Offset(right,y),strokeWidth=1.dp.toPx())
+        }
+        val start=trend.points.first().date
+        val last=trend.points.last().date
+        val totalDays=ChronoUnit.DAYS.between(start,last).coerceAtLeast(0).toInt()
+        val step=if(totalDays<=0)0f else (right-left)/totalDays
+        fun x(date:LocalDate)=if(totalDays<=0)(left+right)/2 else left+step*ChronoUnit.DAYS.between(start,date).toInt()
+        fun y(v:Double)=(bottomY-((v-bottom)/range*(bottomY-topY))).toFloat()
+        var drew=false
+        trend.segments().forEach {segment->
+            val path=Path()
+            segment.forEachIndexed {index,point->
+                val px=x(point.date);val py=y(point.value)
+                if(index==0)path.moveTo(px,py) else path.lineTo(px,py)
+                drawCircle(primary,3.dp.toPx(),Offset(px,py))
+            }
+            if(segment.isNotEmpty()){drawPath(path,primary,style=Stroke(width=2.5.dp.toPx(),cap=StrokeCap.Round));drew=true}
+        }
+        val single=trend.points.filterNot {it.partial}
+        if(!drew&&single.isNotEmpty())drawCircle(primary,3.dp.toPx(),Offset(x(single.first().date),y(single.first().value)))
+        trend.missingDates.forEach {date->drawCircle(blank,2.dp.toPx(),Offset(x(date),bottomY))}
+    }
+}
+
+@Composable private fun HealthAiSection(enabled:Boolean,configured:Boolean,onReport:()->Unit,onChat:()->Unit,onConfigure:()->Unit,onPreset:(String)->Unit,presets:List<String>) {
+    Text(stringResource(R.string.health_ai_title),style=MaterialTheme.typography.titleLarge)
+    Text(stringResource(R.string.health_ai_scope),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    if(configured) {
+        Button(enabled=enabled,onClick=onReport,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_report))}
+        OutlinedButton(onClick=onChat,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_chat))}
+        FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){presets.forEach {preset->AssistChip(onClick={onPreset(preset)},label={Text(preset)})}}
+    } else {
+        HealthCard(MaterialTheme.colorScheme.primaryContainer) {
+            Text(stringResource(R.string.health_ai_not_configured),fontWeight=FontWeight.Medium)
+            Text(stringResource(R.string.health_ai_not_configured_hint),style=MaterialTheme.typography.bodySmall)
+            Button(onClick=onConfigure,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_configure_ai))}
+            TextButton(onClick=onChat){Text(stringResource(R.string.health_chat))}
+        }
+    }
 }

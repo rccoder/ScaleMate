@@ -34,7 +34,7 @@ class HealthUiLocalTest {
         compose.waitUntil(15000){compose.onAllNodesWithText("开始记录").fetchSemanticsNodes().isNotEmpty()||compose.onAllNodesWithContentDescription("健康",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty()}
         if(compose.onAllNodesWithText("开始记录").fetchSemanticsNodes().isNotEmpty())compose.onNodeWithText("开始记录").performClick()
         compose.onNodeWithContentDescription("健康",useUnmergedTree=true).performClick()
-        compose.onNodeWithText("看懂整体健康数据，再决定下一步。").assertExists()
+        compose.onNodeWithText("今日").assertExists()
     }
     private fun screenshot(name:String) {
         compose.waitForIdle()
@@ -55,31 +55,48 @@ class HealthUiLocalTest {
     }
     @Test fun healthHomeAndRangeRenderWithoutPermissionsOrAnAiKey() {
         enterHealth();screenshot("01-health-home-local")
-        compose.onNodeWithText("分析时间范围").performClick()
+        compose.onNodeWithText("今日").assertExists()
+        compose.onNodeWithText("近期").performClick()
+        compose.onNodeWithText("近期").assertExists()
+        compose.onNodeWithText("AI 分析").assertDoesNotExist()
+        compose.onNodeWithText("尚未配置 AI 服务").assertDoesNotExist()
+        compose.onNodeWithText("分析历史").assertDoesNotExist()
+        compose.onNodeWithText("健康隐私与历史").assertDoesNotExist()
+        compose.onNodeWithText("健康对话").assertDoesNotExist()
+        compose.onNodeWithText("主动提醒").assertDoesNotExist()
+        compose.onNodeWithText("分析时间范围").performScrollTo().performClick()
         compose.onNodeWithText("90 天").assertExists()
         compose.onNodeWithText("全部可读取历史").assertExists()
         screenshot("02-health-range-local")
         compose.onNodeWithText("自定义日期").performClick()
         compose.onNodeWithText("结束日期（不含当天）").assertExists()
     }
+    @Test fun disabledReminderEntryDoesNotOpenReminderPage() {
+        enterHealth()
+        compose.activity.runOnUiThread {
+            compose.activity.intent.putExtra("healthReminderId","legacy-reminder")
+            compose.activity.recreate()
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("今日").assertExists()
+        compose.onNodeWithText("主动提醒").assertDoesNotExist()
+        compose.onNodeWithText("睡眠目标").assertDoesNotExist()
+    }
     @Test fun categoryReadAuthorizationPageAndGeneralChatRemainAccessible() {
         enterHealth()
         compose.onNodeWithContentDescription("设置",useUnmergedTree=true).performClick()
-        compose.onNodeWithText("健康数据与授权").performClick()
+        compose.onNodeWithText("Health Connect").performScrollTo().performClick()
+        compose.onNodeWithText("其他健康数据").performScrollTo().performClick()
         compose.onNodeWithText("授权读取所选类别").assertExists()
         compose.onNodeWithText("选择常用类别").assertExists()
-        compose.onNodeWithText("授权读取更早历史").assertExists()
+        compose.onNodeWithText("日常活动").assertExists()
+        compose.onNodeWithText("身体与营养").assertExists()
+        compose.onNodeWithText("敏感或临床记录").assertExists()
+        compose.onNodeWithText("授权读取更早历史").performScrollTo().assertExists()
         compose.onNodeWithText("授权后台读取").assertDoesNotExist()
         screenshot("03-health-permissions-local")
         compose.onNodeWithContentDescription("取消").performClick()
         compose.onNodeWithContentDescription("健康",useUnmergedTree=true).performClick()
-        compose.onNodeWithText("健康对话").performScrollTo().performClick()
-        compose.onNodeWithText("此对话尚未结合个人健康数据。").assertExists()
-        compose.onNodeWithText("提问或补充你的感受").assertExists()
-        screenshot("04-health-chat-local")
-        compose.onNode(hasSetTextAction()).performTextInput("最近活动怎样")
-        compose.onNodeWithText("发送").performScrollTo().performClick()
-        compose.onNodeWithText("请先配置或选择 AI 服务；读取数据和导出不需要密钥。").assertExists()
-        compose.onNode(hasSetTextAction()).assertTextContains("最近活动怎样")
+        compose.onNodeWithText("健康对话").assertDoesNotExist()
     }
 }

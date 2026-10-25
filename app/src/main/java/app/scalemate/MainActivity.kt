@@ -15,6 +15,7 @@ import app.scalemate.food.FoodViewModel
 import app.scalemate.food.NutritionOutput
 import app.scalemate.update.UpdateViewModel
 import app.scalemate.health.HealthViewModel
+import app.scalemate.health.HealthReminders
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +42,7 @@ class MainActivity: ComponentActivity() {
         foodModel=ViewModelProvider(this)[FoodViewModel::class.java]
         updateModel=ViewModelProvider(this)[UpdateViewModel::class.java]
         healthModel=ViewModelProvider(this)[HealthViewModel::class.java]
+        if(!BuildConfig.HEALTH_AI_ENABLED&&androidx.work.WorkManager.isInitialized())HealthReminders.schedule(this,false)
         healthEntry=intent.getStringExtra("healthReminderId").orEmpty()
         setContent { ScaleMateApp(model,foodModel,updateModel,healthModel,healthEntry,consumeHealthEntry={healthEntry=""},authorizeHealth={permissions->if(permissions.isNotEmpty())healthReadPermissions.launch(permissions.toTypedArray())},authorizeNutrition={nutritionPermission.launch(NutritionOutput.WRITE)},
             bluetooth = { action ->

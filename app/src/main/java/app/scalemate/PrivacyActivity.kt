@@ -59,8 +59,10 @@ class PrivacyActivity: ComponentActivity() {
             PrivacySection(R.string.privacy_local_title,R.string.privacy_local_body)
             PrivacySection(R.string.privacy_bluetooth_title,R.string.privacy_bluetooth_body)
             PrivacySection(R.string.privacy_health_title,R.string.privacy_health_body)
-            PrivacySection(R.string.privacy_health_analysis_title,R.string.privacy_health_analysis_body)
-            PrivacySection(R.string.privacy_health_history_title,R.string.privacy_health_history_body)
+            if(BuildConfig.HEALTH_AI_ENABLED) {
+                PrivacySection(R.string.privacy_health_analysis_title,R.string.privacy_health_analysis_body)
+                PrivacySection(R.string.privacy_health_history_title,R.string.privacy_health_history_body)
+            }
             PrivacySection(R.string.privacy_ai_title,R.string.privacy_ai_body,R.string.privacy_ai_detail)
             PrivacySection(R.string.privacy_update_title,R.string.privacy_update_body)
             PrivacySection(R.string.privacy_control_title,R.string.privacy_control_body)

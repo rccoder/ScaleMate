@@ -52,6 +52,92 @@ data class HealthSnapshot(
     val hash get()=healthHash(HealthJson.snapshot(this).toString())
     fun analysisEvidence()=evidence.filter {it.period(window)=="analysis"&&!it.partial}
 }
+data class HealthSummaryMetric(
+    val kind:String,val field:String,val label:String,val value:Double,val unit:String,val date:String,
+    val partial:Boolean,val coverage:Double?,val evidenceId:String
+)
+data class HealthTrendPoint(val date:LocalDate,val value:Double,val partial:Boolean)
+data class HealthTrendSeries(
+    val kind:String,val field:String,val unit:String,val points:List<HealthTrendPoint>,val missingDates:List<LocalDate> = emptyList(),val goal:Double?=null
+) {
+    fun segments():List<List<HealthTrendPoint>> {
+        val result=mutableListOf<List<HealthTrendPoint>>()
+        var current=mutableListOf<HealthTrendPoint>()
+        points.forEach {point->
+            if(point.partial){if(current.isNotEmpty()){result+=current;current=mutableListOf()};return@forEach}
+            if(current.isNotEmpty()&&current.last().date.plusDays(1)!=point.date){result+=current;current=mutableListOf()}
+            current+=point
+        }
+        if(current.isNotEmpty())result+=current
+        return result
+    }
+}
+object HealthOverview {
+    private val priority=listOf(
+        "SleepSession" to listOf("sleepMinutes","sessionMinutes"),
+        "HeartRate" to listOf("sleepBpm","bpm"),
+        "HeartRateVariabilityRmssd" to listOf("nightRmssd","sampleMedian"),
+        "Steps" to listOf("count"),
+        "ExerciseSession" to listOf("recordCount"),
+        "Weight" to listOf("weight"),
+        "Nutrition" to listOf("energy"),
+        "ActiveCaloriesBurned" to listOf("energy"),
+        "TotalCaloriesBurned" to listOf("energy"),
+        "Distance" to listOf("distance")
+    )
+    private val trendFields=mapOf(
+        "SleepSession" to "sleepMinutes",
+        "HeartRate" to "sleepBpm",
+        "HeartRateVariabilityRmssd" to "nightRmssd",
+        "Steps" to "count",
+        "Weight" to "weight",
+        "Nutrition" to "energy",
+        "ActiveCaloriesBurned" to "energy"
+    )
+    fun today(snapshot:HealthSnapshot?,today:LocalDate):List<HealthSummaryMetric> {
+        if(snapshot==null)return emptyList()
+        return priority.mapNotNull {(kind,fields)->
+            val candidates=fields.mapNotNull {field->
+                snapshot.evidence.filter {it.kind==kind&&it.field==field&&it.date==today.toString()}
+                    .maxByOrNull {it.id}?.let {field to it}
+            }
+            val (field,e)=candidates.firstOrNull() ?: return@mapNotNull null
+            HealthSummaryMetric(kind,field,metricLabel(e),e.value,e.unit,e.date,e.partial,e.coverage,e.id)
+        }
+    }
+    fun trend(snapshot:HealthSnapshot?,kind:String):HealthTrendSeries? {
+        val fields=trendFields[kind]?.let(::listOf) ?: return null
+        val field=fields.firstOrNull {candidate->snapshot?.evidence?.any {it.kind==kind&&it.field==candidate}==true} ?: return null
+        val rows=snapshot?.evidence?.filter {it.kind==kind&&it.field==field&&it.period(snapshot.window) in setOf("analysis","partial")}.orEmpty()
+        if(rows.isEmpty())return null
+        val points=rows.filterNot {it.field=="recordCount"}.mapNotNull {e->
+            runCatching {HealthTrendPoint(LocalDate.parse(e.date),e.value,e.partial)}.getOrNull()
+        }.distinctBy {it.date}.sortedBy {it.date}
+        if(points.isEmpty())return null
+        val missing=if(points.isEmpty()||snapshot==null)emptyList() else buildList {
+            val first=snapshot.window.startInstant.atZone(java.time.ZoneId.of(snapshot.window.zone)).toLocalDate()
+            val last=points.last().date
+            val byDate=points.associateBy {it.date}
+            var date=first
+            while(date<=last){if(date !in byDate)add(date);date=date.plusDays(1)}
+        }
+        return HealthTrendSeries(kind,field,rows.first().unit,points,missing)
+    }
+    fun metricLabel(e:HealthEvidence)=when {
+        e.field=="sleepMinutes"->"sleep"
+        e.field=="sessionMinutes"->"session"
+        e.field=="sleepBpm"->"sleep_hr"
+        e.field=="bpm"->"heart_rate"
+        e.field=="nightRmssd"->"hrv"
+        e.field=="count"&&e.kind=="Steps"->"steps"
+        e.field=="weight"->"weight"
+        e.field=="energy"->"energy"
+        e.field=="distance"->"distance"
+        e.field=="recordCount"->"records"
+        e.algorithm=="platform-aggregate-v1"->"daily_total"
+        else->"daily_median"
+    }
+}
 data class HealthMessage(
     val id:String=healthId(),val role:String,val text:String,val createdAt:Long=System.currentTimeMillis(),
     val snapshotId:String="",val serviceId:String="",val serviceName:String="",val model:String="",val configVersion:Long=0,

@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.LocaleManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import app.scalemate.BuildConfig
 import app.scalemate.R
 import app.scalemate.data.Store
 import app.scalemate.food.*
@@ -49,15 +50,16 @@ class HealthViewModel(application:Application):AndroidViewModel(application) {
                 goals=store.goals(),reminderSettings=store.reminderSettings(),reminders=store.reminders(),conversations=store.conversations(),conversation=current.conversation,reports=store.reports(),lastCheck=store.setting("lastBackgroundCheck").toLongOrNull(),sources=store.sources())
         }
         mutable.update {s->val revoked=s.permissions.any {(kind,status)->status=="ready"&&data.permissions[kind]!="ready"};s.copy(loaded=true,available=data.available,categories=data.categories,permissions=data.permissions,window=data.window,historySupported=data.historySupported,historyGranted=data.historyGranted,backgroundSupported=data.backgroundSupported,backgroundGranted=data.backgroundGranted,snapshot=if(s.busy)s.snapshot else data.snapshot,services=data.services,serviceId=data.serviceId,goals=data.goals,reminderSettings=data.reminderSettings,reminders=data.reminders,conversations=data.conversations,conversation=if(revoked)HealthConversation() else s.conversation,reports=data.reports,lastCheck=data.lastCheck,sources=data.sources)}
-        if(data.reminderSettings.enabled)HealthReminders.schedule(getApplication(),true)
+        if(BuildConfig.HEALTH_AI_ENABLED&&data.reminderSettings.enabled)HealthReminders.schedule(getApplication(),true)
     }
     fun clearError(){mutable.update {it.copy(error=null)}}
     fun categories(ids:Set<String>) {if(mutable.value.busy)return;val selected=ids.intersect(HealthCatalog.kinds.map {it.id}.toSet());mutable.update {it.copy(categories=selected,snapshot=null,exports=emptyList())};task {withContext(Dispatchers.IO){store.categories(selected);store.setting("activeSnapshot","")}}}
     fun window(w:HealthWindow){if(mutable.value.busy)return;mutable.update {it.copy(window=w,snapshot=null,exports=emptyList())};task {withContext(Dispatchers.IO){store.setting("activeSnapshot","")}}}
     fun selectService(id:String,makeDefault:Boolean=false){if(mutable.value.busy)return;mutable.update {it.copy(serviceId=id,conversation=if(it.serviceId!=id)HealthConversation() else it.conversation,consent=null)};if(makeDefault)task {withContext(Dispatchers.IO){food.setting("text",id)}}}
     fun goals(g:HealthGoals){mutable.update {it.copy(goals=g)};task {withContext(Dispatchers.IO){store.goals(g)}}}
-    fun reminderSettings(settings:HealthReminderSettings){mutable.update {it.copy(reminderSettings=settings)};task {withContext(Dispatchers.IO){store.reminderSettings(settings)};HealthReminders.schedule(getApplication(),settings.enabled)}}
+    fun reminderSettings(settings:HealthReminderSettings){mutable.update {it.copy(reminderSettings=settings)};task {withContext(Dispatchers.IO){store.reminderSettings(settings)};HealthReminders.schedule(getApplication(),BuildConfig.HEALTH_AI_ENABLED&&settings.enabled)}}
     fun source(kind:String,source:String){if(mutable.value.busy)return;val sources=mutable.value.sources+(kind to source);mutable.update {it.copy(sources=sources,snapshot=null)};task {withContext(Dispatchers.IO){store.sources(sources);store.setting("activeSnapshot","")}}}
+    fun clearSource(kind:String){if(mutable.value.busy)return;val sources=mutable.value.sources-kind;mutable.update {it.copy(sources=sources,snapshot=null)};task {withContext(Dispatchers.IO){store.sources(sources);store.setting("activeSnapshot","")}}}
     fun refresh() {
         if(mutable.value.busy)return
         mutable.update {it.copy(busy=true,error=null,exports=emptyList())}

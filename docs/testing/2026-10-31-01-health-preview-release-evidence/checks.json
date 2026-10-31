@@ -1,0 +1,58 @@
+{
+  "tag": "v0.4.0-preview.1",
+  "commit": "e0ad6c68655143cb692873e963a7788380522833",
+  "versionName": "0.4.0-preview.1",
+  "versionCode": 14,
+  "prerelease": true,
+  "latestStable": "v0.3.3",
+  "ciRun": "https://github.com/rccoder/ScaleMate/actions/runs/41166228286",
+  "releaseRun": "https://github.com/rccoder/ScaleMate/actions/runs/41166543974",
+  "releaseUrl": "https://github.com/rccoder/ScaleMate/releases/tag/v0.4.0-preview.1",
+  "assets": [
+    "ScaleMate.apk",
+    "SHA256SUMS",
+    "signing-certificate.txt",
+    "update.json",
+    "update.json.sig",
+    "releases.json",
+    "releases.json.sig"
+  ],
+  "apk": {
+    "sha256": "cb28eff09aba1dd5e4625188b0bbdeb00416085359c6a53d0a5c2d0888208169",
+    "sizeBytes": 25775420
+  },
+  "certificateSha256": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5",
+  "checks": {
+    "releaseBodyMatchesSource": "passed",
+    "sha256Sums": "passed",
+    "apkSignatureAndPackage": "passed",
+    "updateManifestSignature": "passed",
+    "releaseIndexSignature": "passed",
+    "updateManifest": "passed",
+    "updateIndex": "passed"
+  },
+  "emulatorUpgrade": {
+    "device": "sdk_gphone64_x86_64 API 36",
+    "fromVersionName": "0.3.3",
+    "fromVersionCode": 13,
+    "toVersionName": "0.4.0-preview.1",
+    "toVersionCode": 14,
+    "channelSwitch": "passed",
+    "inAppDownload": "passed",
+    "systemInstall": "passed",
+    "launchAndHealthTab": "passed"
+  },
+  "downloadSources": {
+    "github-official": "passed",
+    "gh-proxy-com": "passed",
+    "ghproxy-net": "passed",
+    "ghfast-top": "timeout after 180.8s",
+    "gh-llkk-cc": "connection reset after 5.0s",
+    "gh-proxy-org": "timeout after 181.2s"
+  },
+  "notVerified": [
+    "real phone in-app upgrade",
+    "real Health Connect reads on phone",
+    "business-record retention with non-empty user data"
+  ]
+}

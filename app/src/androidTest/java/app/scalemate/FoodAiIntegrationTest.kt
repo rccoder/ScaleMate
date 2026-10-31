@@ -56,7 +56,7 @@ class FoodAiIntegrationTest {
                     it.estimateContext?.resultMode=="personal"&&it.estimateContext?.reportedNutrients==it.base
             })
             items.map {it.name}
-        }finally {processed?.delete();source?.delete();privateFixture.delete()}
+        }finally {processed?.delete();source?.delete()}
     }
     @Test fun privateFixtureBothFormatsTextAndVision()=runBlocking {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
@@ -86,22 +86,64 @@ class FoodAiIntegrationTest {
         }finally {fixture.delete();photo.delete();processed?.delete()}
     }
     @Test fun privateFixturePromptBaselineChineseAndEnglish()=runBlocking {
-        for(language in listOf("zh-CN","en-US")) {
-            val words=promptWords.map {promptWord(it.first,language)}
-            val han=Regex("[\u4e00-\u9fff]")
-            for(sample in promptBaseline) {
-                val names=recognizedNames(sample.name,language)
-                val normalized=names.map {name->
-                    words.filter {countWord(name,it)>0}.maxByOrNull {countWord(name,it)*it.length}.orEmpty()
-                }.toSet()
-                val expected=sample.expectedGroups.map {group->group.map {promptWord(it,language)}.toSet()}.toSet()
-                assertTrue("Unexpected grouping for ${sample.name}: $names",normalized in expected)
-                val forbidden=sample.forbidden.map {promptWord(it,language)}.toSet()
-                assertFalse("Ingredient split for ${sample.name}: $names",normalized.any {it in forbidden})
-                if(language=="en-US")assertFalse("English output contains Chinese: $names",names.any {han.containsMatchIn(it)})
-                InstrumentationRegistry.getInstrumentation().sendStatus(2,android.os.Bundle().apply {putString("stream","$language ${sample.name}: ${names.joinToString(" | ")}\n")})
+        val fixture=File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir,"ai-validation-private.json")
+        assumeTrue("Private AI test fixture is not provisioned",fixture.exists())
+        try {
+            for(language in listOf("zh-CN","en-US")) {
+                val words=promptWords.map {promptWord(it.first,language)}
+                val han=Regex("[\u4e00-\u9fff]")
+                for(sample in promptBaseline) {
+                    val names=recognizedNames(sample.name,language)
+                    val normalized=names.map {name->
+                        words.filter {countWord(name,it)>0}.maxByOrNull {countWord(name,it)*it.length}.orEmpty()
+                    }.toSet()
+                    val expected=sample.expectedGroups.map {group->group.map {promptWord(it,language)}.toSet()}.toSet()
+                    assertTrue("Unexpected grouping for ${sample.name}: $names",normalized in expected)
+                    val forbidden=sample.forbidden.map {promptWord(it,language)}.toSet()
+                    assertFalse("Ingredient split for ${sample.name}: $names",normalized.any {it in forbidden})
+                    if(language=="en-US")assertFalse("English output contains Chinese: $names",names.any {han.containsMatchIn(it)})
+                    InstrumentationRegistry.getInstrumentation().sendStatus(2,android.os.Bundle().apply {putString("stream","$language ${sample.name}: ${names.joinToString(" | ")}\n")})
+                }
             }
-        }
+        }finally {fixture.delete()}
+    }
+    @Test fun privateFixtureRevisionUsesPreviousResult()=runBlocking {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        val context=instrumentation.targetContext
+        val fixture=File(context.filesDir,"ai-validation-private.json")
+        assumeTrue("Private AI test fixture is not provisioned",fixture.exists())
+        var processed:File?=null
+        var source:File?=null
+        try {
+            val cfg=JSONObject(fixture.readText())
+            val secrets=AiSecrets()
+            val photo=context.assets.open("food-prompt-baseline/kung-pao-chicken-with-rice.png").use {it.readBytes()}
+            source=File(context.cacheDir,"revision-baseline.png").apply {writeBytes(photo)}
+            processed=FoodImages.import(context,Uri.fromFile(source))
+            source.delete();source=null
+            val service=AiService(
+                name="Revision baseline",baseUrl=cfg.getString("baseUrl"),model="codex/gpt-6-luna",
+                images=true,format="openai"
+            ).let {it.copy(encryptedKey=secrets.encrypt(it.id,cfg.getString("key")))}
+            val client=AiClient(secrets)
+            val first=withTimeout(90000){
+                client.recognizeDetailed(service,listOf(processed!!.readBytes()),"",emptySet(),1,outputLanguage="zh-CN")
+            }
+            val firstNameText=first.items.joinToString(" "){it.name}
+            assertTrue("Baseline did not identify rice: $firstNameText",countWord(firstNameText,"米饭")>0)
+            val revised=withTimeout(90000){
+                client.recognizeDetailed(
+                    service,listOf(processed!!.readBytes()),
+                    "本次只改一处：不要米饭，只保留宫保鸡丁；没有提到的内容保持不变。",
+                    emptySet(),1,outputLanguage="zh-CN",previous=first.items,previousAdvice=first.advice
+                )
+            }
+            val revisedNameText=revised.items.joinToString(" "){it.name}
+            assertTrue("Revision dropped the retained food: $revisedNameText",countWord(revisedNameText,"宫保鸡丁")>0)
+            assertFalse("Revision kept a food explicitly removed by the new request: $revisedNameText",countWord(revisedNameText,"米饭")>0)
+            assertEquals("Revision duplicated the retained food: $revisedNameText",1,revised.items.count {countWord(it.name,"宫保鸡丁")>0})
+            instrumentation.sendStatus(2,android.os.Bundle().apply {putString("stream","revision mode: $revisedNameText\n")})
+        }finally {fixture.delete();processed?.delete();source?.delete()}
     }
     @Test fun privateFixtureOutputLanguageBothFormats()=runBlocking {
         val context=InstrumentationRegistry.getInstrumentation().targetContext

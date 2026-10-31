@@ -135,11 +135,11 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
         val startedAt=System.currentTimeMillis()
         mutable.update {it.copy(
             busy=true,error=null,message=null,analysisStage="uploading",analysisAttempt=1,analysisOutputTokens=null,analysisStartedAt=startedAt,
-            draft=it.draft?.copy(batch=batch.copy(status="analyzing",advice=MealAdvice(),usage=AiUsage(),analysisMs=null))
+            draft=it.draft?.copy(batch=batch.copy(status="analyzing"))
         )};persistDraft()
         aiJob=viewModelScope.launch {try {
             val bytes=withContext(Dispatchers.IO){batch.photos.map {File(it).readBytes().also {bytes->require(bytes.size<=FoodImages.MAX_IMAGE_BYTES)}}}
-            val result=ai.recognizeDetailed(service,bytes,batch.description,batch.tags,batch.shareCount,batch.photos,outputLanguage=outputLanguage){stage->
+            val result=ai.recognizeDetailed(service,bytes,batch.description,batch.tags,batch.shareCount,batch.photos,outputLanguage=outputLanguage,previous=batch.results,previousAdvice=batch.advice){stage->
                 if(activeRequest==requestId)mutable.update {it.copy(
                     analysisStage=if(stage.startsWith("retry:"))"retrying" else stage,
                     analysisAttempt=stage.substringAfter("retry:",stage).toIntOrNull() ?: it.analysisAttempt

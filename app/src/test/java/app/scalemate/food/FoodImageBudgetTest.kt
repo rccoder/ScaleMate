@@ -5,6 +5,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FoodImageBudgetTest {
+    @Test fun uploadImagesUseCompactResolutionAndQuality() {
+        assertEquals(1024,FoodImages.MAX_UPLOAD_EDGE_PX)
+        assertEquals(70,FoodImages.UPLOAD_JPEG_QUALITY)
+    }
+
     @Test fun uploadBudgetAccountsForBase64Expansion() {
         val encoded=FoodImages.encodedRequestApproximation(FoodImages.MAX_UPLOAD_BYTES)
         assertTrue("Base64 expands the upload by roughly one third",encoded>=10_000_000)

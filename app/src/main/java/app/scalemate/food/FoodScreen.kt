@@ -214,7 +214,15 @@ import kotlinx.coroutines.launch
                 } else TextButton(onClick={vm.newMeal()}){Text(stringResource(R.string.food_add))}
                 "photo", "review" -> draft?.batch?.let {batch->
                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                        if(!editorPanel)Text(stringResource(if(batch.kind=="manual")R.string.food_manual_action else if(batch.status=="review")R.string.food_review_results else R.string.food_add_photos),Modifier.weight(1f),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold)
+                        if(!editorPanel) {
+                            val title=when {
+                                batch.kind=="manual"->R.string.food_manual_action
+                                batch.status=="review"->R.string.food_review_results
+                                batch.results.isNotEmpty()->R.string.food_revision_title
+                                else->R.string.food_add_photos
+                            }
+                            Text(stringResource(title),Modifier.weight(1f),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold)
+                        }
                         if(batch.kind=="photo") {
                             val service=s.services.find {it.id==s.selectedService}
                             Text(stringResource(R.string.food_powered_by,service?.name ?: stringResource(R.string.food_service_none)),modifier=Modifier.weight(.8f).clickable(enabled=!s.busy){selector="vision-current"}.padding(vertical=8.dp),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -251,13 +259,18 @@ import kotlinx.coroutines.launch
                                 FilterChip(enabled=!s.busy,selected=batch.shareCount>3,onClick={sharingDialog=true},label={Text(if(batch.shareCount>3)stringResource(R.string.food_context_shared,batch.shareCount) else stringResource(R.string.food_sharing_other))})
                             }
                             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){(listOf(R.string.food_tag_oil,R.string.food_tag_sauce,R.string.food_tag_soup,R.string.food_tag_no_dip)).forEach {label->val tag=stringResource(label);FilterChip(enabled=!s.busy,selected=tag in batch.tags,onClick={vm.updateBatch {it.copy(tags=if(tag in it.tags)it.tags-tag else it.tags+tag)}},label={Text(tag)})}}
-                            OutlinedTextField(enabled=!s.busy,value=batch.description,onValueChange={v->vm.updateBatch {it.copy(description=v.take(2000))}},label={Text(stringResource(R.string.food_description))},placeholder={Text(stringResource(R.string.food_description_hint))},minLines=3,modifier=Modifier.fillMaxWidth())
+                            val revising=batch.results.isNotEmpty()
+                            OutlinedTextField(enabled=!s.busy,value=batch.description,onValueChange={v->vm.updateBatch {it.copy(description=v.take(2000))}},label={Text(stringResource(if(revising)R.string.food_revision_description else R.string.food_description))},placeholder={Text(stringResource(if(revising)R.string.food_revision_description_hint else R.string.food_description_hint))},minLines=3,modifier=Modifier.fillMaxWidth())
                             Text(stringResource(R.string.food_personal_rule),style=MaterialTheme.typography.bodySmall)
                             if(batch.status=="interrupted")Text(stringResource(R.string.food_analysis_interrupted),color=MaterialTheme.colorScheme.error)
                             Button(enabled=!s.busy&&batch.photos.isNotEmpty(),onClick={analyze()},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.food_analyze))}
                         }
                     }
-                    if(batch.status=="review") {
+                    if(batch.status=="review"||batch.results.isNotEmpty()) {
+                        when(batch.status) {
+                            "analyzing"->Text(stringResource(R.string.food_previous_results_in_progress),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.primary)
+                            "interrupted","idle"->if(batch.results.isNotEmpty())Text(stringResource(R.string.food_previous_results_kept),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         if(batch.kind=="photo"||batch.advice.hasContent||batch.usage.hasContent)MealAdviceCard(batch.advice,Nutrients.sum(batch.results.map {it.nutrients}),batch.usage,batch.analysisMs)
                         Text(stringResource(R.string.food_personal_results),color=MaterialTheme.colorScheme.primary)
                         if(batch.kind=="photo"&&batch.results.size>=2)OutlinedButton(enabled=!s.busy&&!s.saving,onClick={mergeBatchId=batch.id},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.food_merge_dish))}
@@ -269,7 +282,7 @@ import kotlinx.coroutines.launch
                                 onFavorite={vm.favorite(food,it)},onEdit={expanded=!expanded},onRemove={vm.removeResult(food.id);if(batch.results.size==1)page="editor"},
                                 editor={FoodFields(food,enabled=!s.busy,onChange=vm::updateResult)})
                         }}
-                        if(batch.kind=="photo")TextButton(onClick={reanalyze=true}){Text(stringResource(R.string.food_change_context))}
+                        if(batch.kind=="photo"&&batch.status=="review")TextButton(onClick={reanalyze=true}){Text(stringResource(R.string.food_change_context))}
                     }
                 }
                 "picker" -> {
@@ -329,6 +342,7 @@ import kotlinx.coroutines.launch
                     page=="services"->R.string.food_services
                     page=="review"&&draft?.batch?.kind=="manual"->R.string.food_manual_action
                     page in listOf("photo","review")&&draft?.batch?.status=="review"->R.string.food_review_results
+                    page in listOf("photo","review")&&draft?.batch?.results?.isNotEmpty()==true->R.string.food_revision_title
                     page=="photo"->R.string.food_add_photos
                     else->R.string.food_add
                 }
@@ -352,7 +366,7 @@ import kotlinx.coroutines.launch
         Spacer(Modifier.height(24.dp))
     }
     if(noVisualGuide)AlertDialog(onDismissRequest={noVisualGuide=false},title={Text(stringResource(R.string.food_no_visual_title))},text={Text(stringResource(R.string.food_no_visual))},confirmButton={TextButton(onClick={noVisualGuide=false;servicesReturn=page;page="services"}){Text(stringResource(R.string.food_configure_ai))}},dismissButton={TextButton(onClick={noVisualGuide=false}){Text(stringResource(R.string.cancel))}})
-    if(reanalyze)AlertDialog(onDismissRequest={reanalyze=false},title={Text(stringResource(R.string.food_change_context))},text={Text(stringResource(R.string.food_reanalysis_replace))},confirmButton={TextButton(onClick={reanalyze=false;vm.updateBatch {it.copy(status="idle")};resetContentScroll()}){Text(stringResource(R.string.food_edit_analysis_context))}},dismissButton={TextButton(onClick={reanalyze=false}){Text(stringResource(R.string.cancel))}})
+    if(reanalyze)AlertDialog(onDismissRequest={reanalyze=false},title={Text(stringResource(R.string.food_change_context))},text={Text(stringResource(R.string.food_reanalysis_replace))},confirmButton={TextButton(onClick={reanalyze=false;vm.clearMessage();vm.updateBatch {it.copy(status="idle")};resetContentScroll()}){Text(stringResource(R.string.food_edit_analysis_context))}},dismissButton={TextButton(onClick={reanalyze=false}){Text(stringResource(R.string.cancel))}})
     if(abandon)AlertDialog(onDismissRequest={abandon=false},title={Text(stringResource(R.string.food_discard_addition))},text={Text(stringResource(R.string.food_pending_note))},confirmButton={TextButton(onClick={vm.abandonBatch();abandon=false;page="editor"}){Text(stringResource(R.string.food_discard_addition))}},dismissButton={TextButton(onClick={abandon=false}){Text(stringResource(R.string.cancel))}})
     libraryEditing?.let {entry->FoodEditDialog(entry.item,onDismiss={libraryEditing=null}){vm.updateLibrary(entry.id,it);libraryEditing=null}}
     draft?.batch?.takeIf {it.id==mergeBatchId&&it.kind=="photo"&&it.status=="review"&&it.results.size>=2&&!s.busy&&!s.saving}?.let {batch->
@@ -629,6 +643,14 @@ private val FoodImageShape=RoundedCornerShape(12.dp)
             "ready"->R.string.food_analysis_ready
             else->R.string.food_analyzing
     }
+    val hint=when(stageValue) {
+        "encoding"->R.string.food_analysis_encoding_hint
+        "uploading"->R.string.food_analysis_uploading_hint
+        "waiting"->R.string.food_analysis_waiting_hint
+        "parsing"->R.string.food_analysis_parsing_hint
+        "retrying"->R.string.food_analysis_retrying_hint
+        else->R.string.food_analysis_stage_hint
+    }
     var elapsed by remember(startedAt){mutableLongStateOf(if(startedAt>0)(System.currentTimeMillis()-startedAt)/1000 else 0L)}
     val seconds=elapsed.toInt()
     LaunchedEffect(startedAt){
@@ -643,8 +665,10 @@ private val FoodImageShape=RoundedCornerShape(12.dp)
             Text(if(stageValue=="retrying")stringResource(stage,attempt-1,3) else stringResource(stage),style=MaterialTheme.typography.titleMedium,modifier=Modifier.weight(1f))
             if(seconds>0)Text(stringResource(R.string.food_analysis_elapsed,seconds),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text(stringResource(R.string.food_analysis_stage_hint),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-        TextButton(onClick=cancel,contentPadding=PaddingValues(0.dp)){Text(stringResource(R.string.cancel))}
+        Text(stringResource(hint),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        if(stageValue=="waiting"&&seconds>=45)
+            Text(stringResource(R.string.food_analysis_slow_hint),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick=cancel,contentPadding=PaddingValues(0.dp)){Text(stringResource(R.string.food_analysis_cancel))}
     }
 }
 private fun estimateRatio(value:Double,number:NumberFormat):String {

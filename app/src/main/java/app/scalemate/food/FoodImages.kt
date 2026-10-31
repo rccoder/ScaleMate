@@ -17,16 +17,18 @@ object FoodImages {
         var bitmap: Bitmap?=null
         try {
             bitmap=ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver,uri)) {decoder,info,_->
-                val scale=(maxOf(info.size.width,info.size.height)/1280.0).coerceAtLeast(1.0)
+                val scale=(maxOf(info.size.width,info.size.height)/MAX_UPLOAD_EDGE_PX.toDouble()).coerceAtLeast(1.0)
                 decoder.setTargetSize((info.size.width/scale).toInt().coerceAtLeast(1),(info.size.height/scale).toInt().coerceAtLeast(1))
                 decoder.allocator=ImageDecoder.ALLOCATOR_SOFTWARE
             }
-            target.outputStream().use {check(bitmap.compress(Bitmap.CompressFormat.JPEG,75,it))}
+            target.outputStream().use {check(bitmap.compress(Bitmap.CompressFormat.JPEG,UPLOAD_JPEG_QUALITY,it))}
             require(target.length() in 1..MAX_IMAGE_BYTES)
             return target
         }catch(e:Exception){target.delete();throw e}finally {bitmap?.recycle()}
     }
     const val MAX_PHOTOS=6
+    const val MAX_UPLOAD_EDGE_PX=1024
+    const val UPLOAD_JPEG_QUALITY=70
     const val MAX_IMAGE_BYTES=1_500_000L
     // Bound the encoded request, not only the sum of JPEG files. Base64 adds roughly one third.
     const val MAX_UPLOAD_BYTES=8_000_000L

@@ -21,6 +21,7 @@ class AiServicesTest {
         private val server=ServerSocket(0,8,InetAddress.getByName("127.0.0.1"))
         val base="http://127.0.0.1:${server.localPort}"
         val requests=Collections.synchronizedList(mutableListOf<List<String>>())
+        val bodies=Collections.synchronizedList(mutableListOf<String>())
         private val failure=AtomicReference<Throwable?>()
         private val worker=Thread {
             try {replies.forEach {reply->server.accept().use {socket->
@@ -30,7 +31,9 @@ class AiServicesTest {
                 val lines=mutableListOf<String>();while(true){val value=line();if(value.isEmpty())break;lines+=value}
                 requests+=lines
                 var remaining=lines.firstOrNull {it.startsWith("Content-Length:",true)}?.substringAfter(':')?.trim()?.toInt() ?: 0
-                val buffer=ByteArray(8192);while(remaining>0){val n=input.read(buffer,0,minOf(buffer.size,remaining));if(n<0)break;remaining-=n}
+                val body=java.io.ByteArrayOutputStream()
+                val buffer=ByteArray(8192);while(remaining>0){val n=input.read(buffer,0,minOf(buffer.size,remaining));if(n<0)break;body.write(buffer,0,n);remaining-=n}
+                bodies+=body.toString("UTF-8")
                 val bytes=reply.body.toByteArray()
                 socket.getOutputStream().apply {write("HTTP/1.1 ${reply.status} Response\r\nContent-Type: application/json\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\nLocation: http://127.0.0.1:1/never-follow\r\n\r\n".toByteArray());write(bytes);flush()}
             }}}catch(e:Throwable){if(!server.isClosed)failure.set(e)}
@@ -86,6 +89,46 @@ class AiServicesTest {
             val result=withTimeout(10000){AiClient().recognizeDetailed(configured,listOf(byteArrayOf(1)),"",emptySet(),1,outputLanguage="en-US")}
             assertEquals("Add vegetables.",result.advice.balance)
             assertEquals(1234L,result.usage.inputTokens);assertEquals(321L,result.usage.outputTokens);assertEquals(1555L,result.usage.totalTokens)
+        }
+    }
+    @Test fun revisionRequestCarriesEditablePreviousResultAndCurrentInstructions()=runBlocking {
+        LocalApi(listOf(Reply("""{"choices":[{"finish_reason":"stop","message":{"content":"{\"calculationMode\":\"personal\",\"foods\":[{\"name\":\"咖喱猪排饭\",\"personalGrams\":130,\"personalNutrients\":{\"kcal\":325}}]}"}}]}"""))).use {api->
+            val configured=service(api.base+"/v1","openai").copy(images=true,model="local-model")
+            val previous=FoodItem(
+                name="咖喱猪排饭",portion="260 g",grams=260.0,base=Nutrients(650.0,28.0,80.0,22.0),
+                quantity=0.5,photos=listOf("meal.jpg"),assumptions="按可见份量估算。",
+                estimateContext=FoodEstimateContext(
+                    shareCount=2,tags=listOf("少酱"),description="两人均分",
+                    interpretation="两人均分后只吃自己那份的一半。",resultMode="personal",
+                    summary="计入本人分到份额的一半。"
+                )
+            )
+            val advice=MealAdvice("主食和蛋白质为主。","酱汁按需蘸取。","下次搭配蔬菜。","蔬菜被遮挡。")
+            val result=withTimeout(10000){
+                AiClient().recognizeDetailed(
+                    configured,listOf(byteArrayOf(1)),"这次米饭再少一半",setOf("少油"),1,
+                    listOf("meal.jpg"),outputLanguage="zh-CN",previous=listOf(previous),previousAdvice=advice
+                )
+            }
+            assertEquals("咖喱猪排饭",result.items.single().name)
+            api.check();assertEquals(1,api.bodies.size)
+            val body=org.json.JSONObject(api.bodies.single())
+            val messages=body.getJSONArray("messages")
+            val system=messages.getJSONObject(0).getString("content")
+            assertTrue(system.contains("REVISION MODE"))
+            val user=messages.getJSONObject(1).getJSONArray("content")
+            val texts=(0 until user.length()).mapNotNull {index->
+                user.getJSONObject(index).takeIf {it.optString("type")=="text"}?.getString("text")
+            }
+            assertTrue(texts.any {it.contains("这次米饭再少一半")&&it.contains("少油")})
+            val previousText=texts.single {it.startsWith("Previous analysis")}.substringAfter('\n')
+            val previousJson=org.json.JSONObject(previousText)
+            val previousFood=previousJson.getJSONArray("foods").getJSONObject(0)
+            assertEquals(130.0,previousFood.getDouble("personalGrams"),0.001)
+            assertEquals(325.0,previousFood.getJSONObject("personalNutrients").getDouble("kcal"),0.001)
+            assertEquals("两人均分",previousJson.getJSONObject("previousFoodContext").getString("description"))
+            assertEquals("计入本人分到份额的一半。",previousFood.getString("intakeSummary"))
+            assertEquals("下次搭配蔬菜。",previousJson.getJSONObject("mealAdvice").getString("nextTime"))
         }
     }
     @Test fun copiedCredentialsHaveIndependentIdentityAndDoNotReplaceDefaults() {

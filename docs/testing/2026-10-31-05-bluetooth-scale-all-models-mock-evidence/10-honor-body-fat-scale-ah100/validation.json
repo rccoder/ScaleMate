@@ -1,0 +1,18 @@
+{
+  "modelId": "honor-body-fat-scale-ah100",
+  "displayName": "荣耀体脂秤（AH100/CH100）",
+  "weightKg": 70.7,
+  "steps": [
+    "cold-start-settings",
+    "settings-to-devices",
+    "removed-1-existing-scale-bindings",
+    "scan-found",
+    "confirm-dialog",
+    "trial-stable",
+    "verify-choice",
+    "setup-verified",
+    "measurement-saved"
+  ],
+  "databaseScale": "honor-body-fat-scale-ah100|AA:BB:CC:DD:EE:0A|1|honor-body-fat-scale-ah100",
+  "databaseMeasurement": "honor-body-fat-scale-ah100|70.7|permission|honor-body-fat-scale-ah100"
+}

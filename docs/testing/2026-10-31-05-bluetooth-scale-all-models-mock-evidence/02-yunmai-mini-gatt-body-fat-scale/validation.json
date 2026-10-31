@@ -1,0 +1,18 @@
+{
+  "modelId": "yunmai-mini-gatt-body-fat-scale",
+  "displayName": "云麦 mini 系列智能体脂秤",
+  "weightKg": 68.3,
+  "steps": [
+    "cold-start-settings",
+    "settings-to-devices",
+    "removed-1-existing-scale-bindings",
+    "scan-found",
+    "confirm-dialog",
+    "trial-stable",
+    "verify-choice",
+    "setup-verified",
+    "measurement-saved"
+  ],
+  "databaseScale": "yunmai-mini-gatt-body-fat-scale|AA:BB:CC:DD:EE:02|1|yunmai-mini-gatt-body-fat-scale",
+  "databaseMeasurement": "yunmai-mini-gatt-body-fat-scale|68.3|permission|yunmai-mini-gatt-body-fat-scale"
+}

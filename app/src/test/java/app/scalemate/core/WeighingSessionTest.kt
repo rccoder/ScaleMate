@@ -5,6 +5,7 @@ import org.junit.Test
 
 class WeighingSessionTest {
     private fun frame(kg: Double=71.3,state: Int=1,token: Int=29,address: String="A")=ScaleFrame(address,kg,state,token)
+    private fun final(kg: Double=71.8,token: Int=31,address: String="A")=ScaleFrame(address,kg,2,token,true)
     private fun stable(s: WeighingSession){for(t in 0L..3000L step 1000)s.frame(frame(),t,100000+t)}
     @Test fun needsFullWindow(){val s=WeighingSession("A",true);for(t in 0L..2000L step 1000)s.frame(frame(),t,t);assertEquals(Phase.MEASURING,s.state.phase);s.frame(frame(),3000,3000);assertEquals(Phase.COUNTDOWN,s.state.phase)}
     @Test fun countdownUsesElapsedTime(){val s=WeighingSession("A",true);stable(s);assertFalse(s.tick(7999));assertTrue(s.tick(8000));assertFalse(s.tick(9000));assertEquals(Phase.CONFIRMED,s.state.phase)}
@@ -69,5 +70,36 @@ class WeighingSessionTest {
         assertEquals(Phase.COUNTDOWN,daily.state.phase)
         assertFalse(daily.tick(28999))
         assertTrue(daily.tick(29000))
+    }
+    @Test fun finalGattFrameCanEnterManualStableStateWithoutThreeSamples() {
+        val session=WeighingSession("A",false)
+        session.frame(final(),1000,101000)
+        assertEquals(Phase.STABLE,session.state.phase)
+        assertEquals(71.8,session.state.candidateKg!!,0.0)
+        assertEquals(101000L,session.state.candidateAt)
+        assertTrue(session.confirm(2000))
+    }
+    @Test fun finalGattFrameStartsAutomaticCountdownImmediately() {
+        val session=WeighingSession("A",true)
+        session.frame(final(),1000,101000)
+        assertEquals(Phase.COUNTDOWN,session.state.phase)
+        assertFalse(session.tick(5999))
+        assertTrue(session.tick(6000))
+    }
+    @Test fun duplicateFinalGattFrameDoesNotRestartCountdown() {
+        val session=WeighingSession("A",true)
+        session.frame(final(),1000,101000)
+        session.frame(final(),2000,102000)
+        assertFalse(session.tick(5999))
+        assertTrue(session.tick(6000))
+        assertEquals(101000L,session.state.candidateAt)
+    }
+    @Test fun previousGattTokenNeedsZeroOrChangedTokenBeforeReuse() {
+        val session=WeighingSession("A",true,31)
+        session.frame(final(),1000,101000)
+        assertEquals(Phase.WAITING,session.state.phase)
+        session.frame(final(kg=0.0),2000,102000)
+        session.frame(final(),3000,103000)
+        assertEquals(Phase.COUNTDOWN,session.state.phase)
     }
 }

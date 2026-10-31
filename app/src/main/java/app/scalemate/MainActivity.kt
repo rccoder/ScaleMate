@@ -16,6 +16,7 @@ import app.scalemate.food.NutritionOutput
 import app.scalemate.update.UpdateViewModel
 import app.scalemate.health.HealthViewModel
 import app.scalemate.health.HealthReminders
+import app.scalemate.platform.ScaleTransportProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +39,11 @@ class MainActivity: ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState);enableEdgeToEdge()
+        ScaleTransportProvider.installMockFromIntent(
+            applicationContext,
+            BuildConfig.DEBUG && intent.getBooleanExtra("mockScales", false),
+            intent.getStringExtra("mockScaleModelId"),
+        )
         model=ViewModelProvider(this)[ScaleViewModel::class.java]
         foodModel=ViewModelProvider(this)[FoodViewModel::class.java]
         updateModel=ViewModelProvider(this)[UpdateViewModel::class.java]
@@ -47,7 +53,7 @@ class MainActivity: ComponentActivity() {
         setContent { ScaleMateApp(model,foodModel,updateModel,healthModel,healthEntry,consumeHealthEntry={healthEntry=""},authorizeHealth={permissions->if(permissions.isNotEmpty())healthReadPermissions.launch(permissions.toTypedArray())},authorizeNutrition={nutritionPermission.launch(NutritionOutput.WRITE)},
             bluetooth = { action ->
                 val permissions=arrayOf("android.permission.BLUETOOTH_SCAN","android.permission.BLUETOOTH_CONNECT")
-                if(permissions.all { checkSelfPermission(it)==android.content.pm.PackageManager.PERMISSION_GRANTED }) action()
+                if(!model.requiresBluetoothPermission || permissions.all { checkSelfPermission(it)==android.content.pm.PackageManager.PERMISSION_GRANTED }) action()
                 else {afterBluetooth=action;bluetoothPermission.launch(permissions)}
             },
             authorize = { healthPermission.launch(HealthOutput.WRITE) },

@@ -1,0 +1,18 @@
+{
+  "modelId": "yunmai-smart-body-fat-scale-3-se",
+  "displayName": "云麦智能体脂秤 3 SE",
+  "weightKg": 68.0,
+  "steps": [
+    "cold-start-settings",
+    "settings-to-devices",
+    "removed-1-existing-scale-bindings",
+    "scan-found",
+    "confirm-dialog",
+    "trial-stable",
+    "verify-choice",
+    "setup-verified",
+    "measurement-saved"
+  ],
+  "databaseScale": "yunmai-smart-body-fat-scale-3-se|AA:BB:CC:DD:EE:01|1|yunmai-smart-body-fat-scale-3-se",
+  "databaseMeasurement": "yunmai-smart-body-fat-scale-3-se|68.0|permission|yunmai-smart-body-fat-scale-3-se"
+}

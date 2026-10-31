@@ -1,0 +1,18 @@
+{
+  "modelId": "xiaomi-mi-body-composition-scale-2",
+  "displayName": "小米体脂秤 2",
+  "weightKg": 70.4,
+  "steps": [
+    "cold-start-settings",
+    "settings-to-devices",
+    "removed-1-existing-scale-bindings",
+    "scan-found",
+    "confirm-dialog",
+    "trial-stable",
+    "verify-choice",
+    "setup-verified",
+    "measurement-saved"
+  ],
+  "databaseScale": "xiaomi-mi-body-composition-scale-2|AA:BB:CC:DD:EE:09|1|xiaomi-mi-body-composition-scale-2",
+  "databaseMeasurement": "xiaomi-mi-body-composition-scale-2|70.4|permission|xiaomi-mi-body-composition-scale-2"
+}

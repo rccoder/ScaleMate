@@ -1,0 +1,18 @@
+{
+  "modelId": "xiaomi-mi-smart-scale-2",
+  "displayName": "小米体重秤 2",
+  "weightKg": 70.1,
+  "steps": [
+    "cold-start-settings",
+    "settings-to-devices",
+    "scan-found",
+    "confirm-dialog",
+    "trial-stable",
+    "verify-choice",
+    "setup-verified",
+    "measurement-saved"
+  ],
+  "databaseScale": "xiaomi-mi-smart-scale-2|AA:BB:CC:DD:EE:08|1|xiaomi-mi-smart-scale-2",
+  "databaseMeasurement": "xiaomi-mi-smart-scale-2|70.1|permission|xiaomi-mi-smart-scale-2",
+  "databaseScales": "219e850e-3074-42d2-986c-9094ef6fc6e0|okok-vf0-smart-scale|AA:BB:CC:DD:EE:10|1|okok-vf0-smart-scale\n56360cb8-0a04-4d0d-a250-db679d016394|xiaomi-mi-smart-scale-2|AA:BB:CC:DD:EE:08|1|xiaomi-mi-smart-scale-2"
+}

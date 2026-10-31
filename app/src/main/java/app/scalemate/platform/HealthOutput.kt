@@ -21,9 +21,12 @@ class HealthOutput(private val context: Context) {
     private fun manager() = context.getSystemService(HealthConnectManager::class.java) ?: error("Health Connect unavailable")
     suspend fun write(m: Measurement): String = suspendCancellableCoroutine { continuation ->
         try {
+            val scaleModel = ScaleCatalog.forId(m.modelId)
+                ?: ScaleCatalog.forStoredName(m.source)
+                ?: ScaleCatalog.yunmai3Se
             val metadata = Metadata.Builder().setClientRecordId(m.id).setClientRecordVersion(1)
                 .setRecordingMethod(Metadata.RECORDING_METHOD_AUTOMATICALLY_RECORDED)
-                .setDevice(Device.Builder().setManufacturer(ScaleCatalog.yunmai3Se.manufacturer).setModel(ScaleCatalog.yunmai3Se.internalModel).setType(Device.DEVICE_TYPE_SCALE).build()).build()
+                .setDevice(Device.Builder().setManufacturer(scaleModel.manufacturer).setModel(scaleModel.internalModel).setType(Device.DEVICE_TYPE_SCALE).build()).build()
             val record = WeightRecord.Builder(metadata, Instant.ofEpochMilli(m.time), Mass.fromGrams(m.kg * 1000)).setZoneOffset(ZoneOffset.ofTotalSeconds(m.offset)).build()
             manager().insertRecords(listOf(record),context.mainExecutor,object: OutcomeReceiver<InsertRecordsResponse,HealthConnectException> {
                 override fun onResult(result: InsertRecordsResponse) { if(continuation.isActive) continuation.resume(result.records.first().metadata.id) }

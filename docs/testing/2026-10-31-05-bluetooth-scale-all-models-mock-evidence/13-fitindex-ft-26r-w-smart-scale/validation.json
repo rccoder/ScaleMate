@@ -1,0 +1,18 @@
+{
+  "modelId": "fitindex-ft-26r-w-smart-scale",
+  "displayName": "FITINDEX FT-26R-W 智能体重秤",
+  "weightKg": 71.6,
+  "steps": [
+    "cold-start-settings",
+    "settings-to-devices",
+    "removed-1-existing-scale-bindings",
+    "scan-found",
+    "confirm-dialog",
+    "trial-stable",
+    "verify-choice",
+    "setup-verified",
+    "measurement-saved"
+  ],
+  "databaseScale": "fitindex-ft-26r-w-smart-scale|AA:BB:CC:DD:EE:0D|1|fitindex-ft-26r-w-smart-scale",
+  "databaseMeasurement": "fitindex-ft-26r-w-smart-scale|71.6|permission|fitindex-ft-26r-w-smart-scale"
+}

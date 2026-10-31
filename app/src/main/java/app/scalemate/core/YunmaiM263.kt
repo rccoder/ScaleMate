@@ -1,7 +1,5 @@
 package app.scalemate.core
 
-data class ScaleFrame(val identity: String, val kg: Double, val state: Int, val token: Int)
-
 /** M263 signature captured locally. Manufacturer ID contains the first two reversed MAC bytes. */
 object YunmaiM263 {
     const val ADAPTER = "yunmai-m263-v1"
@@ -20,5 +18,18 @@ object YunmaiM263 {
         val kg = ((p[9].toInt() and 255) shl 8 or (p[10].toInt() and 255)) / 100.0
         if (kg !in 0.0..300.0) return null
         return ScaleFrame(mac.joinToString(":") { "%02X".format(it) }, kg, state, p[7].toInt() and 255)
+    }
+}
+
+object YunmaiM263Parser : ScaleParser {
+    override val adapterId: String = YunmaiM263.ADAPTER
+
+    override fun parse(advertisement: ScaleAdvertisement): DetectedScaleFrame? {
+        val address = canonicalBluetoothAddress(advertisement.address) ?: return null
+        for ((manufacturerId, payload) in advertisement.manufacturerData) {
+            val frame = YunmaiM263.parse(address, manufacturerId, payload) ?: continue
+            return DetectedScaleFrame(ScaleCatalog.yunmai3Se, frame)
+        }
+        return null
     }
 }

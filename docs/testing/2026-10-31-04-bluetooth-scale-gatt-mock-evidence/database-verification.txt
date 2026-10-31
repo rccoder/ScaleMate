@@ -1,0 +1,15 @@
+Read-only verification from app.scalemate.fooddev on emulator-5556.
+
+scales:
+name=xiaomi-mi-smart-scale-2
+address=AA:BB:CC:DD:EE:FF
+verified=1
+modelId=xiaomi-mi-smart-scale-2
+
+measurements (latest):
+source=xiaomi-mi-smart-scale-2
+kg=71.8
+status=permission
+modelId=xiaomi-mi-smart-scale-2
+
+No camera images, account details, health records, or credentials were queried.

@@ -1,0 +1,18 @@
+{
+  "modelId": "picooc-connection-body-fat-scale",
+  "displayName": "PICOOC 有品连接型体脂秤",
+  "weightKg": 69.8,
+  "steps": [
+    "cold-start-settings",
+    "settings-to-devices",
+    "removed-1-existing-scale-bindings",
+    "scan-found",
+    "confirm-dialog",
+    "trial-stable",
+    "verify-choice",
+    "setup-verified",
+    "measurement-saved"
+  ],
+  "databaseScale": "picooc-connection-body-fat-scale|AA:BB:CC:DD:EE:07|1|picooc-connection-body-fat-scale",
+  "databaseMeasurement": "picooc-connection-body-fat-scale|69.8|permission|picooc-connection-body-fat-scale"
+}

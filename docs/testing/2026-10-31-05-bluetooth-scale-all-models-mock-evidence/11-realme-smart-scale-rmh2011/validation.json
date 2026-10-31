@@ -1,0 +1,18 @@
+{
+  "modelId": "realme-smart-scale-rmh2011",
+  "displayName": "realme 真我智能秤",
+  "weightKg": 71.0,
+  "steps": [
+    "cold-start-settings",
+    "settings-to-devices",
+    "removed-1-existing-scale-bindings",
+    "scan-found",
+    "confirm-dialog",
+    "trial-stable",
+    "verify-choice",
+    "setup-verified",
+    "measurement-saved"
+  ],
+  "databaseScale": "realme-smart-scale-rmh2011|AA:BB:CC:DD:EE:0B|1|realme-smart-scale-rmh2011",
+  "databaseMeasurement": "realme-smart-scale-rmh2011|71.0|permission|realme-smart-scale-rmh2011"
+}

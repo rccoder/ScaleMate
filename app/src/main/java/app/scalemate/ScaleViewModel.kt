@@ -16,17 +16,20 @@ import java.time.ZoneId
 import java.time.Instant
 import java.util.UUID
 
-data class AppState(val loaded: Boolean = false, val scales: List<BoundScale> = emptyList(), val records: List<Measurement> = emptyList(), val activeId: String = "", val candidates: Map<String,Int> = emptyMap(), val discovering: Boolean = false, val weighing: Boolean = false, val listening: Boolean = false, val session: SessionState = SessionState(), val message: Int? = null, val automatic: Boolean = false, val dark: Boolean = false, val dynamic: Boolean = false, val onboarded: Boolean = false, val healthAllowed: Boolean = false, val lastSavedRecordId: String = "") {
+data class ScaleCandidate(val address: String, val modelId: String, val rssi: Int)
+
+data class AppState(val loaded: Boolean = false, val scales: List<BoundScale> = emptyList(), val records: List<Measurement> = emptyList(), val activeId: String = "", val candidates: Map<String,ScaleCandidate> = emptyMap(), val discovering: Boolean = false, val weighing: Boolean = false, val listening: Boolean = false, val session: SessionState = SessionState(), val message: Int? = null, val automatic: Boolean = false, val dark: Boolean = false, val dynamic: Boolean = false, val onboarded: Boolean = false, val healthAllowed: Boolean = false, val lastSavedRecordId: String = "") {
     fun confirmedMeasurement(): Measurement? = if(session.phase==Phase.CONFIRMED)records.find {it.id==lastSavedRecordId} else null
 }
 
 class ScaleViewModel(application: Application): AndroidViewModel(application) {
     private val store = Store(application)
     private val prefs = application.getSharedPreferences("settings",0)
-    private val ble = BleTransport(application)
+    private val ble: ScaleTransport = ScaleTransportProvider.create(application)
     private val health = HealthOutput(application)
     private val mutable = MutableStateFlow(AppState(activeId=prefs.getString("active","")!!,automatic=prefs.getBoolean("auto",false),dark=prefs.getBoolean("dark",false),dynamic=prefs.getBoolean("dynamic",false),onboarded=prefs.getBoolean("onboarded",false)))
     val state = mutable.asStateFlow()
+    val requiresBluetoothPermission: Boolean get() = ble.requiresBluetoothPermission
     private var foreground = false
     private var foodPage = false
     fun foodPage(active:Boolean) {foodPage=active;if(active)stop() else listen()}
@@ -56,19 +59,24 @@ class ScaleViewModel(application: Application): AndroidViewModel(application) {
     fun message(resource: Int) { update { it.copy(message=resource) } }
     fun discover() {
         stop();update { it.copy(candidates=emptyMap(),discovering=true,message=null) }
-        ble.start(null,{ frame,_,rssi -> update { it.copy(candidates=it.candidates+(frame.identity to rssi)) } },{ message(R.string.bluetooth_error);stop() })
+        ble.discover({ discovered ->
+            val candidate=ScaleCandidate(discovered.address,discovered.model.id,discovered.rssi)
+            update { it.copy(candidates=it.candidates+(candidate.address to candidate)) }
+        },{ message(R.string.bluetooth_error);stop() })
         if(mutable.value.discovering) timer=viewModelScope.launch { delay(30000);ble.stop();update { it.copy(discovering=false,message=if(it.candidates.isEmpty())R.string.no_scales_found else null) };timer=null;listen() }
     }
-    fun bind(address: String, name: String, replacing: String? = null) {
+    fun bind(candidate: ScaleCandidate, name: String, replacing: String? = null) {
         stop()
+        val model=ScaleCatalog.forId(candidate.modelId) ?: ScaleCatalog.yunmai3Se
+        val storedName=name.takeUnless {ScaleCatalog.forStoredName(it)!=null} ?: model.id
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) {
-                    if(replacing!=null) store.rebind(replacing,address)
-                    else store.bind(BoundScale(UUID.randomUUID().toString(),name.take(60).ifBlank { ScaleCatalog.yunmai3Se.id },address,false))
+                    if(replacing!=null) store.rebind(replacing,candidate.address,model.id,storedName.take(60))
+                    else store.bind(BoundScale(UUID.randomUUID().toString(),storedName.take(60).ifBlank { model.id },candidate.address,false,model.id))
                 }
                 reload()
-                mutable.value.scales.find { it.address==address }?.let { select(it.id) }
+                mutable.value.scales.find { it.address==candidate.address }?.let { select(it.id) }
             } catch(_: Exception) { message(R.string.storage_error) }
         }
     }
@@ -94,14 +102,16 @@ class ScaleViewModel(application: Application): AndroidViewModel(application) {
     private fun listen(manual: Boolean = false) {
         if(foodPage || listening || !foreground || !mutable.value.loaded || !mutable.value.onboarded || mutable.value.discovering || mutable.value.session.phase in listOf(Phase.SAVING,Phase.SAVE_FAILED))return
         val permissions=listOf("android.permission.BLUETOOTH_SCAN","android.permission.BLUETOOTH_CONNECT")
-        if(permissions.any { getApplication<Application>().checkSelfPermission(it)!=android.content.pm.PackageManager.PERMISSION_GRANTED } || !ble.available())return
+        if(ble.requiresBluetoothPermission && permissions.any { getApplication<Application>().checkSelfPermission(it)!=android.content.pm.PackageManager.PERMISSION_GRANTED })return
+        if(!ble.available())return
         val s=mutable.value.scales.find { it.id==mutable.value.activeId } ?: return
+        val model=ScaleCatalog.forId(s.modelId) ?: return
         sessionId=UUID.randomUUID().toString();sessionScale=s
         val previous=prefs.getInt("token-${s.id}",-1).takeIf { it>=0 }
         engine=WeighingSession(s.address,mutable.value.automatic && s.verified,previous)
         listening=true
         update { it.copy(listening=true,weighing=manual,session=if(manual)engine!!.state else it.session,message=null) }
-        ble.start(s.address,{f,t,_ ->
+        ble.start(s.address,model,{f,t ->
             val now=SystemClock.elapsedRealtime()
             if(now-t !in 0..2000)return@start
             engine?.frame(f,t,System.currentTimeMillis())
@@ -128,7 +138,7 @@ class ScaleViewModel(application: Application): AndroidViewModel(application) {
     private fun persist() {
         val s=sessionScale ?:return;val e=engine?.state ?:return;val kg=e.candidateKg ?:return
         val id=sessionId;rememberToken();ble.stop();listening=false;timer?.cancel();update { it.copy(listening=false,weighing=false,session=e.copy(phase=Phase.SAVING)) }
-        val record=Measurement(id,s.id,s.name,kg,e.candidateAt,ZoneId.systemDefault().rules.getOffset(Instant.ofEpochMilli(e.candidateAt)).totalSeconds)
+        val record=Measurement(id,s.id,s.name,kg,e.candidateAt,ZoneId.systemDefault().rules.getOffset(Instant.ofEpochMilli(e.candidateAt)).totalSeconds,modelId=s.modelId)
         viewModelScope.launch {
             try { withContext(Dispatchers.IO) {store.save(record)};reload();update {if(it.activeId==s.id)it.copy(session=e,lastSavedRecordId=id) else it};listen();sync(record.id) }
             catch(e: CancellationException) {throw e}

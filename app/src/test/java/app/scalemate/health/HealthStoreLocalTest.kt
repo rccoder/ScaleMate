@@ -1,6 +1,7 @@
 package app.scalemate.health
 
 import app.scalemate.data.*
+import app.scalemate.core.ScaleCatalog
 import app.scalemate.food.*
 import org.junit.*
 import org.junit.Assert.*
@@ -17,19 +18,28 @@ class HealthStoreLocalTest {
     @After fun cleanup(){context.deleteDatabase(name)}
     @Test fun versionFourUpgradePreservesWeightsMealsLibraryServicesAndDraft() {
         Store(context,name).use {db->
-            db.bind(BoundScale("scale","Home","synthetic-address",true))
-            db.save(Measurement("weight","scale","Home",70.0,1000,0))
+            val sql=db.writableDatabase
+            // Recreate the v6 business tables so the v7 migration is exercised without
+            // accidentally adding modelId during the initial v7 schema creation.
+            sql.execSQL("DROP TABLE scales")
+            sql.execSQL("DROP TABLE measurements")
+            sql.execSQL("CREATE TABLE scales(id TEXT PRIMARY KEY,name TEXT NOT NULL,address TEXT UNIQUE NOT NULL,verified INTEGER NOT NULL)")
+            sql.execSQL("CREATE TABLE measurements(id TEXT PRIMARY KEY,deviceId TEXT NOT NULL,source TEXT NOT NULL,kg REAL NOT NULL,time INTEGER NOT NULL,offset INTEGER NOT NULL,status TEXT NOT NULL,platformId TEXT NOT NULL,attempts INTEGER NOT NULL)")
+            sql.execSQL("INSERT INTO scales VALUES('scale','Home','synthetic-address',1)")
+            sql.execSQL("INSERT INTO measurements VALUES('weight','scale','Home',70.0,1000,0,'pending','',0)")
             val food=FoodStore(db)
             food.save(Meal(id="meal",items=listOf(FoodItem(name="Rice",base=Nutrients(200.0)))))
             food.service(AiService(id="service",name="Synthetic service",model="synthetic",encryptedKey="opaque-ciphertext",consentVersion=3,version=3))
             food.setting("draft","synthetic-draft");food.setting("text","service")
-            val sql=db.writableDatabase
             listOf("health_settings","health_snapshots","health_reports","health_conversations","health_reminders","health_records","health_sync_state").forEach {sql.execSQL("DROP TABLE $it")}
             sql.version=4
         }
         Store(context,name).use {db->
-            assertEquals(6,db.writableDatabase.version)
-            assertEquals("scale",db.scales().single().id);assertEquals(70.0,db.records().single().kg,0.0)
+            assertEquals(7,db.writableDatabase.version)
+            assertEquals("scale",db.scales().single().id)
+            assertEquals(ScaleCatalog.defaultModelId,db.scales().single().modelId)
+            assertEquals(70.0,db.records().single().kg,0.0)
+            assertEquals(ScaleCatalog.defaultModelId,db.records().single().modelId)
             val food=FoodStore(db);assertEquals("meal",food.meals().single().id);assertEquals(1,food.library().size)
             assertEquals("opaque-ciphertext",food.services().single().encryptedKey);assertEquals("service",food.setting("text"));assertEquals("synthetic-draft",food.setting("draft"))
             HealthStore(db).categories(setOf("SleepSession"));assertEquals(setOf("SleepSession"),HealthStore(db).categories())
@@ -70,7 +80,7 @@ class HealthStoreLocalTest {
         val threads=java.util.concurrent.Executors.newFixedThreadPool(3)
         try {
             val tasks=(1..3).map {threads.submit<Int> {Store(context,name).use {db->db.readableDatabase.version}}}
-            assertEquals(listOf(6,6,6),tasks.map {it.get(10,java.util.concurrent.TimeUnit.SECONDS)})
+            assertEquals(listOf(7,7,7),tasks.map {it.get(10,java.util.concurrent.TimeUnit.SECONDS)})
         }finally {threads.shutdownNow()}
     }
     @Test fun syncIndexReplacesOnlyTheRequestedRangeAndKeepsLatestState() {

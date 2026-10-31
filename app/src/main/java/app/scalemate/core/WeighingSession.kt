@@ -17,6 +17,31 @@ class WeighingSession(private val identity: String, private val automatic: Boole
         lastSample = now
         lastSeen = now
         if (frame.kg == 0.0) { zeroSeen = true; started = false; samples.clear(); candidateStart = -1; state = SessionState(Phase.WAITING); return }
+        if (frame.final) {
+            if (frame.token == previousToken && !zeroSeen) return
+            val existingCandidate = state.candidateKg
+            if (state.phase in listOf(Phase.STABLE, Phase.COUNTDOWN) &&
+                state.token == frame.token &&
+                existingCandidate != null &&
+                kotlin.math.abs(frame.kg - existingCandidate) <= 0.10 + 1e-9
+            ) {
+                state = state.copy(kg = frame.kg)
+                return
+            }
+            started = true
+            zeroSeen = false
+            samples.clear()
+            candidateStart = now
+            state = SessionState(
+                phase = if (automatic) Phase.COUNTDOWN else Phase.STABLE,
+                kg = frame.kg,
+                candidateKg = frame.kg,
+                candidateAt = wall,
+                seconds = 5,
+                token = frame.token,
+            )
+            return
+        }
         if (!started) {
             if (frame.state != 1 || (frame.token == previousToken && !zeroSeen)) return
             started = true

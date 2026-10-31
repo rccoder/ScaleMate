@@ -1,0 +1,18 @@
+{
+  "modelId": "okok-vf0-smart-scale",
+  "displayName": "OKOK 蓝牙体脂秤",
+  "weightKg": 72.5,
+  "steps": [
+    "cold-start-settings",
+    "settings-to-devices",
+    "removed-1-existing-scale-bindings",
+    "scan-found",
+    "confirm-dialog",
+    "trial-stable",
+    "verify-choice",
+    "setup-verified",
+    "measurement-saved"
+  ],
+  "databaseScale": "okok-vf0-smart-scale|AA:BB:CC:DD:EE:10|1|okok-vf0-smart-scale",
+  "databaseMeasurement": "okok-vf0-smart-scale|72.5|permission|okok-vf0-smart-scale"
+}

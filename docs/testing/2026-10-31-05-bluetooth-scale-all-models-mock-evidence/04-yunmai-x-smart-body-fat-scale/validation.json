@@ -1,0 +1,18 @@
+{
+  "modelId": "yunmai-x-smart-body-fat-scale",
+  "displayName": "YUNMAI X 智能秤",
+  "weightKg": 68.9,
+  "steps": [
+    "cold-start-settings",
+    "settings-to-devices",
+    "removed-1-existing-scale-bindings",
+    "scan-found",
+    "confirm-dialog",
+    "trial-stable",
+    "verify-choice",
+    "setup-verified",
+    "measurement-saved"
+  ],
+  "databaseScale": "yunmai-x-smart-body-fat-scale|AA:BB:CC:DD:EE:04|1|yunmai-x-smart-body-fat-scale",
+  "databaseMeasurement": "yunmai-x-smart-body-fat-scale|68.9|permission|yunmai-x-smart-body-fat-scale"
+}

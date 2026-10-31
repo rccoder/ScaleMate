@@ -1,0 +1,18 @@
+{
+  "modelId": "yunmai-se-gatt-body-fat-scale",
+  "displayName": "云麦 SE 智能体脂秤",
+  "weightKg": 68.6,
+  "steps": [
+    "cold-start-settings",
+    "settings-to-devices",
+    "removed-1-existing-scale-bindings",
+    "scan-found",
+    "confirm-dialog",
+    "trial-stable",
+    "verify-choice",
+    "setup-verified",
+    "measurement-saved"
+  ],
+  "databaseScale": "yunmai-se-gatt-body-fat-scale|AA:BB:CC:DD:EE:03|1|yunmai-se-gatt-body-fat-scale",
+  "databaseMeasurement": "yunmai-se-gatt-body-fat-scale|68.6|permission|yunmai-se-gatt-body-fat-scale"
+}

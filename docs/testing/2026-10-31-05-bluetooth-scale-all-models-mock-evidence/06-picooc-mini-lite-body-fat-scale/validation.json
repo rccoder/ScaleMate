@@ -1,0 +1,18 @@
+{
+  "modelId": "picooc-mini-lite-body-fat-scale",
+  "displayName": "PICOOC 有品智能体脂秤 Mini Lite",
+  "weightKg": 69.5,
+  "steps": [
+    "cold-start-settings",
+    "settings-to-devices",
+    "removed-1-existing-scale-bindings",
+    "scan-found",
+    "confirm-dialog",
+    "trial-stable",
+    "verify-choice",
+    "setup-verified",
+    "measurement-saved"
+  ],
+  "databaseScale": "picooc-mini-lite-body-fat-scale|AA:BB:CC:DD:EE:06|1|picooc-mini-lite-body-fat-scale",
+  "databaseMeasurement": "picooc-mini-lite-body-fat-scale|69.5|permission|picooc-mini-lite-body-fat-scale"
+}

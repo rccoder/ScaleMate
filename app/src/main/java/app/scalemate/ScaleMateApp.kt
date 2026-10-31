@@ -70,7 +70,7 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
     var selectedFoodMeal by remember {mutableStateOf<String?>(null)}
     var devicesReturn by rememberSaveable {mutableStateOf("home")}
     var welcomeDone by rememberSaveable { mutableStateOf(false) }
-    var candidate by remember {mutableStateOf<String?>(null)}
+    var candidate by remember {mutableStateOf<ScaleCandidate?>(null)}
     var selected by remember {mutableStateOf<Measurement?>(null)}
     var rename by remember {mutableStateOf<BoundScale?>(null)}
     var name by remember {mutableStateOf("")}
@@ -84,11 +84,11 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
     val mainScope=rememberCoroutineScope()
     val context=LocalContext.current
     val locale=LocalConfiguration.current.locales[0]
-    val model=ScaleCatalog.yunmai3Se
-    val modelName=stringResource(model.displayNameResource)
     val number=remember(locale) {NumberFormat.getNumberInstance(locale).apply {minimumFractionDigits=2;maximumFractionDigits=2}}
     val foodNumber=remember(locale) {NumberFormat.getNumberInstance(locale).apply {maximumFractionDigits=1}}
     val dates=remember(locale) {DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(locale).withZone(ZoneId.systemDefault())}
+    val debugStartPage=if(BuildConfig.DEBUG)generateSequence(context as android.content.Context?){(it as? android.content.ContextWrapper)?.baseContext}.filterIsInstance<android.app.Activity>().firstOrNull()?.intent?.getStringExtra("startPage").orEmpty() else ""
+    LaunchedEffect(debugStartPage) {if(debugStartPage in setOf("records","food","home","health","settings","devices"))page=debugStartPage}
     val actualPage=if(!state.loaded)"loading" else if(!state.onboarded && !welcomeDone)"welcome" else page
     LaunchedEffect(healthEntry){if(healthEntry.isNotEmpty())page="health"}
     LaunchedEffect(actualPage){if(actualPage=="settings"||actualPage=="food-services")foodVm.refreshServices()}
@@ -119,7 +119,7 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
     BackHandler(actualPage in listOf("devices","setup","food-services","sync-settings","health-permissions","update")) {
         when(actualPage){"devices"->navigate(devicesReturn);"setup"->navigate("sync-settings");"food-services"->navigate(servicesReturnPage);"health-permissions"->navigate("settings");"sync-settings","update"->navigate("settings")}
     }
-    LaunchedEffect(state.weighing) {if(state.weighing){page="home";selected=null;selectedFoodMeal=null;choose=false;autoDialog=false;rename=null;candidate=null;deleting=null;languageDialog=false}}
+    LaunchedEffect(state.weighing) {if(state.weighing&&debugStartPage.isBlank()){page="home";selected=null;selectedFoodMeal=null;choose=false;autoDialog=false;rename=null;candidate=null;deleting=null;languageDialog=false}}
     MaterialTheme(colorScheme=colors) {
         val c=MaterialTheme.colorScheme
         Scaffold(topBar={ if(actualPage !in listOf("welcome","loading")) TopAppBar(title={Text(stringResource(when(actualPage){"food"->R.string.food_title;"food-services"->R.string.food_services;"devices"->R.string.devices;"records"->R.string.records;"settings"->R.string.settings;"update"->R.string.update_title;"health"->R.string.health_title;"health-permissions"->R.string.health_permission_settings;"setup"->R.string.prepare_health;"sync-settings"->R.string.settings_sync;"home"->if(settingUp)R.string.finish_scale_setup else R.string.weigh;else->R.string.app_name}),fontWeight=FontWeight.SemiBold)},navigationIcon={if(actualPage in listOf("devices","setup","food-services","sync-settings","health-permissions","update"))IconButton(onClick={navigate(when(actualPage){"devices"->devicesReturn;"setup"->"sync-settings";"food-services"->servicesReturnPage;"health-permissions"->"settings";else->"settings"})}){Icon(Icons.AutoMirrored.Filled.ArrowBack,stringResource(R.string.cancel))}}) },
@@ -174,12 +174,13 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                         }
                     }
                     "devices"->{
-                        Text(stringResource(R.string.scan_hint,modelName),color=c.onSurfaceVariant)
+                        Text(stringResource(R.string.scan_hint),color=c.onSurfaceVariant)
                         state.scales.forEach{s->
-                            val displayName=scaleDisplayName(s.name)
+                            val displayName=scaleDisplayName(s.name,s.modelId)
+                            val modelName=scaleModelName(s.modelId)
                             Card(modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp)) {Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-                                Text(scaleDisplayName(s.name),style=MaterialTheme.typography.titleMedium)
-                                Text(stringResource(R.string.device_model,model.internalModel),style=MaterialTheme.typography.bodySmall)
+                                Text(displayName,style=MaterialTheme.typography.titleMedium)
+                                if(displayName!=modelName)Text(stringResource(R.string.device_model,modelName),style=MaterialTheme.typography.bodySmall)
                                 Text(stringResource(if(s.verified)R.string.verified else R.string.unverified),color=c.primary)
                                 Row {TextButton(onClick={vm.select(s.id);navigate("home")}){Text(stringResource(if(s.verified)R.string.select_scale else R.string.finish_scale_setup))};TextButton(onClick={rename=s;name=displayName}){Text(stringResource(R.string.rename))}}
                                 Row {TextButton(onClick={replacing=s;bluetooth{vm.discover()}}){Text(stringResource(R.string.rebind))};TextButton(onClick={vm.unbind(s.id)}){Text(stringResource(R.string.remove))}}
@@ -187,12 +188,14 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                         }
                         if(state.discovering){LinearProgressIndicator(Modifier.fillMaxWidth());Text(stringResource(R.string.scanning));TextButton(onClick={vm.cancelWeighing()}){Text(stringResource(R.string.stop))}}
                         else Action(R.string.scan){bluetooth{vm.discover()}}
-                        state.candidates.forEach{(address,rssi)->OutlinedCard(onClick={candidate=address},modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(18.dp)){Text(modelName);Text(stringResource(R.string.signal_without_address,rssi),style=MaterialTheme.typography.bodySmall)}}}
+                        state.candidates.values.forEach{found->OutlinedCard(onClick={candidate=found},modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(18.dp)){Text(scaleModelName(found.modelId));Text(stringResource(R.string.signal_without_address,found.rssi),style=MaterialTheme.typography.bodySmall)}}}
                     }
                     "home"->{
                         if(scale==null) {Text(stringResource(R.string.no_scale),style=MaterialTheme.typography.headlineMedium);Action(R.string.add_scale){navigate("devices")}}
                         else {
-                            OutlinedCard(onClick={choose=true},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp)){Column(Modifier.padding(18.dp)){Text(scaleDisplayName(scale.name),style=MaterialTheme.typography.titleMedium);Text(if(scaleDisplayName(scale.name)==modelName)stringResource(if(scale.verified)R.string.verified else R.string.unverified) else modelName,color=c.onSurfaceVariant,style=MaterialTheme.typography.bodySmall)}}
+                            val displayName=scaleDisplayName(scale.name,scale.modelId)
+                            val modelName=scaleModelName(scale.modelId)
+                            OutlinedCard(onClick={choose=true},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp)){Column(Modifier.padding(18.dp)){Text(displayName,style=MaterialTheme.typography.titleMedium);Text(if(displayName==modelName)stringResource(if(scale.verified)R.string.verified else R.string.unverified) else modelName,color=c.onSurfaceVariant,style=MaterialTheme.typography.bodySmall)}}
                             if(settingUp) {
                                 Text(stringResource(R.string.setup_trial_title),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold)
                                 Text(stringResource(R.string.setup_trial_hint),color=c.onSurfaceVariant)
@@ -330,7 +333,7 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
                             ){navigate("sync-settings")}
                         }
                         SettingsGroup(stringResource(R.string.weigh)) {
-                            SettingsRow(stringResource(R.string.devices),scale?.let {scaleDisplayName(it.name)} ?: stringResource(R.string.add_scale)){navigate("devices")}
+                            SettingsRow(stringResource(R.string.devices),scale?.let {scaleDisplayName(it.name,it.modelId)} ?: stringResource(R.string.add_scale)){navigate("devices")}
                             SettingsDivider()
                             SettingsToggle(stringResource(R.string.settings_auto_save),stringResource(if(scale==null)R.string.auto_needs_scale else if(!scale.verified)R.string.auto_needs_verification else R.string.settings_auto_hint),state.automatic&&scale?.verified==true,scale?.verified==true){if(it)autoDialog=true else vm.automatic(false)}
                         }
@@ -411,9 +414,9 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
         )
         selectedFoodMeal?.let {id->SavedMealDetails(foodVm,id,onDismiss={selectedFoodMeal=null},onEditDraft={openFoodEditor("editor")},authorize=authorizeNutrition)}
         if(weightSyncGuide)AlertDialog(onDismissRequest={weightSyncGuide=false},title={Text(stringResource(R.string.records_weight_saved))},text={Text(stringResource(R.string.records_weight_sync_guide))},confirmButton={TextButton(onClick={weightSyncGuide=false;authorize()}){Text(stringResource(R.string.authorize))}},dismissButton={TextButton(onClick={weightSyncGuide=false}){Text(stringResource(R.string.food_continue_local))}})
-        if(candidate!=null)AlertDialog(onDismissRequest={candidate=null},title={Text(stringResource(R.string.confirm_scale))},text={Text(stringResource(R.string.confirm_model,modelName,model.internalModel))},confirmButton={TextButton(onClick={vm.bind(candidate!!,replacing?.name ?: model.id,replacing?.id);candidate=null;replacing=null;navigate("home")}){Text(stringResource(R.string.bind))}},dismissButton={TextButton(onClick={candidate=null}){Text(stringResource(R.string.cancel))}})
+        candidate?.let{found->val modelName=scaleModelName(found.modelId);AlertDialog(onDismissRequest={candidate=null},title={Text(stringResource(R.string.confirm_scale))},text={Text(stringResource(R.string.confirm_model,modelName))},confirmButton={TextButton(onClick={vm.bind(found,replacing?.name ?: found.modelId,replacing?.id);candidate=null;replacing=null;navigate("home")}){Text(stringResource(R.string.bind))}},dismissButton={TextButton(onClick={candidate=null}){Text(stringResource(R.string.cancel))}})}
         if(rename!=null)AlertDialog(onDismissRequest={rename=null},title={Text(stringResource(R.string.rename))},text={OutlinedTextField(value=name,onValueChange={name=it.take(60)},label={Text(stringResource(R.string.name))},singleLine=true)},confirmButton={TextButton(enabled=name.isNotBlank(),onClick={vm.rename(rename!!.id,name);rename=null}){Text(stringResource(R.string.save))}},dismissButton={TextButton(onClick={rename=null}){Text(stringResource(R.string.cancel))}})
-        if(choose)AlertDialog(onDismissRequest={choose=false},title={Text(stringResource(R.string.select_scale))},text={Column{state.scales.forEach{s->TextButton(onClick={vm.select(s.id);choose=false}){Text(scaleDisplayName(s.name))}};TextButton(onClick={choose=false;navigate("devices")}){Text(stringResource(R.string.add_scale))}}},confirmButton={TextButton(onClick={choose=false}){Text(stringResource(R.string.done))}})
+        if(choose)AlertDialog(onDismissRequest={choose=false},title={Text(stringResource(R.string.select_scale))},text={Column{state.scales.forEach{s->TextButton(onClick={vm.select(s.id);choose=false}){Text(scaleDisplayName(s.name,s.modelId))}};TextButton(onClick={choose=false;navigate("devices")}){Text(stringResource(R.string.add_scale))}}},confirmButton={TextButton(onClick={choose=false}){Text(stringResource(R.string.done))}})
         if(setupChoice && settingUp && state.session.phase==Phase.STABLE)AlertDialog(
             onDismissRequest={setupChoice=false},
             title={Text(stringResource(R.string.choose_save_mode))},
@@ -424,7 +427,7 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
         if(autoDialog)AlertDialog(onDismissRequest={autoDialog=false},title={Text(stringResource(R.string.auto_confirm))},text={Text(stringResource(R.string.auto_explain))},confirmButton={TextButton(onClick={vm.automatic(true);autoDialog=false}){Text(stringResource(R.string.enable))}},dismissButton={TextButton(onClick={autoDialog=false}){Text(stringResource(R.string.cancel))}})
         if(languageDialog)AlertDialog(onDismissRequest={languageDialog=false},title={Text(stringResource(R.string.language))},text={Column{listOf("" to R.string.language_system,"zh" to R.string.language_zh,"en" to R.string.language_en).forEach{(tag,label)->TextButton(onClick={languageDialog=false;language(tag)}){Text(stringResource(label))}}}},confirmButton={TextButton(onClick={languageDialog=false}){Text(stringResource(R.string.cancel))}})
         selected?.let{snapshot->val m=state.records.find{it.id==snapshot.id} ?: snapshot
-            AlertDialog(onDismissRequest={selected=null},title={Text(stringResource(R.string.detail))},text={Column(verticalArrangement=Arrangement.spacedBy(12.dp)){Text(number.format(m.kg)+" "+stringResource(R.string.unit_kg),style=MaterialTheme.typography.headlineLarge);Text(dates.format(Instant.ofEpochMilli(m.time)));Text(stringResource(R.string.source,scaleDisplayName(m.source)));Text(stringResource(statusResource(m.status)));if(m.status in listOf("pending","failed","permission"))TextButton(onClick={if(m.status=="permission")authorize() else vm.retry(m.id)}){Text(stringResource(if(m.status=="permission")R.string.authorize else R.string.retry))};TextButton(onClick={selected=null;deleting=m}){Text(stringResource(R.string.delete_title))}}},confirmButton={TextButton(onClick={selected=null}){Text(stringResource(R.string.done))}})
+            AlertDialog(onDismissRequest={selected=null},title={Text(stringResource(R.string.detail))},text={Column(verticalArrangement=Arrangement.spacedBy(12.dp)){Text(number.format(m.kg)+" "+stringResource(R.string.unit_kg),style=MaterialTheme.typography.headlineLarge);Text(dates.format(Instant.ofEpochMilli(m.time)));Text(stringResource(R.string.source,scaleDisplayName(m.source,m.modelId)));Text(stringResource(statusResource(m.status)));if(m.status in listOf("pending","failed","permission"))TextButton(onClick={if(m.status=="permission")authorize() else vm.retry(m.id)}){Text(stringResource(if(m.status=="permission")R.string.authorize else R.string.retry))};TextButton(onClick={selected=null;deleting=m}){Text(stringResource(R.string.delete_title))}}},confirmButton={TextButton(onClick={selected=null}){Text(stringResource(R.string.done))}})
         }
         deleting?.let{m->AlertDialog(onDismissRequest={deleting=null},title={Text(stringResource(R.string.delete_title))},text={Column{Text(stringResource(R.string.delete_note));TextButton(onClick={vm.delete(m.id,false);deleting=null}){Text(stringResource(R.string.delete_local))};TextButton(onClick={vm.delete(m.id,true);deleting=null}){Text(stringResource(R.string.delete_both))}}},confirmButton={TextButton(onClick={deleting=null}){Text(stringResource(R.string.cancel))}})}
     }
@@ -447,13 +450,21 @@ private val Dark=darkColorScheme(primary=Color(0xFFA2D2B5),onPrimary=Color(0xFF0
 
 @Composable private fun Action(label: Int, action: ()->Unit) {Button(onClick=action,modifier=Modifier.fillMaxWidth().heightIn(min=54.dp)){Text(stringResource(label))}}
 @Composable private fun Pill(label: Int) {Surface(shape=CircleShape,color=MaterialTheme.colorScheme.secondaryContainer){Text(stringResource(label),Modifier.padding(horizontal=14.dp,vertical=8.dp),style=MaterialTheme.typography.labelMedium)}}
-@Composable private fun RecordCard(m: Measurement, kg: String, date: String, action: ()->Unit) {Card(onClick=action,modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp)){Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text(date,style=MaterialTheme.typography.labelMedium);Text(kg+" "+stringResource(R.string.unit_kg),fontSize=28.sp);Text(stringResource(statusResource(m.status)),color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.bodySmall);Text(scaleDisplayName(m.source),style=MaterialTheme.typography.bodySmall)}}}
+@Composable private fun RecordCard(m: Measurement, kg: String, date: String, action: ()->Unit) {Card(onClick=action,modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp)){Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text(date,style=MaterialTheme.typography.labelMedium);Text(kg+" "+stringResource(R.string.unit_kg),fontSize=28.sp);Text(stringResource(statusResource(m.status)),color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.bodySmall);Text(scaleDisplayName(m.source,m.modelId),style=MaterialTheme.typography.bodySmall)}}}
 private fun phaseResource(p: Phase)=when(p){Phase.IDLE->R.string.phase_idle;Phase.WAITING->R.string.phase_waiting;Phase.MEASURING->R.string.phase_measuring;Phase.STABLE->R.string.phase_stable;Phase.COUNTDOWN->R.string.phase_countdown;Phase.SAVING->R.string.phase_saving;Phase.SAVE_FAILED->R.string.storage_error;Phase.CONFIRMED->R.string.phase_confirmed;Phase.CANCELLED->R.string.phase_cancelled;Phase.EXPIRED->R.string.phase_expired}
 private fun statusResource(s: String)=when(s){"synced"->R.string.status_synced;"writing"->R.string.status_writing;"permission"->R.string.status_permission;"failed"->R.string.status_failed;"deleting"->R.string.status_deleting;"delete_failed"->R.string.status_delete_failed;else->R.string.status_pending}
 
-@Composable private fun scaleDisplayName(storedName: String): String {
-    val model = ScaleCatalog.yunmai3Se
-    return model.displayName(storedName, stringResource(model.displayNameResource))
+@Composable private fun scaleModelName(modelId: String?): String =
+    ScaleCatalog.forId(modelId)?.let {stringResource(it.displayNameResource)} ?: stringResource(R.string.unknown_scale_model)
+
+@Composable private fun scaleDisplayName(storedName: String, modelId: String?): String {
+    val model = ScaleCatalog.forId(modelId) ?: ScaleCatalog.forStoredName(storedName)
+    val defaultName = storedName.isBlank() || ScaleCatalog.forStoredName(storedName) != null
+    return when {
+        model != null && defaultName -> stringResource(model.displayNameResource)
+        model != null -> storedName
+        else -> storedName.ifBlank {stringResource(R.string.unknown_scale_model)}
+    }
 }
 
 private data class TimelineEntry(val at:Long,val weight:Measurement?=null,val meal:Meal?=null)

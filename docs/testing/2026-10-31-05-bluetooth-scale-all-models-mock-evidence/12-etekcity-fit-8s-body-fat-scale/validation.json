@@ -1,0 +1,18 @@
+{
+  "modelId": "etekcity-fit-8s-body-fat-scale",
+  "displayName": "Etekcity Fit 8S 智能健身秤",
+  "weightKg": 71.3,
+  "steps": [
+    "cold-start-settings",
+    "settings-to-devices",
+    "removed-1-existing-scale-bindings",
+    "scan-found",
+    "confirm-dialog",
+    "trial-stable",
+    "verify-choice",
+    "setup-verified",
+    "measurement-saved"
+  ],
+  "databaseScale": "etekcity-fit-8s-body-fat-scale|AA:BB:CC:DD:EE:0C|1|etekcity-fit-8s-body-fat-scale",
+  "databaseMeasurement": "etekcity-fit-8s-body-fat-scale|71.3|permission|etekcity-fit-8s-body-fat-scale"
+}

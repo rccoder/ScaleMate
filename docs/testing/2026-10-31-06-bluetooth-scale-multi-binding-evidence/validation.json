@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-31",
+  "emulator": "emulator-5556",
+  "package": "app.scalemate.fooddev",
+  "scales": [
+    {
+      "modelId": "okok-vf0-smart-scale",
+      "displayName": "OKOK 蓝牙体脂秤",
+      "address": "AA:BB:CC:DD:EE:10",
+      "mockWeightKg": 72.5
+    },
+    {
+      "modelId": "xiaomi-mi-smart-scale-2",
+      "displayName": "小米体重秤 2",
+      "address": "AA:BB:CC:DD:EE:08",
+      "mockWeightKg": 70.1
+    }
+  ],
+  "steps": [
+    "started with one verified OKOK VF0 binding",
+    "bound Xiaomi Mi Smart Scale 2 without removing existing scale",
+    "verified both scales are listed in device management",
+    "opened the home scale picker and verified both choices",
+    "switched active scale from Xiaomi to OKOK",
+    "saved a 72.5 kg record attributed to the OKOK device id",
+    "switched active scale from OKOK back to Xiaomi",
+    "saved a 70.1 kg record attributed to the Xiaomi device id"
+  ],
+  "latestMeasurements": {
+    "okok": "219e850e-3074-42d2-986c-9094ef6fc6e0|okok-vf0-smart-scale|72.5|okok-vf0-smart-scale",
+    "xiaomi": "56360cb8-0a04-4d0d-a250-db679d016394|xiaomi-mi-smart-scale-2|70.1|xiaomi-mi-smart-scale-2"
+  },
+  "result": "passed"
+}

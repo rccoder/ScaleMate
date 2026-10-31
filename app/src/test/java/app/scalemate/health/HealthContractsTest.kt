@@ -1,6 +1,7 @@
 package app.scalemate.health
 
 import app.scalemate.food.AiStream
+import app.scalemate.food.AiUsage
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -39,8 +40,21 @@ class HealthContractsTest {
         assertEquals("Hello",AiStream.decode("anthropic","{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}").text)
         assertTrue(AiStream.decode("openai","[DONE]").finished);assertTrue(AiStream.decode("anthropic","{\"type\":\"message_stop\"}").finished)
     }
-    @Test(expected=IllegalArgumentException::class) fun truncatedOpenAiStreamIsRejected(){AiStream.decode("openai","{\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}")}
-    @Test(expected=IllegalArgumentException::class) fun truncatedAnthropicStreamIsRejected(){AiStream.decode("anthropic","{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\"}}")}
+    @Test fun streamUsageKeepsProviderCountsWhenAvailable() {
+        val openAi=AiStream.decode("openai","{\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}").usage
+        assertEquals(AiUsage(10,5,15),openAi)
+        val start=AiStream.decode("anthropic","{\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":20,\"output_tokens\":1}}}").usage
+        val delta=AiStream.decode("anthropic","{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":8}}").usage
+        assertEquals(AiUsage(20,8,null),AiStream.merge(start,delta))
+    }
+    @Test fun streamProgressUsesARoughMixedLanguageTokenEstimate() {
+        assertEquals(0L,AiStream.estimateOutputTokens(""))
+        assertTrue(AiStream.estimateOutputTokens("hello world") in 2L..5L)
+        assertEquals(4L,AiStream.estimateOutputTokens("香煎鸡胸"))
+        assertTrue(AiStream.estimateOutputTokens("{\"name\":\"香煎鸡胸\"}") in 5L..12L)
+    }
+    @Test(expected=app.scalemate.food.AiWire.IncompleteResponse::class) fun truncatedOpenAiStreamIsRejected(){AiStream.decode("openai","{\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}")}
+    @Test(expected=app.scalemate.food.AiWire.IncompleteResponse::class) fun truncatedAnthropicStreamIsRejected(){AiStream.decode("anthropic","{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\"}}")}
     @Test fun longHistoryIsSummarizedWithoutDroppingAnyCategory() {
         val rows=(1..90).flatMap {day->listOf("Steps","Weight","BloodPressure").map {kind->fact.copy(id="$kind-$day",kind=kind,date=java.time.LocalDate.of(2026,1,1).plusDays(day.toLong()).toString(),value=day.toDouble())}}
         val s=snapshot(rows).copy(window=HealthWindow("2026-01-01","2026-05-01"))

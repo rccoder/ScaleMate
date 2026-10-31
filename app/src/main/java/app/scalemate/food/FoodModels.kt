@@ -138,6 +138,6 @@ data class FoodState(
     val loaded: Boolean=false,val meals: List<Meal> = emptyList(),val templates: List<FoodTemplate> = emptyList(),
     val library:List<FoodLibraryEntry> = emptyList(),val services: List<AiService> = emptyList(),val draft: FoodDraft?=null,val defaultVision: String="",val defaultText: String="",
     val selectedService: String="",val permitted: Boolean=false,val healthAvailable:Boolean=true,val busy: Boolean=false,val saving: Boolean=false,
-    val error: Int?=null,val message: Int?=null,val analysisStage:String="",val analysisAttempt:Int=1,val analysisOutputTokens:Long?=null,
-    val analysisStartedAt:Long=0L
+    val error: Int?=null,val message: Int?=null,val analysisStage:String="",val analysisAttempt:Int=1,
+    val analysisStartedAt:Long=0L,val analysisReceivedChunks:Int=0,val analysisEstimatedOutputTokens:Long=0,val analysisFirstTokenMs:Long?=null
 )

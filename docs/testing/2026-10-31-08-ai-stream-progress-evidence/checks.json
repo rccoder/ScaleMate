@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-31",
+  "device": "emulator-5556",
+  "package": "app.scalemate.fooddev",
+  "versionName": "0.4.0-preview.3",
+  "versionCode": 16,
+  "firstInstallTime": "2026-10-31 13:07:41",
+  "lastUpdateTime": "2026-10-31 19:22:13",
+  "apkSha256": "085e55a1bcc55362d893bfc9784396409e3f98b1006b9867a20840731af5a18d",
+  "signerSha256": "4ecf6e774217bb741abc15420e42c6b757e0e3b2de83f413000209abc8cbce58",
+  "tests": {
+    "tests": 269,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "lint": {
+    "errors": 0,
+    "warnings": 133
+  },
+  "streamingMock": {
+    "openAiUsageRequested": true,
+    "firstTokenSeconds": 2.1,
+    "estimatedTokensAtScreenshot": 130,
+    "estimatedTokensLater": 263,
+    "finalProviderUsage": {
+      "inputTokens": 1880,
+      "outputTokens": 91,
+      "totalTokens": 1971
+    }
+  }
+}

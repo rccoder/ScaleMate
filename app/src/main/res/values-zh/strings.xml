@@ -435,12 +435,15 @@
     <string name="food_analysis_encoding">正在准备照片…</string>
     <string name="food_analysis_uploading">正在发送照片…</string>
     <string name="food_analysis_waiting">AI 正在识别这一餐…</string>
+    <string name="food_analysis_receiving">AI 已开始返回</string>
     <string name="food_analysis_parsing">正在整理分析结果…</string>
     <string name="food_analysis_retrying">正在重新获取结果（%1$d/3）…</string>
     <string name="food_analysis_ready">分析完成，请核对下面的食物和份量。</string>
     <string name="food_analysis_encoding_hint">正在本机压缩照片并移除位置信息，不会修改相册原图。</string>
     <string name="food_analysis_uploading_hint">正在发送压缩后的照片，通常只需几秒。</string>
     <string name="food_analysis_waiting_hint">正在识别菜品、份量和营养，通常需要几十秒；菜品或照片较多时会久一些，完成后会自动显示结果。</string>
+    <string name="food_analysis_receiving_hint">首 Token 已在 %1$.1f 秒内返回，已接收 %2$d 个响应片段。服务提供用量后会显示 Token 数。</string>
+    <string name="food_analysis_receiving_estimated_tokens_hint">首 Token 已在 %1$.1f 秒内返回，当前约 %2$d 个输出 Token（粗略估算）。</string>
     <string name="food_analysis_parsing_hint">正在核对食物分组和营养字段，马上就好。</string>
     <string name="food_analysis_retrying_hint">这次返回结果不完整，正在自动重试，不需要你重新操作；照片仍保留在本机。</string>
     <string name="food_analysis_stage_hint">正在处理照片；完成后会自动显示结果。</string>

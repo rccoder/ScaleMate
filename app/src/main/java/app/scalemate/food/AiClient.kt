@@ -82,61 +82,132 @@ class AiClient(private val secrets: AiCredentialProvider=AiSecrets()) {
         private fun logWarning(message:String) {runCatching {Log.w(TAG,message)}}
     }
     suspend fun test(service: AiService) {request(service,JSONArray().put(JSONObject().put("role","user").put("content","Reply with OK. This is a synthetic connectivity test.")))}
-    suspend fun streamText(service:AiService,messages:JSONArray,onText:(String)->Unit):String = suspendCancellableCoroutine {c->
+    suspend fun streamText(service:AiService,messages:JSONArray,onText:(String)->Unit):String =
+        streamResponse(service,messages,4096,45_000,onText).text
+
+    internal suspend fun streamResponse(
+        service:AiService,
+        messages:JSONArray,
+        maxTokens:Int,
+        timeoutMs:Int=RESPONSE_TIMEOUT_MS,
+        onText:(String)->Unit,
+        onProgress:(AiStream.Progress)->Unit={},
+        onStage:(String)->Unit={}
+    ):AiStream.Result = suspendCancellableCoroutine {c->
         val connection=AtomicReference<HttpURLConnection?>()
         c.invokeOnCancellation {connection.get()?.disconnect()}
         executor.execute {
-            var phase="start";var eventCount=0;var textEvents=0;var finishedEvent=false
+            var phase="start";var eventCount=0;var textEvents=0;var finishedEvent=false;var liveUsage=AiUsage()
             try {
                 if(!c.isActive)return@execute
                 phase="credential"
                 val key=try {secrets.decrypt(service)}catch(_:Exception){throw FoodFailure(R.string.food_key_error)}
-                phase="connect"
                 val url=AiEndpoint.requestUrl(service.baseUrl,service.format)
-                val conn=URI(url).toURL().openConnection() as HttpURLConnection;connection.set(conn)
-                if(!c.isActive){conn.disconnect();return@execute}
-                conn.apply {requestMethod="POST";instanceFollowRedirects=false;connectTimeout=15000;readTimeout=45000;doOutput=true
-                    setRequestProperty("Content-Type","application/json");setRequestProperty("Accept","text/event-stream")
-                    if(service.format=="anthropic"){setRequestProperty("x-api-key",key);setRequestProperty("anthropic-version","2023-06-01")}else setRequestProperty("Authorization","Bearer $key")}
-                val payload=AiWire.body(service,messages,4096).put("stream",true).apply {if(service.format=="openai")put("max_tokens",4096)}.toString().toByteArray()
-                conn.setFixedLengthStreamingMode(payload.size);conn.outputStream.use {it.write(payload)}
-                phase="response"
-                if(conn.responseCode !in 200..299)throw FoodFailure(when(conn.responseCode){401,403->R.string.food_ai_auth;429->R.string.food_ai_limit;in 300..399->R.string.food_ai_redirect;else->R.string.food_ai_http})
-                val output=StringBuilder();var total=0;var finished=false
-                if(conn.contentType.orEmpty().contains("application/json")) {
-                    phase="json-body"
-                    val bytes=conn.inputStream.use {it.readNBytes(262145)};require(bytes.size<=262144)
-                    output.append(AiWire.text(service.format,JSONObject(bytes.toString(Charsets.UTF_8))));onText(output.toString());finished=true
-                } else conn.inputStream.bufferedReader().use {reader->
-                    phase="event-stream"
-                    val data=StringBuilder()
-                    while(c.isActive) {
-                        val line=reader.readLine() ?: break
-                        total+=line.length;require(total<=1048576&&line.length<=262144)
-                        if(line.startsWith("data:")){if(data.isNotEmpty())data.append('\n');data.append(line.removePrefix("data:").trimStart())}
-                        if(line.isEmpty()&&data.isNotEmpty()) {
-                            eventCount++
-                            val delta=AiStream.decode(service.format,data.toString());data.setLength(0)
-                            output.append(delta.text);require(output.length<=65536)
-                            if(delta.text.isNotEmpty()){textEvents++;onText(output.toString())}
-                            if(delta.finished){finished=true;finishedEvent=true;break}
+                var includeUsage=service.format=="openai"
+                while(true) {
+                    phase="connect"
+                    val conn=URI(url).toURL().openConnection() as HttpURLConnection;connection.set(conn)
+                    try {
+                        if(!c.isActive)return@execute
+                        conn.apply {requestMethod="POST";instanceFollowRedirects=false;connectTimeout=CONNECT_TIMEOUT_MS;readTimeout=timeoutMs;doOutput=true
+                            setRequestProperty("Content-Type","application/json");setRequestProperty("Accept","text/event-stream")
+                            if(service.format=="anthropic"){setRequestProperty("x-api-key",key);setRequestProperty("anthropic-version","2023-06-01")}else setRequestProperty("Authorization","Bearer $key")}
+                        val payload=AiWire.body(service,messages,maxTokens).put("stream",true).apply {
+                            if(service.format=="openai") {
+                                put("max_tokens",maxTokens)
+                                if(includeUsage)put("stream_options",JSONObject().put("include_usage",true))
+                            }
+                        }.toString().toByteArray()
+                        conn.setFixedLengthStreamingMode(payload.size)
+                        onStage("uploading")
+                        conn.outputStream.use {it.write(payload)}
+                        onStage("waiting")
+                        phase="response"
+                        val code=conn.responseCode
+                        if(code !in 200..299) {
+                            if(service.format=="openai"&&includeUsage&&code in setOf(400,422)&&rejectsStreamUsageOption(conn)) {
+                                includeUsage=false
+                                continue
+                            }
+                            throw FoodFailure(when(code){401,403->R.string.food_ai_auth;429->R.string.food_ai_limit;in 300..399->R.string.food_ai_redirect;else->R.string.food_ai_http})
                         }
+                        val output=StringBuilder();var total=0;var finished=false;var chunks=0
+                        if(conn.contentType.orEmpty().contains("application/json")) {
+                            phase="json-body"
+                            val bytes=conn.inputStream.use {it.readNBytes(262145)};require(bytes.size<=262144)
+                            val response=JSONObject(bytes.toString(Charsets.UTF_8))
+                            val text=try {AiWire.text(service.format,response)}catch(e:Exception) {
+                                throw FoodFailure(when(e){
+                                    is AiWire.IncompleteResponse->R.string.food_ai_truncated
+                                    is AiWire.EmptyResponse->R.string.food_ai_empty_response
+                                    else->R.string.food_ai_invalid
+                                })
+                            }
+                            require(text.length<=65536)
+                            liveUsage=AiStream.usage(response.optJSONObject("usage"))
+                            output.append(text);chunks=1;finished=true
+                            onText(output.toString());onProgress(AiStream.Progress(
+                                chunks,output.length,liveUsage,AiStream.estimateOutputTokens(output)
+                            ))
+                        } else conn.inputStream.bufferedReader().use {reader->
+                            phase="event-stream"
+                            val data=StringBuilder();var reportedUsage=AiUsage()
+                            while(c.isActive) {
+                                val line=reader.readLine() ?: break
+                                total+=line.length;require(total<=1048576&&line.length<=262144)
+                                if(line.startsWith("data:")){if(data.isNotEmpty())data.append('\n');data.append(line.removePrefix("data:").trimStart())}
+                                if(line.isEmpty()&&data.isNotEmpty()) {
+                                    eventCount++
+                                    val frame=data.toString();data.setLength(0)
+                                    val delta=AiStream.decode(service.format,frame)
+                                    liveUsage=AiStream.merge(liveUsage,delta.usage)
+                                    output.append(delta.text);require(output.length<=65536)
+                                    if(delta.text.isNotEmpty()){textEvents++;chunks++;onText(output.toString())}
+                                    if(delta.text.isNotEmpty()||liveUsage!=reportedUsage)onProgress(AiStream.Progress(
+                                        chunks,output.length,liveUsage,AiStream.estimateOutputTokens(output)
+                                    ))
+                                    reportedUsage=liveUsage
+                                    if(delta.finished){
+                                        finished=true;finishedEvent=true
+                                        if(service.format=="anthropic"||frame=="[DONE]")break
+                                    }
+                                }
+                            }
+                        }
+                        if(!finished||output.isBlank())logWarning("stream incomplete: phase=$phase events=$eventCount textEvents=$textEvents finishedEvent=$finishedEvent output=${output.length}")
+                        if(!finished)throw FoodFailure(R.string.food_ai_truncated)
+                        if(output.isBlank())throw FoodFailure(R.string.food_ai_empty_response)
+                        if(c.isActive)c.resume(AiStream.Result(output.toString(),liveUsage))
+                        return@execute
+                    } finally {
+                        conn.disconnect()
+                        connection.compareAndSet(conn,null)
                     }
                 }
-                if(!finished||output.isBlank())logWarning("stream incomplete: phase=$phase events=$eventCount textEvents=$textEvents finishedEvent=$finishedEvent output=${output.length}")
-                require(finished&&output.isNotBlank())
-                if(c.isActive)c.resume(output.toString())
             }catch(e:Exception){
                 logWarning("stream failed: phase=$phase events=$eventCount textEvents=$textEvents finishedEvent=$finishedEvent type=${e.javaClass.simpleName}")
                 if(c.isActive)c.resumeWithException(when(e){
                     is FoodFailure->e
+                    is AiWire.IncompleteResponse->FoodFailure(R.string.food_ai_truncated)
+                    is AiWire.EmptyResponse->FoodFailure(R.string.food_ai_empty_response)
                     is SocketTimeoutException->FoodFailure(R.string.food_ai_timeout)
                     is java.net.SocketException,is java.io.IOException->FoodFailure(R.string.food_ai_network)
                     else->FoodFailure(R.string.food_ai_invalid)
                 })
             }
-            finally {connection.getAndSet(null)?.disconnect()}
+            finally {
+                connection.getAndSet(null)?.disconnect()
+            }
         }
+    }
+    private fun rejectsStreamUsageOption(conn:HttpURLConnection):Boolean {
+        val message=runCatching {
+            conn.errorStream?.use {it.readNBytes(16384).toString(Charsets.UTF_8).lowercase()}.orEmpty()
+        }.getOrDefault("")
+        return listOf(
+            "stream_options","include_usage","unknown parameter","unrecognized parameter",
+            "unsupported parameter","unknown field","unrecognized field","unsupported field"
+        ).any(message::contains)
     }
     suspend fun recognize(service:AiService,photo:ByteArray,description:String,tags:Set<String>,outputLanguage:String=java.util.Locale.getDefault().toLanguageTag()):List<FoodItem> = recognize(service,listOf(photo),description,tags,1,outputLanguage=outputLanguage)
     suspend fun recognize(service:AiService,photos:List<ByteArray>,description:String,tags:Set<String>,sharing:Int,paths:List<String> = emptyList(),outputLanguage:String=java.util.Locale.getDefault().toLanguageTag()):List<FoodItem> =
@@ -151,7 +222,8 @@ class AiClient(private val secrets: AiCredentialProvider=AiSecrets()) {
         outputLanguage:String=java.util.Locale.getDefault().toLanguageTag(),
         previous:List<FoodItem> = emptyList(),
         previousAdvice:MealAdvice = MealAdvice(),
-        onStage:(String)->Unit={}
+        onStage:(String)->Unit={},
+        onStreamProgress:(Int,AiStream.Progress)->Unit={_,_->}
     ):FoodRecognitionResult {
         if(!service.images)throw FoodFailure(R.string.food_no_visual)
         require(photos.size in 1..FoodImages.MAX_PHOTOS&&photos.sumOf {it.size.toLong()}<=FoodImages.MAX_UPLOAD_BYTES)
@@ -217,25 +289,16 @@ class AiClient(private val secrets: AiCredentialProvider=AiSecrets()) {
         for(attempt in 1..4) {
             if(attempt>1)onStage("retry:$attempt")
             try {
-                onStage("uploading")
-                val response=exchange(
-                    service=service,
-                    url=AiEndpoint.requestUrl(service.baseUrl,service.format),
-                    payload=AiWire.body(service,messages,4096),
-                    timeoutMs=RESPONSE_TIMEOUT_MS,
+                val streamed=streamResponse(
+                    service,messages,4096,RESPONSE_TIMEOUT_MS,
+                    onText={},
+                    onProgress={progress->onStreamProgress(attempt,progress)},
                     onStage=onStage
                 )
                 onStage("parsing")
-                val raw=try {AiWire.text(service.format,response)}catch(e:Exception) {
-                    throw FoodFailure(when(e){
-                        is AiWire.IncompleteResponse->R.string.food_ai_truncated
-                        is AiWire.EmptyResponse->R.string.food_ai_empty_response
-                        else->R.string.food_ai_invalid
-                    })
-                }
                 return try {
-                    val recognized=FoodJson.recognition(raw,sharing,paths,tags,description)
-                    FoodRecognitionResult(recognized.items,recognized.advice,FoodJson.usage(response.toString()))
+                    val recognized=FoodJson.recognition(streamed.text,sharing,paths,tags,description)
+                    FoodRecognitionResult(recognized.items,recognized.advice,streamed.usage.takeIf {it.hasContent} ?: FoodJson.usage(streamed.text))
                 }catch(e:Exception) {
                     throw FoodFailure(if(e is FoodJson.EmptyRecognition)R.string.food_no_food_recognized else R.string.food_ai_invalid)
                 }

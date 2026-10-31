@@ -1,0 +1,1 @@
+{"path": "/v1/chat/completions", "stream": true, "stream_options": {"include_usage": true}, "max_tokens": 4096}

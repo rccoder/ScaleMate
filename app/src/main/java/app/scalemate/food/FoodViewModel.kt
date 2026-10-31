@@ -134,21 +134,44 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
         val requestId=newFoodId();activeRequest=requestId
         val startedAt=System.currentTimeMillis()
         mutable.update {it.copy(
-            busy=true,error=null,message=null,analysisStage="uploading",analysisAttempt=1,analysisOutputTokens=null,analysisStartedAt=startedAt,
+            busy=true,error=null,message=null,analysisStage="uploading",analysisAttempt=1,
+            analysisStartedAt=startedAt,analysisReceivedChunks=0,analysisEstimatedOutputTokens=0,analysisFirstTokenMs=null,
             draft=it.draft?.copy(batch=batch.copy(status="analyzing"))
         )};persistDraft()
         aiJob=viewModelScope.launch {try {
             val bytes=withContext(Dispatchers.IO){batch.photos.map {File(it).readBytes().also {bytes->require(bytes.size<=FoodImages.MAX_IMAGE_BYTES)}}}
-            val result=ai.recognizeDetailed(service,bytes,batch.description,batch.tags,batch.shareCount,batch.photos,outputLanguage=outputLanguage,previous=batch.results,previousAdvice=batch.advice){stage->
-                if(activeRequest==requestId)mutable.update {it.copy(
-                    analysisStage=if(stage.startsWith("retry:"))"retrying" else stage,
-                    analysisAttempt=stage.substringAfter("retry:",stage).toIntOrNull() ?: it.analysisAttempt
-                )}
-            }
+            val result=ai.recognizeDetailed(
+                service,bytes,batch.description,batch.tags,batch.shareCount,batch.photos,
+                outputLanguage=outputLanguage,previous=batch.results,previousAdvice=batch.advice,
+                onStage={stage->
+                    if(activeRequest==requestId)mutable.update {
+                        val retry=stage.startsWith("retry:")
+                        it.copy(
+                            analysisStage=if(retry)"retrying" else stage,
+                            analysisAttempt=stage.substringAfter("retry:",stage).toIntOrNull() ?: it.analysisAttempt,
+                            analysisReceivedChunks=if(retry)0 else it.analysisReceivedChunks,
+                            analysisEstimatedOutputTokens=if(retry)0 else it.analysisEstimatedOutputTokens,
+                            analysisFirstTokenMs=if(retry)null else it.analysisFirstTokenMs
+                        )
+                    }
+                },
+                onStreamProgress={attempt,progress->
+                    if(activeRequest==requestId)mutable.update {
+                        val receivedText=progress.receivedChunks>0
+                        it.copy(
+                            analysisStage=if(receivedText)"receiving" else it.analysisStage,
+                            analysisAttempt=attempt,
+                            analysisReceivedChunks=progress.receivedChunks,
+                            analysisEstimatedOutputTokens=progress.estimatedOutputTokens,
+                            analysisFirstTokenMs=it.analysisFirstTokenMs ?: if(receivedText)System.currentTimeMillis()-startedAt else null
+                        )
+                    }
+                }
+            )
             if(activeRequest==requestId&&mutable.value.draft?.batch?.id==batch.id) {
                 val elapsed=System.currentTimeMillis()-startedAt
                 mutable.update {it.copy(
-                    analysisStage="ready",message=R.string.food_analysis_ready,analysisOutputTokens=result.usage.outputTokens,
+                    analysisStage="ready",message=R.string.food_analysis_ready,
                     draft=it.draft?.let {d->d.copy(batch=d.batch?.copy(
                         results=result.items,status="review",advice=result.advice,
                         usage=result.usage,analysisMs=elapsed
@@ -158,13 +181,14 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
         }catch(e:CancellationException){throw e}catch(e:FoodFailure){if(activeRequest==requestId)fail(e.resource)}catch(_:Exception){if(activeRequest==requestId)fail(R.string.food_ai_request_error)}finally {
             if(activeRequest==requestId){activeRequest=null;mutable.update {it.copy(
                 busy=false,analysisStage=if(it.analysisStage=="ready")"ready" else "failed",
+                analysisReceivedChunks=0,analysisEstimatedOutputTokens=0,analysisFirstTokenMs=null,
                 draft=it.draft?.let {d->if(d.batch?.status=="analyzing")d.copy(batch=d.batch.copy(status="interrupted")) else d}
             )};persistDraft()}
         }}
     }
     private var activeRequest:String?=null
     fun cancelAi(){activeRequest=null;aiJob?.cancel();aiJob=null;mutable.update {it.copy(
-        busy=false,analysisStage="",
+        busy=false,analysisStage="",analysisReceivedChunks=0,analysisEstimatedOutputTokens=0,analysisFirstTokenMs=null,
         draft=it.draft?.let {d->if(d.batch?.status=="analyzing")d.copy(batch=d.batch.copy(status="interrupted")) else d}
     )};persistDraft()}
     private fun save(done:()->Unit) {

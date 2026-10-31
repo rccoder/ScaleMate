@@ -435,12 +435,15 @@
     <string name="food_analysis_encoding">Preparing photos…</string>
     <string name="food_analysis_uploading">Sending photos…</string>
     <string name="food_analysis_waiting">AI is identifying this meal…</string>
+    <string name="food_analysis_receiving">AI has started responding</string>
     <string name="food_analysis_parsing">Organizing the result…</string>
     <string name="food_analysis_retrying">Getting a fresh result (%1$d/3)…</string>
     <string name="food_analysis_ready">Analysis complete. Check the foods and portions below.</string>
     <string name="food_analysis_encoding_hint">Compressing photos on this device and removing location metadata. Your original photos stay unchanged.</string>
     <string name="food_analysis_uploading_hint">Sending the compressed photos; this usually takes a few seconds.</string>
     <string name="food_analysis_waiting_hint">Identifying foods, portions, and nutrition. This usually takes tens of seconds and may take longer with more foods or photos; the result will appear automatically.</string>
+    <string name="food_analysis_receiving_hint">First token returned within %1$.1f s; response chunks: %2$d. Token usage will appear if the service provides it.</string>
+    <string name="food_analysis_receiving_estimated_tokens_hint">First token returned within %1$.1f s; estimated output tokens: %2$d (rough estimate).</string>
     <string name="food_analysis_parsing_hint">Checking food grouping and nutrition fields; almost done.</string>
     <string name="food_analysis_retrying_hint">The response was incomplete. Retrying automatically; no action is needed and your photos remain on this device.</string>
     <string name="food_analysis_stage_hint">Processing the photos; the result will appear automatically.</string>

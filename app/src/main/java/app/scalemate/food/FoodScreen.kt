@@ -160,7 +160,10 @@ import kotlinx.coroutines.launch
             if(!editorPanel&&page!=initialPage)IconButton(onClick={goBack()}){Icon(Icons.AutoMirrored.Filled.ArrowBack,stringResource(R.string.back_food))}
             s.error?.let {resource->FoodCard {Text(stringResource(resource),color=MaterialTheme.colorScheme.error);TextButton(onClick=vm::clearMessage){Text(stringResource(R.string.done))}}}
             s.message?.let {if(it==R.string.food_analysis_ready)FoodAnalysisReady() else Text(stringResource(it),color=MaterialTheme.colorScheme.primary)}
-            if(s.busy)FoodAnalysisStatus(s.analysisStage,s.analysisAttempt,s.analysisStartedAt,vm::cancelAi)
+            if(s.busy)FoodAnalysisStatus(
+                s.analysisStage,s.analysisAttempt,s.analysisStartedAt,
+                s.analysisReceivedChunks,s.analysisEstimatedOutputTokens,s.analysisFirstTokenMs,vm::cancelAi
+            )
             when(page) {
                 "home" -> {
                     val meals=s.meals.filter {!it.deleted && Instant.ofEpochMilli(it.time).atZone(ZoneId.systemDefault()).toLocalDate().toString()==date}
@@ -633,11 +636,14 @@ private val FoodImageShape=RoundedCornerShape(12.dp)
         color=MaterialTheme.colorScheme.onSurfaceVariant
     )
 }
-@Composable private fun FoodAnalysisStatus(stageValue:String,attempt:Int,startedAt:Long,cancel:()->Unit) {
+@Composable private fun FoodAnalysisStatus(
+    stageValue:String,attempt:Int,startedAt:Long,receivedChunks:Int,estimatedTokens:Long,firstTokenMs:Long?,cancel:()->Unit
+) {
     val stage=when(stageValue) {
             "encoding"->R.string.food_analysis_encoding
             "uploading"->R.string.food_analysis_uploading
             "waiting"->R.string.food_analysis_waiting
+            "receiving"->R.string.food_analysis_receiving
             "parsing"->R.string.food_analysis_parsing
             "retrying"->R.string.food_analysis_retrying
             "ready"->R.string.food_analysis_ready
@@ -647,6 +653,7 @@ private val FoodImageShape=RoundedCornerShape(12.dp)
         "encoding"->R.string.food_analysis_encoding_hint
         "uploading"->R.string.food_analysis_uploading_hint
         "waiting"->R.string.food_analysis_waiting_hint
+        "receiving"->R.string.food_analysis_receiving_hint
         "parsing"->R.string.food_analysis_parsing_hint
         "retrying"->R.string.food_analysis_retrying_hint
         else->R.string.food_analysis_stage_hint
@@ -665,8 +672,15 @@ private val FoodImageShape=RoundedCornerShape(12.dp)
             Text(if(stageValue=="retrying")stringResource(stage,attempt-1,3) else stringResource(stage),style=MaterialTheme.typography.titleMedium,modifier=Modifier.weight(1f))
             if(seconds>0)Text(stringResource(R.string.food_analysis_elapsed,seconds),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text(stringResource(hint),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-        if(stageValue=="waiting"&&seconds>=45)
+        if(stageValue=="receiving") {
+            val firstSeconds=(firstTokenMs ?: 0L)/1000.0
+            Text(
+                if(estimatedTokens>0)stringResource(R.string.food_analysis_receiving_estimated_tokens_hint,firstSeconds,estimatedTokens)
+                else stringResource(R.string.food_analysis_receiving_hint,firstSeconds,receivedChunks),
+                style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else Text(stringResource(hint),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        if(stageValue in setOf("waiting","receiving")&&seconds>=45)
             Text(stringResource(R.string.food_analysis_slow_hint),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         TextButton(onClick=cancel,contentPadding=PaddingValues(0.dp)){Text(stringResource(R.string.food_analysis_cancel))}
     }

@@ -47,7 +47,86 @@ class HealthAiTransportTest {
                 payload.complete(JSONObject(request.body))
                 val events=if(format=="openai")listOf("""{"choices":[{"delta":{"content":"Hello "}}]}""","""{"choices":[{"delta":{"content":"world"}}]}""","""{"choices":[{"delta":{},"finish_reason":"stop"}]}""") else listOf("""{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello "}}""","""{"type":"content_block_delta","delta":{"type":"text_delta","text":"world"}}""","""{"type":"message_stop"}""")
                 respond(out,events.joinToString(""){"data: $it\n\n"})
-            }.use {server->val partials=mutableListOf<String>();val result=client.streamText(service(server.port,format),messages()){partials+=it};assertEquals("Hello world",result);assertEquals(listOf("Hello ","Hello world"),partials);val body=payload.await();assertTrue(body.getBoolean("stream"));assertEquals("synthetic-model",body.getString("model"))}
+            }.use {server->val partials=mutableListOf<String>();val result=client.streamText(service(server.port,format),messages()){partials+=it};assertEquals("Hello world",result);assertEquals(listOf("Hello ","Hello world"),partials);val body=payload.await();assertTrue(body.getBoolean("stream"));assertEquals("synthetic-model",body.getString("model"));if(format=="openai")assertTrue(body.getJSONObject("stream_options").getBoolean("include_usage"))}
+        }
+    }
+    @Test fun streamingTransportReportsEachCumulativeTextChunk()=runBlocking {
+        Loopback {_,out->
+            val events=listOf(
+                """{"choices":[{"delta":{"content":"{\"foods\":"}}]}""",
+                """{"choices":[{"delta":{"content":"[]}"},"finish_reason":"stop"}]}"""
+            )
+            respond(out,events.joinToString(""){"data: $it\n\n"})
+        }.use {server->
+            val stages=mutableListOf<String>();val progress=mutableListOf<AiStream.Progress>()
+            val result=client.streamResponse(
+                service(server.port),messages(),64,5_000,{},{progress+=it},{stages+=it}
+            )
+            assertEquals("{\"foods\":[]}",result.text)
+            assertEquals(listOf("uploading","waiting"),stages)
+            assertEquals(listOf(1,2),progress.map {it.receivedChunks})
+            assertEquals(listOf(9,12),progress.map {it.receivedChars})
+            assertTrue(progress.all {it.estimatedOutputTokens>0})
+            assertTrue(progress[1].estimatedOutputTokens>=progress[0].estimatedOutputTokens)
+        }
+    }
+    @Test fun openAiUsageEventAfterFinishIsReportedBeforeDone()=runBlocking {
+        Loopback {_,out->
+            val events=listOf(
+                """{"choices":[{"delta":{"content":"{\"foods\":[]}"}}]}""",
+                """{"choices":[{"delta":{},"finish_reason":"stop"}]}""",
+                """{"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}""",
+                "[DONE]"
+            )
+            respond(out,events.joinToString(""){"data: $it\n\n"})
+        }.use {server->
+            val progress=mutableListOf<AiStream.Progress>()
+            val result=client.streamResponse(
+                service(server.port),messages(),64,5_000,{},{progress+=it}
+            )
+            assertEquals(AiUsage(10,5,15),result.usage)
+            assertEquals(1,progress.last().receivedChunks)
+            assertEquals(5L,progress.last().usage.outputTokens)
+        }
+    }
+    @Test fun anthropicUsageBeforeFirstTextDoesNotCountAsATextChunk()=runBlocking {
+        Loopback {_,out->
+            val events=listOf(
+                """{"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":1}}}""",
+                """{"type":"content_block_delta","delta":{"type":"text_delta","text":"{\"foods\":[]}"}}""",
+                """{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}""",
+                """{"type":"message_stop"}"""
+            )
+            respond(out,events.joinToString(""){"data: $it\n\n"})
+        }.use {server->
+            val progress=mutableListOf<AiStream.Progress>()
+            val result=client.streamResponse(
+                service(server.port,"anthropic"),messages(),64,5_000,{},{progress+=it}
+            )
+            assertEquals(AiUsage(10,5,null),result.usage)
+            assertEquals(listOf(0,1,1),progress.map {it.receivedChunks})
+            assertEquals(listOf(1L,1L,5L),progress.map {it.usage.outputTokens})
+        }
+    }
+    @Test fun openAiRetriesWithoutOptionalUsageWhenCompatibilityServiceRejectsIt()=runBlocking {
+        val requests=mutableListOf<JSONObject>()
+        Loopback {request,out->
+            requests+=JSONObject(request.body)
+            if(requests.size==1) {
+                respond(out,"""{"error":{"message":"Unsupported parameter: stream_options"}}""",400)
+            } else {
+                respond(out,"data: {\"choices\":[{\"delta\":{\"content\":\"{\\\"foods\\\":[]}\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+            }
+        }.use {server->
+            val progress=mutableListOf<AiStream.Progress>()
+            val result=client.streamResponse(
+                service(server.port),messages(),64,5_000,{},{progress+=it}
+            )
+            assertEquals("{\"foods\":[]}",result.text)
+            assertEquals(2,requests.size)
+            assertTrue(requests[0].has("stream_options"))
+            assertFalse(requests[1].has("stream_options"))
+            assertEquals(listOf(1),progress.map {it.receivedChunks})
         }
     }
     @Test fun redirectDoesNotForwardSyntheticCredentials()=runBlocking {

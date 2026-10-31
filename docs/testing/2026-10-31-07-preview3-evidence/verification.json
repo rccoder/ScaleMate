@@ -1,0 +1,71 @@
+{
+  "tag": "v0.4.0-preview.3",
+  "releaseCommit": "61de492207ef9a3bba0d01a8cb1d350256a606f0",
+  "ciRun": "https://github.com/rccoder/ScaleMate/actions/runs/41191542378",
+  "releaseRun": "https://github.com/rccoder/ScaleMate/actions/runs/41191831023",
+  "releaseUrl": "https://github.com/rccoder/ScaleMate/releases/tag/v0.4.0-preview.3",
+  "isPrerelease": true,
+  "latestRelease": "v0.3.3",
+  "assets": {
+    "ScaleMate.apk": {
+      "sha256": "48ac9a0b5f9f3333b9e982c2b01753779f750341adeaf9e8535e10a818167071",
+      "sizeBytes": 25888616
+    },
+    "SHA256SUMS": {
+      "sha256": "44a0b58b5b7c5db23947de0b8d903dca6662486482835651a17790c4f6134979",
+      "sizeBytes": 80
+    },
+    "signing-certificate.txt": {
+      "sha256": "7101d592bccd52f047dac7d1687cdf67aad27ae799e9fc0c4eaca182aa13f846",
+      "sizeBytes": 957
+    },
+    "update.json": {
+      "sha256": "bda40a0c09940e92951be7a7b1bf55b876f8c98d64140e71419ca6c384dd23ef",
+      "sizeBytes": 2302
+    },
+    "update.json.sig": {
+      "sha256": "ec114f2fa52b19b55e9de5ce1c451cfe899e879ee5a513e4b4ca94de844dceea",
+      "sizeBytes": 512
+    },
+    "releases.json": {
+      "sha256": "8eab953cec4f57b37f111c82ec07bd70da6702e81f2fcb818049db72bf850372",
+      "sizeBytes": 2165
+    },
+    "releases.json.sig": {
+      "sha256": "14f2073a5b4da2e36adcd44abc16dc4e0fdfccc661714acd619baa197cc2638f",
+      "sizeBytes": 512
+    }
+  },
+  "apk": {
+    "applicationId": "app.scalemate",
+    "versionName": "0.4.0-preview.3",
+    "versionCode": 16,
+    "debuggable": false,
+    "certificateSha256": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5"
+  },
+  "metadataChecks": {
+    "sha256sums": "passed",
+    "checkRelease": "passed",
+    "updateJsonSignature": "passed",
+    "releasesJsonSignature": "passed",
+    "updateManifest": "passed"
+  },
+  "emulatorUpgrade": {
+    "device": "emulator-5556",
+    "before": {
+      "versionName": "0.4.0-preview.2",
+      "versionCode": 15,
+      "firstInstallTime": "2026-10-31 12:09:19"
+    },
+    "after": {
+      "versionName": "0.4.0-preview.3",
+      "versionCode": 16,
+      "firstInstallTime": "2026-10-31 12:09:19",
+      "lastUpdateTime": "2026-10-31 18:26:46",
+      "installedApkSha256": "48ac9a0b5f9f3333b9e982c2b01753779f750341adeaf9e8535e10a818167071"
+    },
+    "channel": "preview",
+    "downloadSource": "github-official",
+    "systemInstallerApproved": true
+  }
+}

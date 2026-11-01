@@ -1,0 +1,93 @@
+{
+  "tag": "v0.4.1",
+  "versionName": "0.4.1",
+  "versionCode": 20,
+  "releaseCommit": "565ef0989b8bd6588ae626fd3972c33080fbbaa1",
+  "ci": {
+    "android": "https://github.com/rccoder/ScaleMate/actions/runs/41291153050",
+    "release": "https://github.com/rccoder/ScaleMate/actions/runs/41291453979"
+  },
+  "release": {
+    "url": "https://github.com/rccoder/ScaleMate/releases/tag/v0.4.1",
+    "isDraft": false,
+    "isPrerelease": false,
+    "isLatest": true,
+    "assetCount": 7
+  },
+  "checks": {
+    "releaseScriptsPassed": 15,
+    "i18nPairs": 806,
+    "jvmTests": 277,
+    "jvmFailures": 0,
+    "jvmErrors": 0,
+    "jvmSkipped": 0,
+    "lintErrors": 0,
+    "lintWarnings": 133,
+    "assembleDebug": true,
+    "sha256sums": true,
+    "apkSignatureAndPackage": true,
+    "updateSignature": true,
+    "releasesSignature": true,
+    "updateManifest": true,
+    "releaseBodyMatchesRepositoryNotes": true
+  },
+  "apk": {
+    "fileName": "ScaleMate.apk",
+    "sizeBytes": 25926856,
+    "sha256": "a78b0ff892f44f47a85981a4b36f422be3845af0d3af53ae139bb6317d1debba",
+    "certificateSha256": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5"
+  },
+  "assets": {
+    "SHA256SUMS": {
+      "sizeBytes": 80,
+      "sha256": "5d005adf20f2c9db9ffc100ea9109201e610b1e78667df337a6c73be2f8102cf"
+    },
+    "releases.json": {
+      "sizeBytes": 1832,
+      "sha256": "60bebfd7dfd89957bfc673fdb9df296839a89e9f16f2f5c777eb1d497754a21b"
+    },
+    "releases.json.sig": {
+      "sizeBytes": 512,
+      "sha256": "882da29f221c8c29a727be156a03e4efe40dd9c0122fafecd2606c1e3a120dd8"
+    },
+    "signing-certificate.txt": {
+      "sizeBytes": 957,
+      "sha256": "7101d592bccd52f047dac7d1687cdf67aad27ae799e9fc0c4eaca182aa13f846"
+    },
+    "update.json": {
+      "sizeBytes": 1956,
+      "sha256": "a6ebb038f54ffc86114ff8a3b03e1f95aa71598a8c6710531ce6b47dcb8fa4a8"
+    },
+    "update.json.sig": {
+      "sizeBytes": 512,
+      "sha256": "3707087ecbf199377d990ff789b3f5281c4690c6c4449754115fd12be23242cd"
+    }
+  },
+  "latestDownload": {
+    "url": "https://github.com/rccoder/ScaleMate/releases/latest/download/ScaleMate.apk",
+    "httpStatus": 200,
+    "sizeBytes": 25926856
+  },
+  "emulatorUpgrade": {
+    "device": "emulator-5556",
+    "androidApi": 36,
+    "before": {
+      "versionName": "0.4.1-preview.1",
+      "versionCode": 19,
+      "firstInstallTime": "2026-10-31 12:09:19"
+    },
+    "after": {
+      "versionName": "0.4.1",
+      "versionCode": 20,
+      "firstInstallTime": "2026-10-31 12:09:19",
+      "lastUpdateTime": "2026-11-01 17:08:39"
+    },
+    "installedApkSha256MatchesRelease": true,
+    "launched": true,
+    "settingsVersionVisible": true
+  },
+  "previewUserConfirmation": {
+    "reportedWorking": true,
+    "functionalCodeChangedBeforeStable": false
+  }
+}

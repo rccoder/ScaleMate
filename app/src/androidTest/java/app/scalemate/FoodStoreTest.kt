@@ -210,7 +210,8 @@ class FoodStoreTest {
             assertEquals(1.0,food.factor,0.0);assertEquals(food.nutrients,food.reuse().nutrients)
             assertNull(food.base.protein);assertEquals(listOf("a","b"),food.photos)
         }
-        try {FoodJson.recognitionPersonal(raw,2,listOf("a"));fail("Invalid image index accepted")}catch(_:IllegalArgumentException){}
+        assertEquals(listOf("a"),FoodJson.recognitionPersonal(raw,2,listOf("a")).single().photos)
+        assertEquals(listOf("a","b"),FoodJson.recognitionPersonal(raw.replace("[0,1]","[1,2]"),2,listOf("a","b")).single().photos)
         for(invalid in listOf(raw.replace("360","-1"),raw.replace("personalNutrients","wholeOnly"),raw.replace("\"calculationMode\":\"personal\",",""))) {
             try {FoodJson.recognitionPersonal(invalid,2);fail("Invalid final-intake contract accepted")}catch(_:Exception){}
         }

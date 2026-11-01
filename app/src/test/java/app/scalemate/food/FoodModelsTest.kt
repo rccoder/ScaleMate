@@ -45,6 +45,28 @@ class FoodModelsTest {
         assertFalse(FoodItem(name="x",base=Nutrients(100.0),needsPortionReview=true).valid())
         assertFalse(FoodItem(name="x",base=Nutrients(100.0),quantity=0.0).valid())
     }
+    @Test fun photoChangesDiscardPreviousAnalysisButKeepStructuredMealContext() {
+        val initial=FoodBatch(photos=listOf("a"),description="两人分享",tags=setOf("少油"),shareCount=2)
+        assertEquals("两人分享",initial.withChangedPhotos(listOf("a","b")).description)
+
+        val analyzed=initial.copy(
+            description="米饭再少一半",
+            results=listOf(FoodItem(name="米饭",base=Nutrients(200.0))),
+            advice=MealAdvice(healthiness="以主食为主"),
+            usage=AiUsage(100,20,120),
+            analysisMs=8_000
+        )
+        val changed=analyzed.withChangedPhotos(listOf("b"))
+        assertEquals(listOf("b"),changed.photos)
+        assertEquals("",changed.description)
+        assertTrue(changed.results.isEmpty())
+        assertEquals(MealAdvice(),changed.advice)
+        assertEquals(AiUsage(),changed.usage)
+        assertNull(changed.analysisMs)
+        assertEquals("idle",changed.status)
+        assertEquals(setOf("少油"),changed.tags)
+        assertEquals(2,changed.shareCount)
+    }
     @Test fun modelListEndpointsKeepProviderPrefixesAndAcceptFullInferencePaths() {
         assertEquals("https://example.com/v1/models",AiEndpoint.modelsUrl("https://example.com/v1/","openai"))
         assertEquals("https://example.com/proxy/v1/models",AiEndpoint.modelsUrl("https://example.com/proxy/v1/chat/completions","openai"))

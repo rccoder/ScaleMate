@@ -5,6 +5,7 @@ import android.app.TimePickerDialog
 import android.content.Intent
 import android.net.Uri
 import android.graphics.BitmapFactory
+import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -113,6 +114,9 @@ import kotlinx.coroutines.launch
     var syncGuide by remember {mutableStateOf(false)}
     var discardDialog by remember {mutableStateOf(false)}
     val draft=s.draft
+    val compressedPhotos by produceState<CompressedPhotoSummary?>(null,draft?.batch?.photos.orEmpty()) {
+        value=withContext(Dispatchers.IO){FoodImages.summary(draft?.batch?.photos.orEmpty())}
+    }
     val locale=androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     val number=remember(locale){NumberFormat.getNumberInstance(locale).apply {maximumFractionDigits=1}}
     val ratioNumber=remember(locale){NumberFormat.getNumberInstance(locale).apply {maximumFractionDigits=6}}
@@ -151,6 +155,7 @@ import kotlinx.coroutines.launch
     BackHandler(!editorPanel&&serviceEditor==null&&page!=initialPage){goBack()}
     DisposableEffect(Unit){onDispose{if(editorPanel&&vm.state.value.loaded)vm.cancelAi()}}
     LaunchedEffect(page){resetContentScroll()}
+    LaunchedEffect(s.busy){if(s.busy)resetContentScroll()}
     LaunchedEffect(draft?.batch?.status){if(page=="photo"&&draft?.batch?.status=="review")resetContentScroll()}
     LaunchedEffect(s.loaded,draft==null,s.saving){if(editorPanel&&s.loaded&&draft==null&&!s.saving)onCloseEditor()}
     val screenContent:@Composable ()->Unit = {
@@ -161,8 +166,11 @@ import kotlinx.coroutines.launch
             s.error?.let {resource->FoodCard {Text(stringResource(resource),color=MaterialTheme.colorScheme.error);TextButton(onClick=vm::clearMessage){Text(stringResource(R.string.done))}}}
             s.message?.let {if(it==R.string.food_analysis_ready)FoodAnalysisReady() else Text(stringResource(it),color=MaterialTheme.colorScheme.primary)}
             if(s.busy)FoodAnalysisStatus(
-                s.analysisStage,s.analysisAttempt,s.analysisStartedAt,
-                s.analysisReceivedChunks,s.analysisEstimatedOutputTokens,s.analysisFirstTokenMs,vm::cancelAi
+                stageValue=s.analysisStage,attempt=s.analysisAttempt,startedAt=s.analysisStartedAt,
+                receivedChunks=s.analysisReceivedChunks,estimatedTokens=s.analysisEstimatedOutputTokens,
+                firstTokenMs=s.analysisFirstTokenMs,reasoningChunks=s.analysisReasoningChunks,
+                estimatedReasoningTokens=s.analysisEstimatedReasoningTokens,
+                compressedPhotos=compressedPhotos,cancel=vm::cancelAi
             )
             when(page) {
                 "home" -> {
@@ -251,6 +259,7 @@ import kotlinx.coroutines.launch
                             Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Icon(Icons.Default.Add,contentDescription=stringResource(R.string.food_add_images),modifier=Modifier.size(36.dp),tint=MaterialTheme.colorScheme.primary)}
                         }
                     }
+                    if(batch.kind=="photo"&&batch.status!="review"&&!s.busy)CompressedPhotoSummaryLine(compressedPhotos)
                     if(batch.kind=="photo") {
                         if(batch.status!="review") {
                             Text(stringResource(R.string.food_multi_photo_hint),style=MaterialTheme.typography.bodySmall)
@@ -637,12 +646,14 @@ private val FoodImageShape=RoundedCornerShape(12.dp)
     )
 }
 @Composable private fun FoodAnalysisStatus(
-    stageValue:String,attempt:Int,startedAt:Long,receivedChunks:Int,estimatedTokens:Long,firstTokenMs:Long?,cancel:()->Unit
+    stageValue:String,attempt:Int,startedAt:Long,receivedChunks:Int,estimatedTokens:Long,firstTokenMs:Long?,
+    reasoningChunks:Int,estimatedReasoningTokens:Long,compressedPhotos:CompressedPhotoSummary?,cancel:()->Unit
 ) {
     val stage=when(stageValue) {
             "encoding"->R.string.food_analysis_encoding
             "uploading"->R.string.food_analysis_uploading
             "waiting"->R.string.food_analysis_waiting
+            "reasoning"->R.string.food_analysis_reasoning
             "receiving"->R.string.food_analysis_receiving
             "parsing"->R.string.food_analysis_parsing
             "retrying"->R.string.food_analysis_retrying
@@ -653,6 +664,7 @@ private val FoodImageShape=RoundedCornerShape(12.dp)
         "encoding"->R.string.food_analysis_encoding_hint
         "uploading"->R.string.food_analysis_uploading_hint
         "waiting"->R.string.food_analysis_waiting_hint
+        "reasoning"->R.string.food_analysis_reasoning_hint
         "receiving"->R.string.food_analysis_receiving_hint
         "parsing"->R.string.food_analysis_parsing_hint
         "retrying"->R.string.food_analysis_retrying_hint
@@ -669,21 +681,36 @@ private val FoodImageShape=RoundedCornerShape(12.dp)
     FoodCard {
         LinearProgressIndicator(Modifier.fillMaxWidth())
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-            Text(if(stageValue=="retrying")stringResource(stage,attempt-1,3) else stringResource(stage),style=MaterialTheme.typography.titleMedium,modifier=Modifier.weight(1f))
+            Text(stringResource(stage),style=MaterialTheme.typography.titleMedium,modifier=Modifier.weight(1f))
             if(seconds>0)Text(stringResource(R.string.food_analysis_elapsed,seconds),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if(stageValue=="receiving") {
+        if(stageValue in setOf("reasoning","receiving")) {
             val firstSeconds=(firstTokenMs ?: 0L)/1000.0
             Text(
-                if(estimatedTokens>0)stringResource(R.string.food_analysis_receiving_estimated_tokens_hint,firstSeconds,estimatedTokens)
-                else stringResource(R.string.food_analysis_receiving_hint,firstSeconds,receivedChunks),
+                when {
+                    stageValue=="reasoning"&&estimatedReasoningTokens>0->stringResource(R.string.food_analysis_reasoning_estimated_tokens_hint,firstSeconds,estimatedReasoningTokens)
+                    stageValue=="reasoning"->stringResource(R.string.food_analysis_reasoning_hint,firstSeconds,reasoningChunks)
+                    estimatedTokens>0->stringResource(R.string.food_analysis_receiving_estimated_tokens_hint,firstSeconds,estimatedTokens)
+                    else->stringResource(R.string.food_analysis_receiving_hint,firstSeconds,receivedChunks)
+                },
                 style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else Text(stringResource(hint),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-        if(stageValue in setOf("waiting","receiving")&&seconds>=45)
+        CompressedPhotoSummaryLine(compressedPhotos)
+        if(stageValue in setOf("waiting","reasoning","receiving")&&seconds>=45)
             Text(stringResource(R.string.food_analysis_slow_hint),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         TextButton(onClick=cancel,contentPadding=PaddingValues(0.dp)){Text(stringResource(R.string.food_analysis_cancel))}
     }
+}
+@Composable private fun CompressedPhotoSummaryLine(summary:CompressedPhotoSummary?) {
+    if(summary==null||summary.count==0)return
+    val context=LocalContext.current
+    val size=remember(summary.totalBytes){Formatter.formatShortFileSize(context,summary.totalBytes)}
+    val first=summary.photos.firstOrNull()
+    val text=if(summary.count==1&&first!=null&&first.width>0&&first.height>0)
+        stringResource(R.string.food_photo_compressed_single,first.width,first.height,size)
+    else stringResource(R.string.food_photo_compressed_multiple,summary.count,size,summary.longestEdgePx)
+    Text(text,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
 }
 private fun estimateRatio(value:Double,number:NumberFormat):String {
     for(denominator in 2..12)for(numerator in 1 until denominator) {

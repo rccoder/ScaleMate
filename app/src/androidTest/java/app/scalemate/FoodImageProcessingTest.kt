@@ -28,6 +28,10 @@ class FoodImageProcessingTest {
                 BitmapFactory.decodeFile(imported.absolutePath,bounds)
                 assertEquals(1024,maxOf(bounds.outWidth,bounds.outHeight))
                 assertTrue(imported.length() in 1..FoodImages.MAX_IMAGE_BYTES)
+                val summary=FoodImages.summary(listOf(imported.absolutePath))
+                assertEquals(1,summary.count)
+                assertEquals(imported.length(),summary.totalBytes)
+                assertEquals(1024,summary.longestEdgePx)
             }finally {imported.delete()}
         }finally {
             bitmap.recycle()

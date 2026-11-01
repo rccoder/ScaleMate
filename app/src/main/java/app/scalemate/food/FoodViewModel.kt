@@ -107,7 +107,7 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
         persistDraft()
         save(done)
     }
-    fun removePhoto(path:String) {updateBatch {it.copy(photos=it.photos-path,results=emptyList(),status="idle")}}
+    fun removePhoto(path:String) {updateBatch {it.withChangedPhotos(it.photos-path)}}
     fun importPhoto(uri:Uri)=importPhotos(listOf(uri))
     fun importPhotos(uris:List<Uri>) {
         if(!mutable.value.loaded){task {state.first {it.loaded};importPhotos(uris)};return}
@@ -115,10 +115,14 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
         beginPhoto();val batch=mutable.value.draft?.batch ?: return
         if(batch.photos.size+uris.size>FoodImages.MAX_PHOTOS){fail(R.string.food_photo_limit);return}
         val importId=newFoodId();activeRequest=importId
-        mutable.update {it.copy(busy=true,error=null)}
+        mutable.update {it.copy(
+            busy=true,error=null,analysisStage="encoding",analysisAttempt=1,
+            analysisStartedAt=System.currentTimeMillis(),analysisReceivedChunks=0,analysisEstimatedOutputTokens=0,
+            analysisFirstTokenMs=null,analysisReasoningChunks=0,analysisEstimatedReasoningTokens=0
+        )}
         aiJob=viewModelScope.launch {try {
             val files=withContext(Dispatchers.IO){val added=mutableListOf<File>();try {uris.forEach {added+=FoodImages.import(getApplication(),it)};added.toList()}catch(e:Exception){added.forEach {it.delete()};throw e}}
-            if(activeRequest==importId&&mutable.value.draft?.batch?.id==batch.id){mutable.update {it.copy(draft=it.draft?.let {d->d.copy(batch=d.batch?.copy(photos=batch.photos+files.map {it.absolutePath},results=emptyList(),status="idle"),updatedAt=System.currentTimeMillis())})};persistDraft()}
+            if(activeRequest==importId&&mutable.value.draft?.batch?.id==batch.id){mutable.update {it.copy(draft=it.draft?.let {d->d.copy(batch=d.batch?.withChangedPhotos(batch.photos+files.map {it.absolutePath}),updatedAt=System.currentTimeMillis())})};persistDraft()}
         }catch(e:CancellationException){throw e}catch(_:Exception){if(activeRequest==importId)fail(R.string.food_photo_error)}finally {if(activeRequest==importId){activeRequest=null;mutable.update {it.copy(busy=false)}}}}
     }
     fun selectService(id:String,default:Boolean) {mutable.update {it.copy(selectedService=id)};if(default)task {withContext(Dispatchers.IO){store.setting("vision",id)};reload()}}
@@ -136,6 +140,7 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
         mutable.update {it.copy(
             busy=true,error=null,message=null,analysisStage="uploading",analysisAttempt=1,
             analysisStartedAt=startedAt,analysisReceivedChunks=0,analysisEstimatedOutputTokens=0,analysisFirstTokenMs=null,
+            analysisReasoningChunks=0,analysisEstimatedReasoningTokens=0,
             draft=it.draft?.copy(batch=batch.copy(status="analyzing"))
         )};persistDraft()
         aiJob=viewModelScope.launch {try {
@@ -151,19 +156,28 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
                             analysisAttempt=stage.substringAfter("retry:",stage).toIntOrNull() ?: it.analysisAttempt,
                             analysisReceivedChunks=if(retry)0 else it.analysisReceivedChunks,
                             analysisEstimatedOutputTokens=if(retry)0 else it.analysisEstimatedOutputTokens,
-                            analysisFirstTokenMs=if(retry)null else it.analysisFirstTokenMs
+                            analysisFirstTokenMs=if(retry)null else it.analysisFirstTokenMs,
+                            analysisReasoningChunks=if(retry)0 else it.analysisReasoningChunks,
+                            analysisEstimatedReasoningTokens=if(retry)0 else it.analysisEstimatedReasoningTokens
                         )
                     }
                 },
                 onStreamProgress={attempt,progress->
                     if(activeRequest==requestId)mutable.update {
                         val receivedText=progress.receivedChunks>0
+                        val receivedReasoning=progress.reasoningChunks>0
                         it.copy(
-                            analysisStage=if(receivedText)"receiving" else it.analysisStage,
+                            analysisStage=when {
+                                receivedText->"receiving"
+                                receivedReasoning->"reasoning"
+                                else->it.analysisStage
+                            },
                             analysisAttempt=attempt,
                             analysisReceivedChunks=progress.receivedChunks,
                             analysisEstimatedOutputTokens=progress.estimatedOutputTokens,
-                            analysisFirstTokenMs=it.analysisFirstTokenMs ?: if(receivedText)System.currentTimeMillis()-startedAt else null
+                            analysisFirstTokenMs=it.analysisFirstTokenMs ?: if(receivedText||receivedReasoning)System.currentTimeMillis()-startedAt else null,
+                            analysisReasoningChunks=progress.reasoningChunks,
+                            analysisEstimatedReasoningTokens=progress.estimatedReasoningTokens
                         )
                     }
                 }
@@ -182,6 +196,7 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
             if(activeRequest==requestId){activeRequest=null;mutable.update {it.copy(
                 busy=false,analysisStage=if(it.analysisStage=="ready")"ready" else "failed",
                 analysisReceivedChunks=0,analysisEstimatedOutputTokens=0,analysisFirstTokenMs=null,
+                analysisReasoningChunks=0,analysisEstimatedReasoningTokens=0,
                 draft=it.draft?.let {d->if(d.batch?.status=="analyzing")d.copy(batch=d.batch.copy(status="interrupted")) else d}
             )};persistDraft()}
         }}
@@ -189,6 +204,7 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
     private var activeRequest:String?=null
     fun cancelAi(){activeRequest=null;aiJob?.cancel();aiJob=null;mutable.update {it.copy(
         busy=false,analysisStage="",analysisReceivedChunks=0,analysisEstimatedOutputTokens=0,analysisFirstTokenMs=null,
+        analysisReasoningChunks=0,analysisEstimatedReasoningTokens=0,
         draft=it.draft?.let {d->if(d.batch?.status=="analyzing")d.copy(batch=d.batch.copy(status="interrupted")) else d}
     )};persistDraft()}
     private fun save(done:()->Unit) {

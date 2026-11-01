@@ -262,6 +262,7 @@
     <string name="food_ai_truncated">AI 返回内容在完成前被截断，可能达到模型输出上限。可重试、减少照片，或改用输出上限更高的模型。</string>
     <string name="food_no_food_recognized">AI 已正常返回，但照片中没有识别到可用食物。可补充说明后重试，或手动录入。</string>
     <string name="food_ai_response_too_large">AI 返回内容过大，已停止处理。请减少照片后重试。</string>
+    <string name="food_ai_filtered">AI 服务因内容策略停止了这次分析。请换一张照片或手动录入。</string>
     <string name="food_ai_request_error">AI 请求未能完成，草稿已保留。可重试或手动录入。</string>
     <string name="food_ai_auth">AI 服务拒绝授权，请检查密钥、模型和访问权限。</string>
     <string name="food_ai_limit">AI 服务限流或额度不足，请稍后再试或手动选择另一服务。</string>
@@ -402,7 +403,7 @@
     <string name="food_library_rules">常吃优先，其次按记录次数、最近使用排序。保留最近 500 个普通食物，常吃额外保留。</string>
     <string name="food_library_empty">暂无食物，可以先手动添加；保存新餐后会自动收录。</string>
     <string name="food_usage_count">已记录 %1$d 次</string>
-    <string name="food_reanalysis_replace">可调整分食标签和补充说明，再基于上次结果重新分析。分析期间会保留并展示上次结果；完成后用新结果替换本次尚未确认的结果和修改，已加入这一餐的食物不受影响。</string>
+    <string name="food_reanalysis_replace">只调整分食、标签或补充说明时，会基于上次结果重新分析，分析期间继续展示上次结果。若增删或替换照片，会清除上次结果、整餐建议、Token／耗时和本次修改说明，按当前照片重新分析；已加入这一餐的食物不受影响。</string>
     <string name="food_previous_results_in_progress">正在基于上次结果重新分析；下面暂时显示上次结果，完成后会更新。</string>
     <string name="food_previous_results_kept">上次分析结果已保留，可修改说明后重新分析。</string>
     <string name="food_pending_note">本次还没有加入这一餐，放弃后将移除这些待确认结果。</string>
@@ -437,11 +438,14 @@
     <string name="food_analysis_waiting">AI 正在识别这一餐…</string>
     <string name="food_analysis_receiving">AI 已开始返回</string>
     <string name="food_analysis_parsing">正在整理分析结果…</string>
-    <string name="food_analysis_retrying">正在重新获取结果（%1$d/3）…</string>
+    <string name="food_analysis_retrying">正在重新获取结果…</string>
     <string name="food_analysis_ready">分析完成，请核对下面的食物和份量。</string>
-    <string name="food_analysis_encoding_hint">正在本机压缩照片并移除位置信息，不会修改相册原图。</string>
+    <string name="food_analysis_encoding_hint">正在准备上传数据；照片已在本机压缩并移除位置信息，不会修改相册原图。</string>
     <string name="food_analysis_uploading_hint">正在发送压缩后的照片，通常只需几秒。</string>
-    <string name="food_analysis_waiting_hint">正在识别菜品、份量和营养，通常需要几十秒；菜品或照片较多时会久一些，完成后会自动显示结果。</string>
+    <string name="food_analysis_waiting_hint">正在识别菜品、份量和营养，通常几秒到十几秒；菜品或照片较多时会稍久一些，完成后会自动显示结果。</string>
+    <string name="food_analysis_reasoning">AI 正在推理…</string>
+    <string name="food_analysis_reasoning_hint">首 Token 已在 %1$.1f 秒内返回，已收到 %2$d 个推理片段。</string>
+    <string name="food_analysis_reasoning_estimated_tokens_hint">首 Token 已在 %1$.1f 秒内返回，当前约 %2$d 个推理 Token（粗略估算）。</string>
     <string name="food_analysis_receiving_hint">首 Token 已在 %1$.1f 秒内返回，已接收 %2$d 个响应片段。服务提供用量后会显示 Token 数。</string>
     <string name="food_analysis_receiving_estimated_tokens_hint">首 Token 已在 %1$.1f 秒内返回，当前约 %2$d 个输出 Token（粗略估算）。</string>
     <string name="food_analysis_parsing_hint">正在核对食物分组和营养字段，马上就好。</string>
@@ -451,6 +455,8 @@
     <string name="food_analysis_cancel">取消分析</string>
     <string name="food_analysis_time">分析耗时 %1$.1f 秒</string>
     <string name="food_analysis_elapsed">已用时 %1$d 秒</string>
+    <string name="food_photo_compressed_single">已在本机压缩：%1$d × %2$d · %3$s（已移除位置信息）</string>
+    <string name="food_photo_compressed_multiple">已在本机压缩 %1$d 张照片：合计 %2$s，最长边不超过 %3$d px（已移除位置信息）</string>
     <string name="food_usage_input">输入 %1$d tokens</string>
     <string name="food_usage_output">输出 %1$d tokens</string>
     <string name="food_usage_total">合计 %1$d tokens</string>

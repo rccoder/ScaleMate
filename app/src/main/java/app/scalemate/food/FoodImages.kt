@@ -3,8 +3,16 @@ package app.scalemate.food
 import android.content.Context
 import android.graphics.ImageDecoder
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import java.io.File
+
+data class CompressedPhoto(val bytes:Long,val width:Int,val height:Int)
+data class CompressedPhotoSummary(val photos:List<CompressedPhoto>) {
+    val count get()=photos.size
+    val totalBytes get()=photos.sumOf {it.bytes}
+    val longestEdgePx get()=photos.maxOfOrNull {maxOf(it.width,it.height)} ?: 0
+}
 
 object FoodImages {
     /**
@@ -33,6 +41,13 @@ object FoodImages {
     // Bound the encoded request, not only the sum of JPEG files. Base64 adds roughly one third.
     const val MAX_UPLOAD_BYTES=8_000_000L
     internal fun encodedRequestApproximation(bytes:Long)=((bytes+2)/3)*4
+    fun summary(paths:List<String>):CompressedPhotoSummary=CompressedPhotoSummary(paths.mapNotNull {path->
+        val file=File(path)
+        if(!file.isFile)return@mapNotNull null
+        val bounds=BitmapFactory.Options().apply {inJustDecodeBounds=true}
+        BitmapFactory.decodeFile(path,bounds)
+        CompressedPhoto(file.length(),bounds.outWidth.coerceAtLeast(0),bounds.outHeight.coerceAtLeast(0))
+    })
     fun thumbnail(context:Context,path:String):String {
         val source=File(path);if(source.parentFile?.name=="food_thumbs")return path
         if(!source.exists())return ""

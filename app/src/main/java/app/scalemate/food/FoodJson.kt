@@ -6,6 +6,11 @@ import org.json.JSONObject
 object FoodJson {
     class EmptyRecognition:Exception()
     class JsonNotFound:Exception()
+    class InvalidRecognition(val reason:String):IllegalArgumentException(reason)
+
+    private fun validate(condition:Boolean,reason:String) {
+        if(!condition)throw InvalidRecognition(reason)
+    }
 
     private fun embeddedJson(raw:String):JSONObject {
         val text=raw.trim().removePrefix("\uFEFF")
@@ -50,6 +55,16 @@ object FoodJson {
     private fun JSONObject.number(key: String): Double? = if(isNull(key)||!has(key)) null else getDouble(key)
     private fun JSONObject.longOrNull(key:String):Long?=if(isNull(key)||!has(key))null else optLong(key)
     private fun JSONObject.optionalObject(key:String)=optJSONObject(key)?.takeUnless {it.length()==0}
+    private fun imageIndices(j:JSONObject,photos:List<String>):List<Int> {
+        val raw=j.optJSONArray("imageIndices")?.let {a->(0 until a.length()).map {a.getInt(it)}.distinct()}
+            ?: return photos.indices.toList()
+        if(photos.isEmpty())return raw
+        if(raw.all {it in photos.indices})return raw
+        val oneBased=raw.map {it-1}
+        if(raw.all {it in 1..photos.size})return oneBased
+        val valid=raw.filter {it in photos.indices}
+        return valid.ifEmpty {photos.indices.toList()}
+    }
     private fun advice(a:MealAdvice)=JSONObject().put("healthiness",a.healthiness).put("balance",a.balance).put("nextTime",a.nextTime).put("note",a.note)
     private fun advice(j:JSONObject?)=if(j==null)MealAdvice() else MealAdvice(j.optionalText("healthiness"),j.optionalText("balance"),j.optionalText("nextTime"),j.optionalText("note"))
     private fun usage(u:AiUsage)=JSONObject().put("inputTokens",u.inputTokens ?: JSONObject.NULL).put("outputTokens",u.outputTokens ?: JSONObject.NULL).put("totalTokens",u.totalTokens ?: JSONObject.NULL)
@@ -85,19 +100,18 @@ object FoodJson {
     fun recognitionPersonal(raw:String,sharing:Int,photos:List<String> = emptyList(),tags:Set<String> = emptySet(),description:String=""):List<FoodItem> =
         recognition(raw,sharing,photos,tags,description).items
     fun recognition(raw:String,sharing:Int,photos:List<String> = emptyList(),tags:Set<String> = emptySet(),description:String=""):Recognition {
-        require(sharing in 1..20)
+        validate(sharing in 1..20,"sharing")
         val root=embeddedJson(raw)
-        require(root.optString("calculationMode")=="personal")
+        validate(root.optString("calculationMode")=="personal","calculationMode")
         val array=root.getJSONArray("foods")
         if(array.length()==0)throw EmptyRecognition()
-        require(array.length() in 1..30)
+        validate(array.length() in 1..30,"foodsCount")
         val items=(0 until array.length()).map {i->
             val j=array.getJSONObject(i)
-            val personal=nutrients(j.getJSONObject("personalNutrients"));require(personal.valid()&&personal.hasValue())
-            val grams=j.number("personalGrams");require(grams==null||grams.isFinite()&&grams>0)
-            val name=j.getString("name").trim();require(name.isNotEmpty()&&name.length<=120)
-            val indices=j.optJSONArray("imageIndices")?.let {a->(0 until a.length()).map {a.getInt(it)}.distinct()} ?: photos.indices.toList()
-            require(photos.isEmpty()||indices.all {it in photos.indices})
+            val personal=nutrients(j.getJSONObject("personalNutrients"));validate(personal.valid()&&personal.hasValue(),"personalNutrients")
+            val grams=j.number("personalGrams");validate(grams==null||grams.isFinite()&&grams>0,"personalGrams")
+            val name=j.getString("name").trim();validate(name.isNotEmpty()&&name.length<=120,"name")
+            val indices=imageIndices(j,photos)
             val portion=grams?.let {java.math.BigDecimal.valueOf(it).setScale(2,java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()+" g"} ?: j.optionalText("personalPortion").take(100).ifBlank {"1"}
             FoodItem(name=name,portion=portion,grams=grams,base=personal,source="ai",assumptions=j.optionalText("assumptions").take(1000),
                 eatingAdvice=j.optionalText("eatingAdvice").take(600),nextTimeAdvice=j.optionalText("nextTimeAdvice").take(600),positiveFeedback=j.optionalText("positiveFeedback").take(300),

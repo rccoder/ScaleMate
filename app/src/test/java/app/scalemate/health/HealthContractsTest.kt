@@ -37,7 +37,12 @@ class HealthContractsTest {
     @Test fun streamPreviewHandlesEscapesAndPartialJson() {assertEquals("Hello\nworld",HealthPrompt.preview("{\"text\":\"Hello\\nworld"));assertEquals("",HealthPrompt.preview("{\"claims\":["))}
     @Test fun openAiAndAnthropicSseDeltasAreDecoded() {
         assertEquals("Hello",AiStream.decode("openai","{\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}").text)
+        assertEquals("Hello",AiStream.decode("openai","{\"choices\":[{\"delta\":{\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]}}]}").text)
+        assertEquals("",AiStream.decode("openai","{\"choices\":[{\"delta\":{\"reasoning_content\":\"internal thought\"}}]}").text)
+        assertEquals("internal thought",AiStream.decode("openai","{\"choices\":[{\"delta\":{\"reasoning_content\":\"internal thought\"}}]}").reasoning)
+        assertEquals("reasoning alias",AiStream.decode("openai","{\"choices\":[{\"delta\":{\"reasoning\":\"reasoning alias\"}}]}").reasoning)
         assertEquals("Hello",AiStream.decode("anthropic","{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}").text)
+        assertEquals("thinking",AiStream.decode("anthropic","{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"thinking\"}}").reasoning)
         assertTrue(AiStream.decode("openai","[DONE]").finished);assertTrue(AiStream.decode("anthropic","{\"type\":\"message_stop\"}").finished)
     }
     @Test fun streamUsageKeepsProviderCountsWhenAvailable() {

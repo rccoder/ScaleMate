@@ -33,4 +33,18 @@ class FoodImageBudgetTest {
     @Test fun recognitionKeepsAUsableTimeoutBudget() {
         assertTrue(AiClient.RESPONSE_TIMEOUT_MS>=90_000)
     }
+
+    @Test fun compressedPhotoSummaryUsesActualFileMetadata() {
+        val summary=CompressedPhotoSummary(listOf(
+            CompressedPhoto(120_000,768,1024),
+            CompressedPhoto(80_000,1024,768)
+        ))
+        assertEquals(2,summary.count)
+        assertEquals(200_000,summary.totalBytes)
+        assertEquals(1024,summary.longestEdgePx)
+    }
+
+    @Test fun malformedResponsesRetryOnlyOnce() {
+        assertEquals(2,AiClient.MAX_ANALYSIS_ATTEMPTS)
+    }
 }

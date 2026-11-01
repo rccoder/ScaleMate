@@ -1,11 +1,15 @@
 package app.scalemate.health
 
+import app.scalemate.R
 import app.scalemate.food.*
 import kotlinx.coroutines.*
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -14,6 +18,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /** Loopback HTTP with synthetic credentials/responses, not a real AI provider. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk=[35])
 class HealthAiTransportTest {
     private data class Request(val path:String,val headers:Map<String,String>,val body:String)
     private class Loopback(val handler:(Request,OutputStream)->Unit):AutoCloseable {
@@ -108,6 +114,40 @@ class HealthAiTransportTest {
             assertEquals(listOf(1L,1L,5L),progress.map {it.usage.outputTokens})
         }
     }
+    @Test fun longReasoningEventsBeyondTheOldOneMegabyteLimitStillComplete()=runBlocking {
+        Loopback {_,out->
+            val reasoning="r".repeat(220)
+            val body=buildString {
+                repeat(5000) {
+                    append("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"$reasoning\"}}]}\n\n")
+                }
+                append("data: {\"choices\":[{\"delta\":{\"content\":\"{\\\"foods\\\":[]}\"},\"finish_reason\":\"stop\"}]}\n\n")
+                append("data: [DONE]\n\n")
+            }
+            assertTrue("fixture must exceed the old 1 MB stream cap",body.length>1024*1024)
+            respond(out,body)
+        }.use {server->
+            val progress=mutableListOf<AiStream.Progress>()
+            val result=client.streamResponse(service(server.port),messages(),64,5_000,{}, {progress+=it})
+            assertEquals("{\"foods\":[]}",result.text)
+            assertTrue(progress.first().reasoningChunks>0)
+            assertEquals(0,progress.first().receivedChunks)
+            assertTrue(progress.first().estimatedReasoningTokens>0)
+            assertEquals(1,progress.last().receivedChunks)
+        }
+    }
+    @Test fun contentFilterIsReportedWithoutLookingLikeAMalformedJsonResponse()=runBlocking {
+        Loopback {_,out->
+            respond(out,"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"content_filter\"}]}\n\n")
+        }.use {server->
+            try {
+                client.streamResponse(service(server.port),messages(),64,5_000,{}, {})
+                fail("Content filter must fail explicitly")
+            }catch(e:FoodFailure) {
+                assertEquals(R.string.food_ai_filtered,e.resource)
+            }
+        }
+    }
     @Test fun openAiRetriesWithoutOptionalUsageWhenCompatibilityServiceRejectsIt()=runBlocking {
         val requests=mutableListOf<JSONObject>()
         Loopback {request,out->
@@ -127,6 +167,47 @@ class HealthAiTransportTest {
             assertTrue(requests[0].has("stream_options"))
             assertFalse(requests[1].has("stream_options"))
             assertEquals(listOf(1),progress.map {it.receivedChunks})
+        }
+    }
+    @Test fun deepSeekFoodRecognitionDisablesReasoningAndRetriesAnEmptyResult()=runBlocking {
+        val requests=mutableListOf<JSONObject>()
+        Loopback {request,out->
+            requests+=JSONObject(request.body)
+            val content=if(requests.size==1) {
+                """{"calculationMode":"personal","foods":[]}"""
+            } else {
+                """{"calculationMode":"personal","foods":[{"name":"牛肉面","personalGrams":520,"personalNutrients":{"kcal":680,"protein":32,"carbs":86,"fat":22},"personalPortion":"1碗","imageIndices":[0],"intakeSummary":"按一碗计入。","contextInterpretation":"单人份。","contextWarning":"","assumptions":"按可见份量估算。","eatingAdvice":"","nextTimeAdvice":"","positiveFeedback":""}],"mealAdvice":{}}"""
+            }
+            val escaped=JSONObject.quote(content)
+            respond(out,"data: {\"choices\":[{\"delta\":{\"content\":$escaped},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+        }.use {server->
+            val configured=service(server.port).copy(images=true,model="deepseek-flash")
+            val result=client.recognizeDetailed(
+                configured,listOf(byteArrayOf(1,2,3)),"",emptySet(),1,outputLanguage="zh-CN"
+            )
+            assertEquals("牛肉面",result.items.single().name)
+            assertEquals(2,requests.size)
+            assertEquals(AiClient.FOOD_ANALYSIS_MAX_TOKENS,requests.first().getInt("max_tokens"))
+            assertTrue(requests.all {it.getString("reasoning_effort")=="none"})
+        }
+    }
+    @Test fun reasoningControlFallsBackWhenACompatibleServiceRejectsIt()=runBlocking {
+        val requests=mutableListOf<JSONObject>()
+        Loopback {request,out->
+            requests+=JSONObject(request.body)
+            if(requests.size==1) {
+                respond(out,"""{"error":{"message":"Unsupported parameter: reasoning_effort"}}""",400)
+            } else {
+                respond(out,"data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+            }
+        }.use {server->
+            val result=client.streamResponse(
+                service(server.port),messages(),64,5_000,{},{},{},disableReasoning=true
+            )
+            assertEquals("ok",result.text)
+            assertEquals(2,requests.size)
+            assertTrue(requests[0].has("reasoning_effort"))
+            assertFalse(requests[1].has("reasoning_effort"))
         }
     }
     @Test fun redirectDoesNotForwardSyntheticCredentials()=runBlocking {

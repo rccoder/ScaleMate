@@ -7,6 +7,8 @@ import org.json.JSONObject
 object AiWire {
     class IncompleteResponse:Exception()
     class EmptyResponse:Exception()
+    class ContentFiltered:Exception()
+    class ProviderError:Exception()
 
     fun body(service:AiService,messages:JSONArray,maxTokens:Int):JSONObject {
         require(service.format in listOf("openai","anthropic"))

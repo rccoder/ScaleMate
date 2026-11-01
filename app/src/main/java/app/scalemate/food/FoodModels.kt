@@ -88,6 +88,19 @@ data class FoodBatch(
     val advice:MealAdvice=MealAdvice(),val usage:AiUsage=AiUsage(),val analysisMs:Long?=null
 ) {
     fun validForCommit()=results.isNotEmpty()&&results.all {it.valid()}&&Nutrients.sum(results.map {it.nutrients}).valid()
+    /** A changed photo set starts a fresh analysis; same-photo revisions keep their previous result. */
+    fun withChangedPhotos(changed:List<String>):FoodBatch {
+        val hadAnalysis=results.isNotEmpty()||advice.hasContent||usage.hasContent||analysisMs!=null
+        return copy(
+            photos=changed,
+            description=if(hadAnalysis) "" else description,
+            results=emptyList(),
+            status="idle",
+            advice=MealAdvice(),
+            usage=AiUsage(),
+            analysisMs=null
+        )
+    }
     val hasDraftContent get()=photos.isNotEmpty()||description.isNotBlank()||tags.isNotEmpty()||
         results.any {it.hasDraftContent}||advice.hasContent
 }
@@ -139,5 +152,6 @@ data class FoodState(
     val library:List<FoodLibraryEntry> = emptyList(),val services: List<AiService> = emptyList(),val draft: FoodDraft?=null,val defaultVision: String="",val defaultText: String="",
     val selectedService: String="",val permitted: Boolean=false,val healthAvailable:Boolean=true,val busy: Boolean=false,val saving: Boolean=false,
     val error: Int?=null,val message: Int?=null,val analysisStage:String="",val analysisAttempt:Int=1,
-    val analysisStartedAt:Long=0L,val analysisReceivedChunks:Int=0,val analysisEstimatedOutputTokens:Long=0,val analysisFirstTokenMs:Long?=null
+    val analysisStartedAt:Long=0L,val analysisReceivedChunks:Int=0,val analysisEstimatedOutputTokens:Long=0,val analysisFirstTokenMs:Long?=null,
+    val analysisReasoningChunks:Int=0,val analysisEstimatedReasoningTokens:Long=0
 )

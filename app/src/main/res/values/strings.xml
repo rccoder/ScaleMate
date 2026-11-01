@@ -262,6 +262,7 @@
     <string name="food_ai_truncated">The AI response was cut off before completion, possibly at the model output limit. Retry, use fewer photos, or choose a model with a higher output limit.</string>
     <string name="food_no_food_recognized">The AI responded normally but found no usable food in the photos. Add context and retry, or enter it manually.</string>
     <string name="food_ai_response_too_large">The AI response was too large to process. Retry with fewer photos.</string>
+    <string name="food_ai_filtered">The AI service stopped this analysis because of its content policy. Try another photo or enter the meal manually.</string>
     <string name="food_ai_request_error">Could not complete the AI request. Your draft was kept; retry or enter it manually.</string>
     <string name="food_ai_auth">AI service denied access. Check the key, model and permissions.</string>
     <string name="food_ai_limit">AI service is rate-limited or out of quota. Retry later or choose another service.</string>
@@ -402,7 +403,7 @@
     <string name="food_library_rules">Favorites first, then usage count and recency. Keeps 500 recent nonfavorites plus all favorites.</string>
     <string name="food_library_empty">No foods yet. Add one manually; saving a new meal adds foods to this library.</string>
     <string name="food_usage_count">Recorded %1$d times</string>
-    <string name="food_reanalysis_replace">Adjust sharing tags and extra instructions, then analyze again from the previous result. The previous result stays visible during analysis; new results replace this pending analysis while foods already added to the meal are kept.</string>
+    <string name="food_reanalysis_replace">Changing only sharing, tags, or instructions keeps the previous result as the baseline and shows it during analysis. Adding, removing, or replacing photos clears the previous foods, meal advice, usage/time, and revision instructions, then analyzes the current photos from scratch. Foods already added to this meal are unaffected.</string>
     <string name="food_previous_results_in_progress">Revising the previous result. The earlier analysis remains visible below until the new result is ready.</string>
     <string name="food_previous_results_kept">The previous result was kept. Adjust the instructions and analyze again.</string>
     <string name="food_pending_note">This addition is not yet in your meal. Discarding removes its unconfirmed results.</string>
@@ -437,11 +438,14 @@
     <string name="food_analysis_waiting">AI is identifying this meal…</string>
     <string name="food_analysis_receiving">AI has started responding</string>
     <string name="food_analysis_parsing">Organizing the result…</string>
-    <string name="food_analysis_retrying">Getting a fresh result (%1$d/3)…</string>
+    <string name="food_analysis_retrying">Getting a fresh result…</string>
     <string name="food_analysis_ready">Analysis complete. Check the foods and portions below.</string>
-    <string name="food_analysis_encoding_hint">Compressing photos on this device and removing location metadata. Your original photos stay unchanged.</string>
+    <string name="food_analysis_encoding_hint">Preparing the upload. Photos are compressed on this device with location metadata removed; your originals stay unchanged.</string>
     <string name="food_analysis_uploading_hint">Sending the compressed photos; this usually takes a few seconds.</string>
-    <string name="food_analysis_waiting_hint">Identifying foods, portions, and nutrition. This usually takes tens of seconds and may take longer with more foods or photos; the result will appear automatically.</string>
+    <string name="food_analysis_waiting_hint">Identifying foods, portions, and nutrition. This usually takes a few to ten-plus seconds and may take a little longer with more foods or photos; the result will appear automatically.</string>
+    <string name="food_analysis_reasoning">AI is reasoning…</string>
+    <string name="food_analysis_reasoning_hint">First token returned within %1$.1f s; reasoning chunks received: %2$d.</string>
+    <string name="food_analysis_reasoning_estimated_tokens_hint">First token returned within %1$.1f s; estimated reasoning tokens: %2$d (rough estimate).</string>
     <string name="food_analysis_receiving_hint">First token returned within %1$.1f s; response chunks: %2$d. Token usage will appear if the service provides it.</string>
     <string name="food_analysis_receiving_estimated_tokens_hint">First token returned within %1$.1f s; estimated output tokens: %2$d (rough estimate).</string>
     <string name="food_analysis_parsing_hint">Checking food grouping and nutrition fields; almost done.</string>
@@ -451,6 +455,8 @@
     <string name="food_analysis_cancel">Cancel analysis</string>
     <string name="food_analysis_time">Analysis took %1$.1f s</string>
     <string name="food_analysis_elapsed">Working for %1$d s</string>
+    <string name="food_photo_compressed_single">Compressed on this device: %1$d × %2$d · %3$s (location metadata removed)</string>
+    <string name="food_photo_compressed_multiple">Photos compressed on this device: %1$d · %2$s total · longest edge up to %3$d px (location metadata removed)</string>
     <string name="food_usage_input">Input %1$d tokens</string>
     <string name="food_usage_output">Output %1$d tokens</string>
     <string name="food_usage_total">Total %1$d tokens</string>

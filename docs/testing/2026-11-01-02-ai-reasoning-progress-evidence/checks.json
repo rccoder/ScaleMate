@@ -1,0 +1,147 @@
+{
+  "date": "2026-11-01",
+  "emulator": {
+    "serial": "emulator-5556",
+    "api": 36,
+    "package": "app.scalemate.fooddev",
+    "versionName": "0.4.0",
+    "versionCode": 18,
+    "providerPath": "local Magpie gateway to WorkBuddy AI deepseek-v4.1-flash",
+    "providerMode": "real AI; no fixed response or SSE mock"
+  },
+  "userPhoto": {
+    "originalBytes": 10921027,
+    "originalWidth": 3072,
+    "originalHeight": 4096,
+    "sha256": "376571005c41ced4ca519b571c74d94c8c130d4a0b6974fd8d874a6e3a517a1a",
+    "compressedBytes": 144457,
+    "compressedWidth": 768,
+    "compressedHeight": 1024
+  },
+  "reasoningProbe": {
+    "maxTokens": 512,
+    "noReasoningField": {
+      "seconds": 6.24,
+      "reasoningTokens": 512,
+      "contentCharacters": 0,
+      "finishReason": "length"
+    },
+    "reasoningEffortNone": {
+      "seconds": 2.34,
+      "reasoningTokens": 0,
+      "contentCharacters": 217,
+      "finishReason": "stop",
+      "completionTokens": 54
+    },
+    "reasoningEffortLow": {
+      "seconds": 5.41,
+      "reasoningTokens": 512,
+      "contentCharacters": 0,
+      "finishReason": "length"
+    },
+    "thinkingTypeDisabled": {
+      "seconds": 5.90,
+      "reasoningTokens": 507,
+      "contentCharacters": 10,
+      "finishReason": "length"
+    }
+  },
+  "samePhotoRunsAfterFix": [
+    {
+      "run": 6,
+      "seconds": 6.9,
+      "retries": 0,
+      "estimatedKcal": 810,
+      "inputTokens": 2800,
+      "outputTokens": 695,
+      "totalTokens": 3495
+    },
+    {
+      "run": 7,
+      "seconds": 6.8,
+      "retries": 0,
+      "estimatedKcal": 960,
+      "inputTokens": 2800,
+      "outputTokens": 727,
+      "totalTokens": 3527
+    },
+    {
+      "run": 8,
+      "seconds": 6.9,
+      "retries": 0,
+      "estimatedKcal": 1020,
+      "inputTokens": 2800,
+      "outputTokens": 737,
+      "totalTokens": 3537
+    },
+    {
+      "run": 9,
+      "seconds": 7.5,
+      "retries": 0,
+      "firstTokenSeconds": 2.0,
+      "estimatedKcal": 940,
+      "inputTokens": 2800,
+      "outputTokens": 773,
+      "totalTokens": 3573
+    },
+    {
+      "run": 10,
+      "seconds": 7.2,
+      "retries": 0,
+      "firstTokenSeconds": 1.9,
+      "estimatedKcal": 1070,
+      "inputTokens": 2800,
+      "outputTokens": 752,
+      "totalTokens": 3552
+    }
+  ],
+  "observedBeforeFix": [
+    {
+      "run": 1,
+      "seconds": 17.2,
+      "retries": 1,
+      "note": "automatic retry observed before safe imageIndices handling"
+    },
+    {
+      "run": 4,
+      "seconds": 14.6,
+      "retries": 1,
+      "failureReason": "imageIndices",
+      "note": "first response used a compatible but out-of-range image index"
+    }
+  ],
+  "controlObservation": {
+    "description": "One intermediate picker attempt selected the hamburger sample instead of the target photo. Recognition correctly returned hamburger and fries, so the run was excluded from target-photo statistics.",
+    "lesson": "The final verification selected the target by picker content description, not tile position."
+  },
+  "tests": {
+    "jvm": {
+      "tests": 277,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "lint": {
+      "errors": 0,
+      "warnings": 134
+    },
+    "i18nPairs": 806,
+    "instrumentation": {
+      "device": "emulator-5556",
+      "classes": [
+        "app.scalemate.FoodStoreTest",
+        "app.scalemate.FoodImageProcessingTest"
+      ],
+      "tests": 18,
+      "failures": 0
+    }
+  },
+  "localReleaseApk": {
+    "sha256": "9e1c22d083223d58fa7c3aa71de726770fa9e18d56f90644fe960da7e3678f65",
+    "certificateSha256": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5",
+    "package": "app.scalemate",
+    "versionName": "0.4.0",
+    "versionCode": 18,
+    "debuggable": false
+  }
+}

@@ -38,4 +38,10 @@ class FoodJsonUsageTest {
         assertEquals("米饭",FoodJson.recognition("```json\n$payload\n```",1).items.single().name)
         assertEquals("米饭",FoodJson.recognition("Here is the result:\n$payload\nDone.",1).items.single().name)
     }
+
+    @Test fun recognitionToleratesOneBasedImageIndicesFromCompatibleModels() {
+        val payload="""{"calculationMode":"personal","foods":[{"name":"米饭","personalNutrients":{"kcal":200},"imageIndices":[1,2]}]}"""
+        assertEquals(listOf("a","b"),FoodJson.recognition(payload,1,listOf("a","b")).items.single().photos)
+        assertEquals(listOf("a"),FoodJson.recognition(payload.replace("[1,2]","[1]"),1,listOf("a")).items.single().photos)
+    }
 }

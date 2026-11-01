@@ -28,6 +28,7 @@ interface HealthSyncSource {
     fun incremental(category:String):Boolean
     suspend fun full(window:HealthWindow,categories:Set<String>,sources:Map<String,String>,progress:(String)->Unit):HealthSyncRead
     suspend fun changes(category:String,token:String):HealthChanges
+    suspend fun reconcileRecent(category:String,start:Instant,end:Instant):List<HealthRecord> = emptyList()
     suspend fun totals(category:String,start:Instant,end:Instant,zone:ZoneId):List<HealthRecord>
 }
 
@@ -101,13 +102,22 @@ class HealthSync(
                 val batch=source.changes(category,states.getValue(category).token)
                 emitTrace(category,"changes",changesStarted){"records=${batch.records.size} deleted=${batch.deletedIds.size} pages=${batch.pages}"}
                 check(batch.nextToken.isNotEmpty())
+                val recentStarted=System.nanoTime()
+                val recentStart=if(category=="SleepSession")Instant.ofEpochMilli(now).minus(java.time.Duration.ofDays(7)) else null
+                val recent=recentStart?.let {start->
+                    val rows=source.reconcileRecent(category,start,Instant.ofEpochMilli(now))
+                    val cached=store.records(setOf(category),start.toEpochMilli(),now).filterNot {it.id.startsWith("aggregate:")}.associateBy {it.id}
+                    rows.filter {cached[it.id]!=it}
+                }.orEmpty()
+                val upserts=(batch.records+recent).distinctBy {it.id}
+                emitTrace(category,"recent_reconcile",recentStarted){"recent=${recent.size} upserts=${upserts.size}"}
                 val existingStarted=System.nanoTime()
                 val existing=store.platformRecords(category,batch.deletedIds).associateBy {it.platformId}
                 val deletes=batch.deletedIds.mapNotNull(existing::get)
                 emitTrace(category,"deleted_lookup",existingStarted){"ids=${batch.deletedIds.size}"}
                 val affectedStarted=System.nanoTime()
-                val affected=store.affectedDates(batch.records,deletes,zone)[category].orEmpty()
-                emitTrace(category,"affected_dates",affectedStarted){"records=${batch.records.size} deleted=${deletes.size} dates=${affected.size}"}
+                val affected=store.affectedDates(upserts,deletes,zone)[category].orEmpty()
+                emitTrace(category,"affected_dates",affectedStarted){"records=${upserts.size} deleted=${deletes.size} dates=${affected.size}"}
                 val aggregatesStarted=System.nanoTime()
                 val aggregates=affected.associateWith {date->
                     val start=LocalDate.parse(date).atStartOfDay(zone).toInstant()
@@ -117,16 +127,16 @@ class HealthSync(
                 // A failed aggregate or cancelled read must leave both rows and cursor retryable.
                 val commitStarted=System.nanoTime()
                 store.transaction {
-                    store.applyIncremental(batch.records,deletes,emptyMap(),zone,mapOf(category to affected))
+                    store.applyIncremental(upserts,deletes,emptyMap(),zone,mapOf(category to affected))
                     aggregates.forEach {(date,rows)->
                         val start=LocalDate.parse(date).atStartOfDay(zone).toInstant()
                         store.replaceAggregates(category,start.toEpochMilli(),start.atZone(zone).plusDays(1).toInstant().toEpochMilli(),rows)
                     }
                     store.syncState(states.getValue(category).copy(token=batch.nextToken,syncedAt=now))
-                    if(batch.records.isNotEmpty()||deletes.isNotEmpty())store.markCacheChanged()
+                    if(upserts.isNotEmpty()||deletes.isNotEmpty())store.markCacheChanged()
                 }
-                emitTrace(category,"commit",commitStarted){"records=${batch.records.size} deleted=${deletes.size} aggregateRows=${aggregates.values.sumOf {it.size}}"}
-                if(batch.records.isNotEmpty()||deletes.isNotEmpty())changed+=category
+                emitTrace(category,"commit",commitStarted){"records=${upserts.size} deleted=${deletes.size} aggregateRows=${aggregates.values.sumOf {it.size}}"}
+                if(upserts.isNotEmpty()||deletes.isNotEmpty())changed+=category
                 null
             }catch(e:CancellationException){throw e}catch(_:HealthChangeTokenInvalid){emitTrace(category,"token_invalid",categoryStarted);category}catch(_:Exception){
                 // Transient reads, aggregate failures and storage errors must retry the same cursor.

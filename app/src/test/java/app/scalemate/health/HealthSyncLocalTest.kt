@@ -66,12 +66,15 @@ class HealthSyncLocalTest {
             if(category in failChanges)throw HealthChangeTokenInvalid()
             return pending[category] ?: HealthChanges(emptyList(),emptyList(),"next-$category")
         }
+        override suspend fun reconcileRecent(category:String,start:Instant,end:Instant):List<HealthRecord> =
+            rows.filter {it.kind==category&&it.end>start.toEpochMilli()&&it.start<end.toEpochMilli()}
         override suspend fun totals(category:String,start:Instant,end:Instant,zone:ZoneId):List<HealthRecord> {
             totalRequests+=category to start.atZone(zone).toLocalDate().toString()
             check(category !in failTotals){"Aggregate unavailable"}
             return aggregate(category,start,zone)
         }
         private fun aggregate(category:String,start:Instant,zone:ZoneId):List<HealthRecord> {
+            if(category=="SleepSession")return emptyList()
             val end=start.atZone(zone).plusDays(1).toInstant()
             val selected=rows.filter {it.kind==category&&it.start>=start.toEpochMilli()&&it.start<end.toEpochMilli()}
             if(selected.isEmpty())return emptyList()
@@ -268,6 +271,32 @@ class HealthSyncLocalTest {
             val retried=sync.refresh(window,setOf("Nutrition"),emptyMap()).snapshot
             assertEquals(900.0,retried.evidence.single {it.field=="energy"}.value,0.0)
             assertEquals("changed",store.syncState("Nutrition").token)
+        }
+    }
+    @Test fun recentSleepReconciliationRecoversLateRecordsMissedByChangeLogs()=runBlocking {
+        Store(context,name).use {db->
+            val store=HealthStore(db);val source=Source()
+            val napStart=LocalDate.of(2026,10,25).atTime(15,39).atZone(zone).toInstant().toEpochMilli()
+            val nap=HealthRecord("nap","SleepSession","watch",napStart,napStart+47*60000,
+                stages=listOf(HealthStage(napStart,napStart+47*60000,4)),platformId="nap-platform")
+            source.rows=listOf(nap)
+            val sync=HealthSync(store,source){now}
+            val first=sync.refresh(window,setOf("SleepSession"),emptyMap()).snapshot
+            assertEquals(47.0,first.evidence.single {it.field=="sleepMinutes"}.value,0.0)
+
+            val mainStart=LocalDate.of(2026,10,25).atTime(1,58).atZone(zone).toInstant().toEpochMilli()
+            val main=HealthRecord("main","SleepSession","watch",mainStart,mainStart+484*60000,
+                stages=listOf(HealthStage(mainStart,mainStart+484*60000,4)),platformId="main-platform")
+            source.rows=listOf(main,nap)
+            source.pending["SleepSession"]=HealthChanges(emptyList(),emptyList(),"late-write")
+            val repaired=sync.refresh(window,setOf("SleepSession"),emptyMap(),first)
+            assertEquals(setOf("main","nap"),store.records(setOf("SleepSession")).map {it.id}.toSet())
+            assertEquals(484.0,repaired.snapshot.evidence.single {it.field=="sleepMinutes"}.value,0.0)
+            assertEquals("late-write",store.syncState("SleepSession").token)
+
+            source.pending.clear()
+            val noop=sync.refresh(window,setOf("SleepSession"),emptyMap(),repaired.snapshot)
+            assertTrue(noop.unchanged)
         }
     }
     @Test fun expiredTokenAndHistoryPermissionChangeReconcileOnlyAffectedTypes()=runBlocking {

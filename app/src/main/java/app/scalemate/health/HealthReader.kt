@@ -106,6 +106,10 @@ class HealthReader(private val context:Context,private val observer:((HealthRead
         }
         return HealthChanges(batch.records,batch.deletedPlatformIds,batch.nextToken,batch.pages)
     }
+    override suspend fun reconcileRecent(category:String,start:Instant,end:Instant):List<HealthRecord> {
+        if(category!="SleepSession")return emptyList()
+        return measured(category,"recent"){raw(HealthCatalog.kind(category),start,end)}
+    }
     override suspend fun totals(category:String,start:Instant,end:Instant,zone:ZoneId)=totals(HealthCatalog.kind(category),start,end,zone)
     suspend fun routeRequests(window:HealthWindow):List<HealthRouteRequest> {
         if(!granted("android.permission.health.READ_EXERCISE"))return emptyList()

@@ -26,6 +26,27 @@ class HealthContractsTest {
         val raw=JSONObject().put("text","Activity is recorded [${fact.id}].").put("claims",JSONArray()).put("suggestions",JSONArray()).toString()
         assertEquals(listOf(fact.id),HealthPrompt.validate(raw,HealthPrompt.input(snapshot(),"Activity?")).second)
     }
+    @Test fun coachRenderingOnlyShowsReferencedFactsAndLocalizesUnits() {
+        val secondary=fact.copy(id="abcdefabcdefabcdefabcdef",kind="HeartRateVariabilityRmssd",field="nightRmssd",value=46.0,unit="ms")
+        val input=HealthPrompt.input(snapshot(listOf(fact,secondary)),"Coach")
+        val (text,ids)=HealthPrompt.renderCoach("今日已记录 [${fact.id}]。",input.facts,true)
+        assertEquals("今日已记录 7,000 步。",text)
+        assertEquals(listOf(fact.id),ids)
+    }
+    @Test fun coachRenderingTurnsRawSleepAndStepFieldsIntoReadableText() {
+        val bedtime=fact.copy(id="111111111111111111111111",kind="SleepSession",field="sessionStartAfterLocalNoon",value=878.0,unit="min after noon")
+        val wake=fact.copy(id="222222222222222222222222",kind="SleepSession",field="sessionEndMinuteOfDay",value=610.0,unit="min of day")
+        val steps=fact.copy(id="333333333333333333333333",kind="Steps",field="count",value=1198.0,unit="value")
+        val medianBedtime=bedtime.copy(id="444444444444444444444444",field="sessionStartAfterLocalNoon.median",value=872.0)
+        val medianSteps=steps.copy(id="555555555555555555555555",field="count.median",value=8123.0)
+        val input=HealthPrompt.input(snapshot(listOf(bedtime,wake,steps,medianBedtime,medianSteps)),"Coach")
+        val (text,_)=HealthPrompt.renderCoach(
+            "区间入睡 [${medianBedtime.id}]，昨晚入睡 [${bedtime.id}]，起床 [${wake.id}]，今天 [${steps.id}]，中位 [${medianSteps.id}]。",
+            input.facts,
+            true
+        )
+        assertEquals("区间入睡 02:32 入睡，昨晚入睡 02:38 入睡，起床 10:10 起床，今天 1,198 步，中位 8,123 步。",text)
+    }
     @Test fun generalDurationRangesInSuggestionsAreAccepted() {
         val raw=JSONObject().put("text","Activity is recorded [${fact.id}].").put("claims",JSONArray()).put("suggestions",JSONArray().put("Aim for 7–9 hours of sleep and about 150 minutes of activity per week.")).toString()
         assertEquals(listOf(fact.id),HealthPrompt.validate(raw,HealthPrompt.input(snapshot(),"Activity?")).second)
@@ -64,9 +85,61 @@ class HealthContractsTest {
         val rows=(1..90).flatMap {day->listOf("Steps","Weight","BloodPressure").map {kind->fact.copy(id="$kind-$day",kind=kind,date=java.time.LocalDate.of(2026,1,1).plusDays(day.toLong()).toString(),value=day.toDouble())}}
         val s=snapshot(rows).copy(window=HealthWindow("2026-01-01","2026-05-01"))
         val input=HealthPrompt.input(s,"Overall report")
-        assertEquals(setOf("Steps","Weight","BloodPressure"),input.facts.map {it.kind}.toSet());assertEquals(9,input.facts.size);assertEquals(3,input.grouped.size)
+        assertEquals(setOf("Steps","Weight","BloodPressure"),input.facts.map {it.kind}.toSet());assertEquals(12,input.facts.size);assertEquals(3,input.grouped.size)
         val again=HealthPrompt.input(s.copy(evidence=s.evidence+input.facts),"Follow up")
         assertEquals(input.facts,again.facts)
+    }
+    @Test fun newestFactSurvivesLongRangeSummarization() {
+        val rows=(25..31).map {day->fact.copy(id="sleep-$day",kind="SleepSession",field="sleepMinutes",date="2026-10-$day",value=430.0+day)}
+        val latest=fact.copy(id="sleep-latest",kind="SleepSession",field="sleepMinutes",date="2026-11-01",value=479.0)
+        val s=snapshot(rows+latest).copy(window=HealthWindow("2026-10-25","2026-11-01"))
+        val input=HealthPrompt.input(s,"Coach")
+        assertTrue(input.facts.any {it.id==latest.id&&it.value==479.0})
+        assertEquals(4,input.facts.size)
+        assertEquals(latest.date,input.grouped.single().getString("latestDate"))
+    }
+    @Test fun coachPromptKeepsOnlyDecisionRelevantFacts() {
+        val relevant=fact.copy(id="steps-coach",kind="Steps",field="count",date="2026-10-24",value=8123.0)
+        val irrelevant=(1..200).map {i->fact.copy(id="records-$i",kind="SleepSession",field="recordCount",date="2026-10-24",value=i.toDouble())}
+        val calories=fact.copy(id="calories-coach",kind="TotalCaloriesBurned",field="energy",date="2026-10-24",value=1954.0,unit="kcal")
+        val nutrition=fact.copy(id="nutrition-coach",kind="Nutrition",field="energy",date="2026-10-24",value=1800.0,unit="kcal")
+        val s=snapshot(listOf(relevant,calories,nutrition)+irrelevant).copy(categories=setOf("SleepSession","Steps","TotalCaloriesBurned","Nutrition"))
+        val (messages,input)=HealthPrompt.coachMessages(s,HealthGoals(),"zh")
+        assertEquals(1,input.facts.size)
+        assertEquals(relevant.id,input.sourceId(input.facts.single().id))
+        assertTrue(input.facts.single().id.matches(Regex("[a-f0-9]{8}")))
+        assertTrue(messages.getJSONObject(1).getString("content").toByteArray().size<160000)
+    }
+    @Test fun coachPromptPrefersMeasuredSleepOverSessionFallback() {
+        val measured=fact.copy(id="measured-sleep",kind="SleepSession",field="sleepMinutes",date="2026-10-24",value=438.0,unit="min")
+        val session=fact.copy(id="session-fallback",kind="SleepSession",field="sessionMinutes",date="2026-10-24",value=450.0,unit="min")
+        val fallbackOnly=fact.copy(id="session-only",kind="SleepSession",field="sessionMinutes",date="2026-10-23",value=420.0,unit="min")
+        val s=snapshot(listOf(measured,session,fallbackOnly)).copy(categories=setOf("SleepSession"))
+        val (_,input)=HealthPrompt.coachMessages(s,HealthGoals(),"zh")
+        val sourceIds=input.facts.map {input.sourceId(it.id)}.toSet()
+        assertTrue(measured.id in sourceIds)
+        assertFalse(session.id in sourceIds)
+        assertTrue(fallbackOnly.id in sourceIds)
+    }
+    @Test fun coachPromptKeepsLatestAndTypicalSleepDistinct() {
+        val rows=(16..25).map {day->
+            fact.copy(
+                id="sleep-$day".padEnd(24,'0'),
+                kind="SleepSession",
+                field="sleepMinutes",
+                date="2026-10-$day",
+                value=420.0+day,
+                unit="min"
+            )
+        }
+        val s=snapshot(rows).copy(window=HealthWindow("2026-10-18","2026-10-25"),categories=setOf("SleepSession"))
+        val (_,input)=HealthPrompt.coachMessages(s,HealthGoals(),"zh")
+        val latest=input.facts.filter {it.kind=="SleepSession"&&it.date=="2026-10-25"}
+        val typical=input.facts.filter {it.field.startsWith("recentTypicalSleepMinutes")}
+        assertEquals(1,latest.size)
+        assertEquals(1,typical.size)
+        assertTrue(input.facts.none {it.field.endsWith(".min")||it.field.endsWith(".max")})
+        assertTrue(input.facts.none {it.field.contains("sessionEndMinuteOfDay")})
     }
     @Test(expected=HealthInputTooLarge::class) fun oversizedClinicalSummaryIsRejectedBeforeSending() {
         val row=fact.copy(kind="Medical_CONDITIONS",field="clinicalRecord",detail=JSONObject().put("synthetic", "x".repeat(170000)).toString())

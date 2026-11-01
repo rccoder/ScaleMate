@@ -52,7 +52,7 @@ data class HealthDetailReference(
 fun HealthEvidence.period(window:HealthWindow):String {
     if(date=="undated")return "undated"
     val nightly=kind=="SleepSession"||listOf("sleepBpm","sessionBpm","nightRmssd").any {field==it||field.startsWith("$it.")}
-    return when {nightly&&date<=window.start->"baseline";nightly&&date<=window.end->"analysis";!nightly&&date<window.start->"baseline";!nightly&&date<window.end->"analysis";else->"partial"}
+    return when {nightly&&date<window.start->"baseline";nightly&&date<=window.end->"analysis";!nightly&&date<window.start->"baseline";!nightly&&date<window.end->"analysis";else->"partial"}
 }
 data class HealthCoverage(val kind:String,val status:String,val records:Long=0,val points:Long=0,val sources:List<String> = emptyList(),val latest:Long?=null)
 data class HealthWindow(val start:String,val end:String,val zone:String=ZoneId.systemDefault().id,val allHistory:Boolean=false) {
@@ -129,7 +129,8 @@ fun healthCoverage(kind:String,records:List<HealthRecord>):HealthCoverage {
 }
 data class HealthSummaryMetric(
     val kind:String,val field:String,val label:String,val value:Double,val unit:String,val date:String,
-    val partial:Boolean,val coverage:Double?,val evidenceId:String
+    val partial:Boolean,val coverage:Double?,val evidenceId:String,
+    val supplemental:List<HealthSummaryMetric> = emptyList()
 )
 enum class HealthChartKind { LINE, BAR }
 data class HealthTrendPoint(val date:LocalDate,val value:Double,val partial:Boolean)
@@ -202,7 +203,17 @@ object HealthOverview {
                 matches
             }
             val (field,e)=candidates.firstOrNull() ?: return@mapNotNull null
-            HealthSummaryMetric(kind,field,metricLabel(e),e.value,e.unit,e.date,e.partial,e.coverage,e.id)
+            val supplemental=if(kind=="SleepSession") {
+                val extra=snapshot.evidence.filter {
+                    it.kind==kind&&it.date==e.date&&it.field=="additionalSleepMinutes"
+                }.maxByOrNull {it.id} ?: snapshot.evidence.filter {
+                    it.kind==kind&&it.date==e.date&&it.field=="additionalSessionMinutes"
+                }.maxByOrNull {it.id}
+                extra?.let {
+                    listOf(HealthSummaryMetric(kind,it.field,metricLabel(it),it.value,it.unit,it.date,it.partial,it.coverage,it.id))
+                }.orEmpty()
+            } else emptyList()
+            HealthSummaryMetric(kind,field,metricLabel(e),e.value,e.unit,e.date,e.partial,e.coverage,e.id,supplemental)
         }
     }
     fun trend(snapshot:HealthSnapshot?,kind:String):HealthTrendSeries? {
@@ -230,6 +241,8 @@ object HealthOverview {
     }
     fun metricLabel(e:HealthEvidence)=when {
         e.field=="sleepMinutes"->"sleep"
+        e.field=="additionalSleepMinutes"->"other_sleep"
+        e.field=="additionalSessionMinutes"->"other_sleep"
         e.field=="sessionMinutes"->"session"
         e.field=="exerciseDuration"->"exercise_duration"
         e.field=="sleepBpm"->"sleep_hr"
@@ -253,8 +266,12 @@ data class HealthMessage(
 )
 data class HealthConversation(val id:String=healthId(),val title:String="",val messages:List<HealthMessage> = emptyList())
 data class HealthReport(val id:String=healthId(),val snapshotId:String,val message:HealthMessage)
-data class HealthGoals(val sleepMinutes:Int?=null,val steps:Long?=null) {
-    init {require(sleepMinutes==null||sleepMinutes in 60..1440);require(steps==null||steps in 100..100000)}
+data class HealthGoals(val sleepMinutes:Int?=null,val steps:Long?=null,val workoutDays:Int?=null) {
+    init {
+        require(sleepMinutes==null||sleepMinutes in 60..1440)
+        require(steps==null||steps in 100..100000)
+        require(workoutDays==null||workoutDays in 1..7)
+    }
 }
 data class HealthReminderSettings(
     val enabled:Boolean=false,val sleep:Boolean=true,val recovery:Boolean=false,val activity:Boolean=true,val bedtime:Boolean=false,

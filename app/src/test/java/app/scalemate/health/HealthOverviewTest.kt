@@ -20,6 +20,7 @@ class HealthOverviewTest {
         val snapshot=snapshot(
             row("SleepSession","sessionMinutes","2026-10-25",480.0,"min"),
             row("SleepSession","sleepMinutes","2026-10-25",450.0,"min"),
+            row("SleepSession","additionalSleepMinutes","2026-10-25",41.0,"min"),
             row("Steps","count","2026-10-25",6800.0,"steps",partial=true),
             row("ExerciseSession","exerciseDuration","2026-10-25",35.0,"min",partial=true),
             row("Steps","count","2026-10-24",9000.0,"steps")
@@ -27,6 +28,8 @@ class HealthOverviewTest {
         val cards=HealthOverview.today(snapshot,LocalDate.parse("2026-10-25"))
         assertEquals(listOf("SleepSession","Steps","ExerciseSession"),cards.map {it.kind})
         assertEquals("sleepMinutes",cards.first().field)
+        assertEquals("additionalSleepMinutes",cards.first().supplemental.single().field)
+        assertEquals(41.0,cards.first().supplemental.single().value,0.0)
         assertEquals("count",cards.single {it.kind=="Steps"}.field)
         assertEquals("exerciseDuration",cards.single {it.kind=="ExerciseSession"}.field)
     }

@@ -33,8 +33,15 @@ class HealthStore(private val store:Store) {
     fun markCacheChanged()=setting("sync:cacheRevision",healthId())
     fun categories()=setting("categories").takeIf {it.isNotBlank()}?.let {HealthJson.strings(JSONArray(it)).toSet()} ?: emptySet()
     fun categories(ids:Set<String>)=setting("categories",JSONArray(ids.sorted()).toString())
-    fun goals():HealthGoals {val o=setting("goals").takeIf {it.isNotBlank()}?.let(::JSONObject) ?: return HealthGoals();return HealthGoals(if(o.isNull("sleep"))null else o.getInt("sleep"),if(o.isNull("steps"))null else o.getLong("steps"))}
-    fun goals(g:HealthGoals)=setting("goals",JSONObject().put("sleep",g.sleepMinutes ?: JSONObject.NULL).put("steps",g.steps ?: JSONObject.NULL).toString())
+    fun goals():HealthGoals {
+        val o=setting("goals").takeIf {it.isNotBlank()}?.let(::JSONObject) ?: return HealthGoals()
+        return HealthGoals(
+            if(o.isNull("sleep"))null else o.getInt("sleep"),
+            if(o.isNull("steps"))null else o.getLong("steps"),
+            if(o.isNull("workoutDays"))null else o.getInt("workoutDays")
+        )
+    }
+    fun goals(g:HealthGoals)=setting("goals",JSONObject().put("sleep",g.sleepMinutes ?: JSONObject.NULL).put("steps",g.steps ?: JSONObject.NULL).put("workoutDays",g.workoutDays ?: JSONObject.NULL).toString())
     fun reminderSettings()=setting("reminders").takeIf {it.isNotBlank()}?.let {HealthJson.reminders(JSONObject(it))} ?: HealthReminderSettings()
     fun reminderSettings(s:HealthReminderSettings)=setting("reminders",HealthJson.reminders(s).toString())
     fun sources():Map<String,String> {val o=setting("sources").takeIf {it.isNotBlank()}?.let(::JSONObject) ?: return emptyMap();return o.keys().asSequence().associateWith {o.getString(it)}}
@@ -194,10 +201,12 @@ class HealthStore(private val store:Store) {
     fun reports():List<HealthReport> = store.readableDatabase.rawQuery("SELECT id,snapshotId,payload FROM health_reports ORDER BY createdAt DESC",null).use {c->buildList {while(c.moveToNext())add(HealthReport(c.getString(0),c.getString(1),HealthJson.message(JSONObject(c.getString(2)))))}}
     fun report(r:HealthReport){store.writableDatabase.insertOrThrow("health_reports",null,ContentValues().apply {put("id",r.id);put("snapshotId",r.snapshotId);put("createdAt",r.message.createdAt);put("payload",HealthJson.message(r.message).toString())})}
     fun deleteReport(id:String){store.writableDatabase.delete("health_reports","id=?",arrayOf(id));prune()}
+    fun coachMessage():HealthMessage?=setting("coach:latest").takeIf {it.isNotBlank()}?.let {HealthJson.message(JSONObject(it))}
+    fun coachMessage(message:HealthMessage){setting("coach:latest",HealthJson.message(message).toString())}
     fun reminders():List<HealthReminder> = store.readableDatabase.rawQuery("SELECT payload FROM health_reminders ORDER BY createdAt DESC",null).use {c->buildList {while(c.moveToNext())add(HealthJson.reminder(JSONObject(c.getString(0))))}}
     fun reminder(r:HealthReminder):Boolean = store.writableDatabase.insertWithOnConflict("health_reminders",null,ContentValues().apply {put("id",r.id);put("eventKey",r.key);put("dayKey",java.time.Instant.ofEpochMilli(r.createdAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString());put("createdAt",r.createdAt);put("payload",HealthJson.reminder(r).toString())},SQLiteDatabase.CONFLICT_IGNORE)!=-1L
     fun feedback(id:String,value:String) {val r=reminders().find {it.id==id} ?: return;store.writableDatabase.update("health_reminders",ContentValues().apply {put("payload",HealthJson.reminder(r.copy(feedback=value)).toString())},"id=?",arrayOf(id))}
-    fun clear() {val db=store.writableDatabase;db.beginTransaction();try {listOf("health_snapshots","health_reports","health_conversations","health_reminders","health_records","health_sync_state").forEach {db.delete(it,null,null)};db.delete("health_settings","key LIKE 'consent:%' OR key LIKE 'sync:%' OR key='activeSnapshot'",null);db.setTransactionSuccessful()}finally {db.endTransaction()}}
+    fun clear() {val db=store.writableDatabase;db.beginTransaction();try {listOf("health_snapshots","health_reports","health_conversations","health_reminders","health_records","health_sync_state").forEach {db.delete(it,null,null)};db.delete("health_settings","key LIKE 'consent:%' OR key LIKE 'sync:%' OR key LIKE 'coach:%' OR key='activeSnapshot'",null);db.setTransactionSuccessful()}finally {db.endTransaction()}}
     fun prune(now:Long=System.currentTimeMillis()) {
         val cutoff=now-90L*86400000
         store.writableDatabase.delete("health_reports","createdAt<?",arrayOf(cutoff.toString()))

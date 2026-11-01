@@ -41,7 +41,7 @@ object HealthMetrics {
         daily.filter {it.kind!="HeartRate"&&it.kind!="SleepSession"&&(it.kind!="Weight"||it.source==chosen["Weight"])}.groupBy {Triple(it.kind,if(it.start==0L&&it.kind.startsWith("Medical_"))"undated" else day(it.start),it.source)}.forEach {(key,rs)->
             val (kind,date,source)=key
             val raw=rs.filterNot {it.id.startsWith("aggregate:")}
-            if(raw.isNotEmpty())add(kind,date,source,"recordCount",raw.size.toDouble(),"records")
+            if(raw.isNotEmpty())add(kind,date,source,"recordCount",raw.size.toDouble(),"records",complete=kind=="Weight")
             if(kind=="ExerciseSession"&&raw.isNotEmpty()) {
                 add(kind,date,source,"exerciseDuration",raw.sumOf {it.end-it.start}.coerceAtLeast(0)/60000.0,"min",raw.size,algorithm="session-duration-v1")
             }
@@ -59,7 +59,11 @@ object HealthMetrics {
                     // Additive fields are provided by the platform aggregate, not raw multi-source sums.
                     val aggregate=rs.filter {it.id.startsWith("aggregate:")}.mapNotNull {it.values[field]}
                     val value=if(aggregate.isNotEmpty())aggregate.sumOf {it.value} else median(vals.map {it.value})!!
-                    add(kind,date,source,field,value,units.single(),vals.size,algorithm=if(aggregate.isNotEmpty())"platform-aggregate-v1" else "daily-median-v1")
+                    add(
+                        kind,date,source,field,value,units.single(),vals.size,
+                        algorithm=if(aggregate.isNotEmpty())"platform-aggregate-v1" else "daily-median-v1",
+                        complete=kind=="Weight"
+                    )
                 }
             }
             val points=rs.flatMap {it.points}.filter {it.value.isFinite()}.groupBy {it.time/60000}.mapNotNull {(_,p)->median(p.map {it.value})}
@@ -85,7 +89,21 @@ object HealthMetrics {
                 if(field!="sleepMinutes"||duplicates.isEmpty())add("SleepSession",date,primary.source,field,value,if(field=="stageCoverage")"ratio" else "min",coverage=stats["stageCoverage"],algorithm="sleep-stages-v1",complete=primary.end<=now)
             }
             val naps=sessions.filter {it.id!=primary.id&&it.start>=primary.end||it.id!=primary.id&&it.end<=primary.start}
-            if(naps.isNotEmpty())add("SleepSession",date,primary.source,"additionalSessionMinutes",unionMillis(naps.map {it.start to it.end})/60000.0,"min",naps.size,complete=naps.all {it.end<=now})
+            if(naps.isNotEmpty()) {
+                add("SleepSession",date,primary.source,"additionalSessionMinutes",unionMillis(naps.map {it.start to it.end})/60000.0,"min",naps.size,complete=naps.all {it.end<=now})
+                val napStats=naps.map(::sleep)
+                if(napStats.all {it.containsKey("sleepMinutes")}) {
+                    add(
+                        "SleepSession",date,primary.source,"additionalSleepMinutes",
+                        napStats.sumOf {it.getValue("sleepMinutes")},"min",naps.size,
+                        coverage=naps.zip(napStats).map {(record,stats)->
+                            val covered=record.stages.filter {it.stage!=0&&it.end>it.start&&it.start>=record.start&&it.end<=record.end}
+                            if(record.end>record.start)unionMillis(covered.map {it.start to it.end}).toDouble()/(record.end-record.start) else 0.0
+                        }.minOrNull(),
+                        algorithm="sleep-stages-v1",complete=naps.all {it.end<=now}
+                    )
+                }
+            }
             val sleepIntervals=primary.stages.filter {it.stage in setOf(2,4,5,6)}
             val samples=heart.filter {p->if(sleepIntervals.isEmpty())p.time in primary.start until primary.end else sleepIntervals.any {p.time in it.start until it.end}}
             val mins=samples.groupBy {it.time/60000}.mapNotNull {(_,ps)->median(ps.map {it.value})}

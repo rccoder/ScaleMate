@@ -91,7 +91,14 @@ class AiClient(private val secrets: AiCredentialProvider=AiSecrets()) {
     }
     suspend fun test(service: AiService) {request(service,JSONArray().put(JSONObject().put("role","user").put("content","Reply with OK. This is a synthetic connectivity test.")))}
     suspend fun streamText(service:AiService,messages:JSONArray,onText:(String)->Unit):String =
-        streamResponse(service,messages,4096,45_000,onText).text
+        streamText(service,messages,onText,disableReasoning=false)
+
+    suspend fun streamText(
+        service:AiService,
+        messages:JSONArray,
+        onText:(String)->Unit,
+        disableReasoning:Boolean=false
+    ):String = streamResponse(service,messages,4096,45_000,onText,disableReasoning=disableReasoning).text
 
     internal suspend fun streamResponse(
         service:AiService,

@@ -19,7 +19,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-data class PendingHealthRequest(val question:String,val report:Boolean,val service:AiService,val categories:Set<String>,val window:HealthWindow)
+enum class HealthRequestMode { CHAT, COACH }
+data class PendingHealthRequest(
+    val question:String,val report:Boolean,val service:AiService,val categories:Set<String>,val window:HealthWindow,
+    val mode:HealthRequestMode=HealthRequestMode.CHAT
+)
 data class HealthState(
     val loaded:Boolean=false,val available:Boolean=true,val categories:Set<String> = emptySet(),val permissions:Map<String,String> = emptyMap(),
     val historySupported:Boolean=false,val historyGranted:Boolean=false,val backgroundSupported:Boolean=false,val backgroundGranted:Boolean=false,
@@ -27,7 +31,8 @@ data class HealthState(
     val goals:HealthGoals=HealthGoals(),val reminderSettings:HealthReminderSettings=HealthReminderSettings(),val reminders:List<HealthReminder> = emptyList(),
     val conversations:List<HealthConversation> = emptyList(),val conversation:HealthConversation=HealthConversation(),val reports:List<HealthReport> = emptyList(),
     val busy:Boolean=false,val generating:Boolean=false,val progress:String="",val error:Int?=null,val consent:PendingHealthRequest?=null,
-    val exports:List<File> = emptyList(),val selectedEvidence:HealthEvidence?=null,val selectedEvidencePeriod:String="",val selectedEvidenceRecords:List<HealthRecord> = emptyList(),val selectedEvidenceRecordCount:Int=0,val selectedEvidenceReferences:List<HealthDetailReference> = emptyList(),val lastCheck:Long?=null,val sources:Map<String,String> = emptyMap(),val routeRequests:List<HealthRouteRequest> = emptyList(),val pendingRoute:HealthRouteRequest?=null,val syncStatus:String="idle",val syncProgress:String=""
+    val exports:List<File> = emptyList(),val selectedEvidence:HealthEvidence?=null,val selectedEvidencePeriod:String="",val selectedEvidenceRecords:List<HealthRecord> = emptyList(),val selectedEvidenceRecordCount:Int=0,val selectedEvidenceReferences:List<HealthDetailReference> = emptyList(),val lastCheck:Long?=null,val sources:Map<String,String> = emptyMap(),val routeRequests:List<HealthRouteRequest> = emptyList(),val pendingRoute:HealthRouteRequest?=null,val syncStatus:String="idle",val syncProgress:String="",
+    val coachMessage:HealthMessage?=null,val coachGenerating:Boolean=false
 )
 
 class HealthViewModel @JvmOverloads constructor(application:Application,private val syncSource:HealthSyncSource?=null,databaseName:String="scalemate.db"):AndroidViewModel(application) {
@@ -61,8 +66,9 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
                 historySupported=reader.supports(HealthCatalog.HISTORY),historyGranted=reader.granted(HealthCatalog.HISTORY),backgroundSupported=reader.supports(HealthCatalog.BACKGROUND),backgroundGranted=reader.granted(HealthCatalog.BACKGROUND),
                 window=if(!current.loaded)cached?.window ?: current.window else current.window,snapshot=cached,services=services,serviceId=current.serviceId.takeIf {id->services.any {it.id==id}} ?: food.setting("text").takeIf {id->services.any {it.id==id}} ?: services.singleOrNull()?.id.orEmpty(),
                 goals=store.goals(),reminderSettings=store.reminderSettings(),reminders=store.reminders(),conversations=store.conversations(),conversation=current.conversation,reports=store.reports(),lastCheck=store.setting("lastBackgroundCheck").toLongOrNull(),sources=store.sources())
+            .copy(coachMessage=store.coachMessage())
         }
-        mutable.update {s->val revoked=s.permissions.any {(kind,status)->status=="ready"&&data.permissions[kind]!="ready"};val keep=!revoked&&(s.busy||s.snapshot?.id!=before);s.copy(loaded=true,available=data.available,categories=data.categories,permissions=data.permissions,window=if(keep)s.window else data.window,historySupported=data.historySupported,historyGranted=data.historyGranted,backgroundSupported=data.backgroundSupported,backgroundGranted=data.backgroundGranted,snapshot=if(keep)s.snapshot else data.snapshot,services=data.services,serviceId=data.serviceId,goals=data.goals,reminderSettings=data.reminderSettings,reminders=data.reminders,conversations=data.conversations,conversation=if(revoked)HealthConversation() else s.conversation,reports=data.reports,lastCheck=data.lastCheck,sources=data.sources)}
+        mutable.update {s->val revoked=s.permissions.any {(kind,status)->status=="ready"&&data.permissions[kind]!="ready"};val keep=!revoked&&(s.busy||s.snapshot?.id!=before);s.copy(loaded=true,available=data.available,categories=data.categories,permissions=data.permissions,window=if(keep)s.window else data.window,historySupported=data.historySupported,historyGranted=data.historyGranted,backgroundSupported=data.backgroundSupported,backgroundGranted=data.backgroundGranted,snapshot=if(keep)s.snapshot else data.snapshot,services=data.services,serviceId=data.serviceId,goals=data.goals,reminderSettings=data.reminderSettings,reminders=data.reminders,conversations=data.conversations,conversation=if(revoked)HealthConversation() else s.conversation,reports=data.reports,lastCheck=data.lastCheck,sources=data.sources,coachMessage=if(s.coachGenerating)s.coachMessage else data.coachMessage)}
         if(BuildConfig.HEALTH_AI_ENABLED&&data.reminderSettings.enabled)HealthReminders.schedule(getApplication(),true)
         val current=mutable.value
         if(refreshIfStale&&!current.busy&&current.categories.any {current.permissions[it]=="ready"}&&(current.snapshot==null||System.currentTimeMillis()-current.snapshot.readAt>60000))refresh()
@@ -111,7 +117,7 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
         val (snapshot,fromCache)=withContext(Dispatchers.IO) {
             val sync=HealthSync(store,syncSource ?: reader,traceEnabled=traceEnabled,trace={event->
                 trace("sync category=${event.category} stage=${event.stage} elapsedMs=${event.elapsedMs} ${event.detail}")
-            },baselineDays=if(BuildConfig.HEALTH_AI_ENABLED)21 else 0)
+            },baselineDays=if(BuildConfig.HEALTH_AI_ENABLED||BuildConfig.HEALTH_COACH_ENABLED)21 else 0)
             val cached=preferCache&&sync.canUseCache(requested,current.categories)
             val rawRoot=File(getApplication<Application>().cacheDir,"health_raw").apply {mkdirs()}
             val previous=current.snapshot?.takeIf {s->
@@ -154,11 +160,23 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
         if(mutable.value.busy||question.isBlank())return
         if(question.length>6000){mutable.update {it.copy(error=R.string.health_question_long)};return}
         val service=mutable.value.services.find {it.id==mutable.value.serviceId} ?: run {mutable.update {it.copy(error=R.string.health_no_service)};return}
-        val pending=PendingHealthRequest(question.trim(),report,service,mutable.value.categories,mutable.value.window)
-        task {val allowed=withContext(Dispatchers.IO){store.consented(service,pending.categories)};if(allowed)generate(pending) else mutable.update {it.copy(consent=pending)}}
+        request(PendingHealthRequest(question.trim(),report,service,mutable.value.categories,mutable.value.window))
+    }
+    fun coach() {
+        if(mutable.value.busy||!BuildConfig.HEALTH_COACH_ENABLED)return
+        val service=mutable.value.services.find {it.id==mutable.value.serviceId} ?: run {mutable.update {it.copy(error=R.string.health_no_service)};return}
+        request(PendingHealthRequest(
+            HealthCoach.coachQuestion(),false,service,mutable.value.categories,mutable.value.window,HealthRequestMode.COACH
+        ))
+    }
+    private fun request(pending:PendingHealthRequest)=task {
+        val allowed=withContext(Dispatchers.IO){store.consented(pending.service,pending.categories)}
+        if(allowed) {
+            if(pending.mode==HealthRequestMode.COACH)generateCoach(pending) else generate(pending)
+        } else mutable.update {it.copy(consent=pending)}
     }
     fun cancelConsent(){mutable.update {it.copy(consent=null)}}
-    fun consent() {val pending=mutable.value.consent ?: return;mutable.update {it.copy(consent=null)};task {withContext(Dispatchers.IO){store.consent(pending.service,pending.categories)};generate(pending)}}
+    fun consent() {val pending=mutable.value.consent ?: return;mutable.update {it.copy(consent=null)};task {withContext(Dispatchers.IO){store.consent(pending.service,pending.categories)};if(pending.mode==HealthRequestMode.COACH)generateCoach(pending) else generate(pending)}}
     private fun generate(pending:PendingHealthRequest) {
         if(mutable.value.busy)return
         mutable.update {it.copy(busy=true,generating=true,error=null)}
@@ -184,7 +202,11 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
                 val assistant=HealthMessage(id=assistantId,role="assistant",text="",snapshotId=snapshot?.id.orEmpty(),serviceId=pending.service.id,serviceName=pending.service.name,model=pending.service.model,configVersion=pending.service.version,status="generating")
                 conversation=conversation.copy(title=conversation.title.ifBlank {pending.question.take(60)},messages=conversation.messages+user+assistant)
                 withContext(Dispatchers.IO){store.conversation(conversation)};mutable.update {it.copy(conversation=conversation)}
-                val raw=ai.streamText(pending.service,messages){text->if(generationId==assistantId){val preview=HealthPrompt.preview(text);mutable.update {it.copy(conversation=conversation.copy(messages=conversation.messages.map {m->if(m.id==assistantId)m.copy(text=preview) else m}))}}}
+                val raw=ai.streamText(
+                    pending.service,messages,
+                    {text->if(generationId==assistantId){val preview=HealthPrompt.preview(text);mutable.update {it.copy(conversation=conversation.copy(messages=conversation.messages.map {m->if(m.id==assistantId)m.copy(text=preview) else m}))}}},
+                    disableReasoning=pending.service.format=="openai"&&pending.service.model.contains("deepseek",ignoreCase=true)
+                )
                 val (answer,refs)=HealthPrompt.validate(raw,input)
                 val chinese=(getApplication<Application>().resources.configuration.locales[0].language=="zh")
                 val complete=assistant.copy(text=HealthPrompt.render(answer,refs,input.facts,chinese),status="complete",evidenceIds=refs)
@@ -202,7 +224,75 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
             }finally {generationId=null;mutable.update {it.copy(busy=false,generating=false,progress="",conversation=it.conversation.copy(messages=it.conversation.messages.map {m->if(m.id==assistantId&&m.status=="generating")m.copy(text="",status="cancelled") else m}))}}
         }
     }
-    fun cancel(){generationId=null;operation?.cancel();operation=null;mutable.update {it.copy(consent=null)}}
+    private fun generateCoach(pending:PendingHealthRequest) {
+        if(mutable.value.busy)return
+        val base=HealthMessage(
+            id=healthId(),role="assistant",text="",snapshotId=mutable.value.snapshot?.id.orEmpty(),
+            serviceId=pending.service.id,serviceName=pending.service.name,model=pending.service.model,
+            configVersion=pending.service.version,status="generating"
+        )
+        generationId=base.id
+        mutable.update {it.copy(busy=true,generating=true,coachGenerating=true,error=null,coachMessage=base)}
+        operation=viewModelScope.launch {
+            try {
+                val current=withContext(Dispatchers.IO){food.services().find {it.id==pending.service.id}}
+                check(current?.version==pending.service.version&&pending.categories==mutable.value.categories&&pending.window==mutable.value.window)
+                var snapshot=mutable.value.snapshot
+                val revoked=snapshot?.categories?.any {!reader.canUseCached(HealthCatalog.kind(it))}==true
+                if(revoked||snapshot==null||System.currentTimeMillis()-snapshot.readAt>6*3600000) {
+                    snapshot=if(pending.categories.any {reader.canUseCached(HealthCatalog.kind(it))})refreshNow() else null
+                }
+                checkNotNull(snapshot){"No health snapshot"}
+                val appLocales=getApplication<Application>().getSystemService(LocaleManager::class.java).applicationLocales
+                val language=(if(appLocales.isEmpty)java.util.Locale.getDefault() else appLocales[0]).toLanguageTag()
+                val (messages,input)=HealthPrompt.coachMessages(snapshot,mutable.value.goals,language)
+                val derived=input.facts.mapNotNull {fact->
+                    val sourceId=input.sourceId(fact.id)
+                    fact.takeIf {snapshot.evidence.none {it.id==sourceId} }?.copy(id=sourceId)
+                }
+                snapshot=snapshot.copy(evidence=(snapshot.evidence+derived).distinctBy {it.id})
+                withContext(Dispatchers.IO){store.snapshot(snapshot)}
+                val pendingMessage=base.copy(snapshotId=snapshot.id)
+                mutable.update {it.copy(snapshot=snapshot,coachMessage=pendingMessage)}
+                val raw=ai.streamText(
+                    pending.service,messages,
+                    {text->
+                        if(generationId==base.id)mutable.update {
+                            it.copy(coachMessage=pendingMessage.copy(text=HealthPrompt.preview(text)))
+                        }
+                    },
+                    disableReasoning=pending.service.format=="openai"&&pending.service.model.contains("deepseek",ignoreCase=true)
+                )
+                val (answer,aliases)=HealthPrompt.validate(raw,input)
+                val refs=aliases.map(input::sourceId)
+                val chinese=getApplication<Application>().resources.configuration.locales[0].language=="zh"
+                val rendered=HealthPrompt.renderCoach(answer,input.facts,chinese).first
+                val complete=pendingMessage.copy(
+                    text=rendered,
+                    status="complete",evidenceIds=refs
+                )
+                withContext(Dispatchers.IO){store.coachMessage(complete)}
+                mutable.update {it.copy(coachMessage=complete)}
+            }catch(e:CancellationException){
+                throw e
+            }catch(e:Exception){
+                Log.w("ScaleMateHealth","coach generation failed type=${e.javaClass.simpleName} reason=${e.message.orEmpty().take(240)}")
+                val error=when(e){
+                    is FoodFailure->when(e.resource){R.string.food_ai_invalid->R.string.health_invalid_response;R.string.food_ai_timeout->R.string.health_ai_timeout;R.string.food_ai_network->R.string.health_ai_network;else->e.resource}
+                    is HealthInputTooLarge->R.string.health_input_too_large
+                    else->R.string.health_invalid_response
+                }
+                mutable.update {it.copy(error=error,coachMessage=it.coachMessage?.copy(text="",status="failed"))}
+            }finally {
+                generationId=null
+                mutable.update {it.copy(
+                    busy=false,generating=false,coachGenerating=false,progress="",
+                    coachMessage=it.coachMessage?.let {m->if(m.status=="generating")m.copy(text="",status="cancelled") else m}
+                )}
+            }
+        }
+    }
+    fun cancel(){generationId=null;operation?.cancel();operation=null;mutable.update {it.copy(consent=null,coachGenerating=false)}}
     fun cancelGeneration(){if(mutable.value.generating)cancel()}
     fun newConversation(){if(!mutable.value.busy)mutable.update {it.copy(conversation=HealthConversation())}}
     fun openConversation(c:HealthConversation){if(!mutable.value.busy)mutable.update {it.copy(conversation=c)}}
@@ -253,12 +343,12 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
             else->exactDay
         }.sortedBy {it.start}
         if(e.kind!="ExerciseSession")return EvidenceDetail(selected.take(3),selected.size,emptyList())
-        val sessionRanges=selected.take(8).map {it.start to it.end}
+        val sessionRanges=selected.take(20).map {it.start to it.end}
         val references=listOf("Distance","ActiveCaloriesBurned","TotalCaloriesBurned").mapNotNull {kind->
             val values=records.filter {it.kind==kind&&it.source==e.source&&sessionRanges.any {(start,end)->it.start<end&&it.end>start}}.flatMap {it.values.values.filter {v->v.unit!="enum"&&v.unit!="flag"}}
             if(values.isEmpty())null else HealthDetailReference(kind,values.minOf {it.value},values.maxOf {it.value},values.first().unit,values.size)
         }
-        return EvidenceDetail(selected.take(8),selected.size,references)
+        return EvidenceDetail(selected.take(20),selected.size,references)
     }
     fun closeEvidence(){mutable.update {it.copy(selectedEvidence=null,selectedEvidenceRecords=emptyList(),selectedEvidenceRecordCount=0,selectedEvidenceReferences=emptyList())}}
     fun beginRoute(request:HealthRouteRequest){mutable.update {it.copy(pendingRoute=request)}}
@@ -291,6 +381,6 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
         operation=viewModelScope.launch {try {val files=withContext(Dispatchers.IO){HealthExport.write(File(getApplication<Application>().cacheDir,"health_exports"),File(getApplication<Application>().cacheDir,"health_raw"),s,question,raw)};mutable.update {it.copy(exports=files)}}catch(e:CancellationException){throw e}catch(_:Exception){mutable.update {it.copy(error=R.string.health_export_error)}}finally {mutable.update {it.copy(busy=false)}}}
     }
     fun feedback(id:String,value:String)=task {withContext(Dispatchers.IO){store.feedback(id,value)};val reminders=withContext(Dispatchers.IO){store.reminders()};mutable.update {it.copy(reminders=reminders)}}
-    fun clearHistory(){if(mutable.value.busy)return;task {withContext(Dispatchers.IO){store.clear();File(getApplication<Application>().cacheDir,"health_raw").deleteRecursively();File(getApplication<Application>().cacheDir,"health_exports").deleteRecursively()};mutable.update {it.copy(snapshot=null,conversation=HealthConversation(),conversations=emptyList(),reports=emptyList(),reminders=emptyList(),exports=emptyList())}}}
+    fun clearHistory(){if(mutable.value.busy)return;task {withContext(Dispatchers.IO){store.clear();File(getApplication<Application>().cacheDir,"health_raw").deleteRecursively();File(getApplication<Application>().cacheDir,"health_exports").deleteRecursively()};mutable.update {it.copy(snapshot=null,conversation=HealthConversation(),conversations=emptyList(),reports=emptyList(),reminders=emptyList(),exports=emptyList(),coachMessage=null)}}}
     override fun onCleared(){operation?.cancel();db.close();super.onCleared()}
 }

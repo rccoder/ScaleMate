@@ -30,11 +30,27 @@ class HealthMetricsTest {
     @Test fun intervalUnionHandlesNestedAdjacentAndDisjointIntervals() {assertEquals(35,HealthMetrics.unionMillis(listOf(0L to 10L,5L to 20L,20L to 30L,32L to 37L,8L to 9L)))}
     @Test fun duplicatesAreDeduplicatedAndNapsAreSeparate() {
         val night=sleep(listOf(HealthStage(start,end,4)))
-        val nap=night.copy(id="nap",start=end+3600000,end=end+7200000,stages=emptyList())
+        val nap=night.copy(
+            id="nap",start=end+3600000,end=end+7200000,
+            stages=listOf(HealthStage(end+3600000,end+6600000,1),HealthStage(end+6600000,end+7200000,4))
+        )
         val rows=HealthMetrics.compute(listOf(night,night,nap),zone,end+86400000)
         assertEquals(480.0,rows.single {it.field=="sleepMinutes"}.value,0.0)
         assertEquals(60.0,rows.single {it.field=="additionalSessionMinutes"}.value,0.0)
+        assertEquals(10.0,rows.single {it.field=="additionalSleepMinutes"}.value,0.0)
         assertEquals("2026-10-17",rows.single {it.field=="sleepMinutes"}.date)
+    }
+    @Test fun laterNapDoesNotReplaceTheLongestPrimarySleep() {
+        val night=sleep(listOf(HealthStage(start,end,4)))
+        val nap=night.copy(
+            id="later-nap",start=end+6*3600000,end=end+6*3600000+41*60000,
+            stages=listOf(HealthStage(end+6*3600000,end+6*3600000+41*60000,4))
+        )
+        val rows=HealthMetrics.compute(listOf(night,nap),zone,end+8*3600000)
+        val primary=rows.single {it.field=="sleepMinutes"}
+        assertEquals(480.0,primary.value,0.0)
+        assertEquals("2026-10-17",primary.date)
+        assertEquals(41.0,rows.single {it.field=="additionalSleepMinutes"}.value,0.0)
     }
     @Test fun duplicateSleepSessionsSuppressUnsupportedActualSleepConclusion() {
         val a=sleep(listOf(HealthStage(start,end,4)))
@@ -90,10 +106,15 @@ class HealthMetricsTest {
         assertEquals(1500.0,energy.value,0.0)
         assertEquals("platform-aggregate-v1",energy.algorithm)
     }
-    @Test fun todayIsMarkedPartialAndTimeZoneControlsDate() {
+    @Test fun todayWeightIsACompletePointReadingAndTimeZoneControlsDate() {
         val r=HealthRecord("w","Weight","scale",at("2026-10-16T17:00:00Z"),values=mapOf("weight" to HealthValue(71000.0,"g")))
         val rows=HealthMetrics.compute(listOf(r),zone,r.start+1000)
-        assertTrue(rows.all {it.partial&&it.date=="2026-10-17"})
+        assertTrue(rows.all {!it.partial&&it.date=="2026-10-17"})
+    }
+    @Test fun todayCumulativeActivityStillRemainsPartial() {
+        val r=HealthRecord("s","Steps","phone",start,values=mapOf("count" to HealthValue(1200.0,"steps")))
+        val rows=HealthMetrics.compute(listOf(r),zone,r.start+1000)
+        assertTrue(rows.single {it.field=="count"}.partial)
     }
     @Test fun completedSleepThisMorningIsAvailableForMorningReminders() {
         val night=sleep(listOf(HealthStage(start,end,2)))
@@ -101,6 +122,12 @@ class HealthMetricsTest {
         val completed=rows.single {it.field=="sleepMinutes"}
         assertFalse(completed.partial)
         assertEquals("analysis",completed.period(HealthWindow("2026-10-10","2026-10-17",zone.id)))
+    }
+    @Test fun sleepEndingOnTheFirstSelectedWakeDayIsAnalysisNotBaseline() {
+        val night=sleep(listOf(HealthStage(start,end,2)))
+        val rows=HealthMetrics.compute(listOf(night),zone,end+3600000)
+        val completed=rows.single {it.field=="sleepMinutes"}
+        assertEquals("analysis",completed.period(HealthWindow(completed.date,"2026-10-18",zone.id)))
     }
     @Test fun dayRangesUseCalendarDaysAcrossDst() {
         val w=HealthWindow.recent(7,Instant.parse("2026-03-10T12:00:00Z"),ZoneId.of("America/New_York"))

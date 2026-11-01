@@ -69,8 +69,10 @@ import kotlinx.coroutines.withContext
     var showAllTrends by rememberSaveable {mutableStateOf(false)}
     var view by rememberSaveable {mutableStateOf("cards")}
     var rangeWindow by remember {mutableStateOf(s.window)}
-    val today=LocalDate.now()
+    val today=LocalDate.now(ZoneId.of(s.window.zone))
     val todayMetrics=HealthOverview.today(s.snapshot,today)
+    val coachBrief=remember(s.snapshot,s.goals,today){HealthCoach.brief(s.snapshot,s.goals,today)}
+    val coachMessage=s.coachMessage?.takeIf {it.snapshotId==s.snapshot?.id}
     val configuredService=s.serviceId.takeIf {id->s.services.any {it.id==id}}
     val save=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")){uri->
         val file=exportingFile
@@ -168,6 +170,18 @@ import kotlinx.coroutines.withContext
                         }
                     }
                 }
+                if(BuildConfig.HEALTH_COACH_ENABLED) {
+                    HealthCoachSection(
+                        brief=coachBrief,
+                        message=coachMessage,
+                        configured=configuredService!=null,
+                        busy=s.busy,
+                        chinese=chinese,
+                        onGenerate=vm::coach,
+                        onConfigure=manageServices,
+                        onEvidence={id->vm.evidence(id,coachMessage?.snapshotId.orEmpty())}
+                    )
+                }
                 if(BuildConfig.HEALTH_AI_ENABLED) {
                     HealthAiSection(enabled=!s.busy&&s.snapshot?.analysisEvidence()?.isNotEmpty()==true,configured=!configuredService.isNullOrEmpty(),onReport={vm.ask(reportQuestion,true);go("chat")},onChat={go("chat")},onConfigure=manageServices,onPreset={question=it;go("chat")},presets=listOf(
                         stringResource(R.string.health_preset_sleep),
@@ -252,7 +266,7 @@ import kotlinx.coroutines.withContext
                 if(s.conversation.messages.size>visibleMessages)TextButton(onClick={visibleMessages+=50}){Text(stringResource(R.string.health_earlier_messages))}
                 s.conversation.messages.takeLast(visibleMessages).forEach {message->HealthCard(if(message.role=="user")MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant) {
                     if(message.role=="assistant")Text(message.serviceName+" · "+message.model,style=MaterialTheme.typography.labelSmall)
-                    if(message.text.isNotEmpty())Text(message.text.replace(Regex("\\[[a-f0-9]{20,24}(?:-(?:median|min|max))?\\]"),""))
+                    if(message.text.isNotEmpty())Text(message.text.replace(Regex("\\[[a-f0-9]{4,24}(?:-(?:median|min|max))?\\]"),""))
                     if(message.status!="complete"&&message.text.isBlank())Text(stringResource(when(message.status){"generating"->R.string.health_pending;"cancelled"->R.string.health_cancelled;else->R.string.health_failed}),style=MaterialTheme.typography.bodySmall)
                     FlowRow {message.evidenceIds.forEach {id->val e=s.snapshot?.evidence?.find {it.id==id};TextButton(onClick={vm.evidence(id,message.snapshotId)}){Text(e?.let {HealthCatalog.kind(it.kind).label(chinese)+" · "+healthMetricDisplay(it)} ?: stringResource(R.string.health_detail))}}}
                 }}
@@ -294,11 +308,12 @@ import kotlinx.coroutines.withContext
                 }
             }
             "goals"->{
-                var sleep by remember(s.goals){mutableStateOf(s.goals.sleepMinutes?.toString().orEmpty())};var steps by remember(s.goals){mutableStateOf(s.goals.steps?.toString().orEmpty())}
+                var sleep by remember(s.goals){mutableStateOf(s.goals.sleepMinutes?.toString().orEmpty())};var steps by remember(s.goals){mutableStateOf(s.goals.steps?.toString().orEmpty())};var workouts by remember(s.goals){mutableStateOf(s.goals.workoutDays?.toString().orEmpty())}
                 Text(stringResource(R.string.health_goals),style=MaterialTheme.typography.headlineSmall);Text(stringResource(R.string.health_goals_note))
                 OutlinedTextField(value=sleep,onValueChange={sleep=it},label={Text(stringResource(R.string.health_sleep_goal))},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.fillMaxWidth())
                 OutlinedTextField(value=steps,onValueChange={steps=it},label={Text(stringResource(R.string.health_steps_goal))},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.fillMaxWidth())
-                Button(onClick={try {val g=HealthGoals(if(sleep.isBlank())null else sleep.toInt(),if(steps.isBlank())null else steps.toLong());vm.goals(g);go("home")}catch(_:Exception){localError=R.string.health_values_invalid}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_save_goals))}
+                OutlinedTextField(value=workouts,onValueChange={workouts=it},label={Text(stringResource(R.string.health_workout_goal))},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.fillMaxWidth())
+                Button(onClick={try {val g=HealthGoals(if(sleep.isBlank())null else sleep.toInt(),if(steps.isBlank())null else steps.toLong(),if(workouts.isBlank())null else workouts.toInt());vm.goals(g);go("home")}catch(_:Exception){localError=R.string.health_values_invalid}},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_save_goals))}
             }
             "reminders"->{
                 val settings=s.reminderSettings
@@ -394,9 +409,10 @@ private fun metricLabelResource(kind:String,field:String)=when(metricLabel(kind,
 
 @Composable private fun healthMetricDisplay(e:HealthEvidence):String {
     val number=java.text.NumberFormat.getNumberInstance().apply {maximumFractionDigits=2}
+    val sleepNumber=java.text.NumberFormat.getNumberInstance().apply {maximumFractionDigits=1}
     return when {
         e.kind=="Weight"&&e.field=="weight"&&e.unit=="g"->number.format(e.value/1000)+" kg"
-        e.kind=="SleepSession"&&e.unit=="min"->number.format(e.value/60)+" "+stringResource(R.string.health_unit_hours)
+        e.kind=="SleepSession"&&e.unit=="min"->sleepNumber.format(e.value/60)+" "+stringResource(R.string.health_unit_hours)
         e.kind=="ExerciseSession"&&e.field=="exerciseDuration"->number.format(e.value)+" "+stringResource(R.string.health_unit_min)
         e.kind=="Distance"&&e.field=="distance"&&e.unit=="m"->number.format(e.value/1000)+" km"
         e.field=="skinTemperatureBaseline"->number.format(e.value)+"°C"
@@ -425,6 +441,18 @@ private fun metricLabelResource(kind:String,field:String)=when(metricLabel(kind,
     if(records.isEmpty())return
     HorizontalDivider()
     Text(stringResource(R.string.health_record_samples),style=MaterialTheme.typography.labelLarge)
+    if(evidence.kind=="ExerciseSession") {
+        val sessions=records.filter {it.kind=="ExerciseSession"}
+        if(sessions.isNotEmpty())Text(
+            stringResource(
+                R.string.health_exercise_session_summary,
+                sessions.size,
+                durationLabel(sessions.sumOf {it.end-it.start})
+            ),
+            style=MaterialTheme.typography.bodySmall,
+            color=MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
     records.forEach {record->
         val start=Instant.ofEpochMilli(record.start).atZone(ZoneId.systemDefault())
         val end=Instant.ofEpochMilli(record.end).atZone(ZoneId.systemDefault())
@@ -436,6 +464,8 @@ private fun metricLabelResource(kind:String,field:String)=when(metricLabel(kind,
                     Text(start.format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))+" – "+end.format(DateTimeFormatter.ofPattern("HH:mm"))+" · "+durationLabel(record.end-record.start),style=MaterialTheme.typography.bodySmall)
                     val segments=record.detail.takeIf {it.isNotEmpty()}?.let {runCatching {org.json.JSONObject(it).optJSONArray("segments")?.length() ?: 0}.getOrDefault(0)} ?: 0
                     if(segments>0)Text(stringResource(R.string.health_segment_count,segments),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    val laps=record.detail.takeIf {it.isNotEmpty()}?.let {runCatching {org.json.JSONObject(it).optJSONArray("laps")?.length() ?: 0}.getOrDefault(0)} ?: 0
+                    if(laps>0)Text(stringResource(R.string.health_lap_count,laps),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 "SleepSession"->{
                     val asleep=record.sleepMinutes()
@@ -464,10 +494,14 @@ private fun metricLabelResource(kind:String,field:String)=when(metricLabel(kind,
     }
 }
 
-private fun formatHours(minutes:Double):String=java.text.NumberFormat.getNumberInstance().apply {maximumFractionDigits=1}.format(minutes/60)+" h"
-private fun durationLabel(millis:Long):String {
+@Composable private fun formatHours(minutes:Double):String=java.text.NumberFormat.getNumberInstance().apply {maximumFractionDigits=1}.format(minutes/60)+" "+stringResource(R.string.health_unit_hours)
+@Composable private fun durationLabel(millis:Long):String {
     val minutes=(millis/60000).coerceAtLeast(0)
-    return if(minutes>=60)"${minutes/60} h ${minutes%60} min" else "$minutes min"
+    return when {
+        minutes>=60&&minutes%60>0L->"${minutes/60} "+stringResource(R.string.health_unit_hours)+" ${minutes%60} "+stringResource(R.string.health_unit_min)
+        minutes>=60->"${minutes/60} "+stringResource(R.string.health_unit_hours)
+        else->"$minutes "+stringResource(R.string.health_unit_min)
+    }
 }
 private fun formatReference(reference:HealthDetailReference):String {
     val number=java.text.NumberFormat.getNumberInstance().apply {maximumFractionDigits=2}
@@ -541,14 +575,28 @@ private fun exerciseTypeLabel(type:Int?,chinese:Boolean):String {
 @Composable private fun HealthMetricCard(metric:HealthSummaryMetric,chinese:Boolean,modifier:Modifier=Modifier,onClick:()->Unit) {
     Surface(onClick=onClick,modifier=modifier,shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surfaceVariant) {
         Column(Modifier.padding(horizontal=14.dp,vertical=10.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-            Text(HealthCatalog.kind(metric.kind).label(chinese),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,minLines=2,maxLines=2,overflow=TextOverflow.Ellipsis)
+            Text(summaryMetricLabel(metric,chinese),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,minLines=2,maxLines=2,overflow=TextOverflow.Ellipsis)
             Row(Modifier.fillMaxWidth().height(32.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
                 Text(metricValueLabel(metric),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis)
                 Text(metricUnitLabel(metric),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1)
             }
+            metric.supplemental.firstOrNull()?.let {supplemental->
+                val value=metricValueLabel(supplemental)+" "+metricUnitLabel(supplemental)
+                Text(
+                    stringResource(R.string.health_other_sleep,value.trim()),
+                    style=MaterialTheme.typography.labelSmall,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines=1,
+                    overflow=TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
+
+@Composable private fun summaryMetricLabel(metric:HealthSummaryMetric,chinese:Boolean):String =
+    if(metric.kind=="SleepSession"&&metric.field=="sleepMinutes")stringResource(R.string.health_metric_sleep_primary)
+    else HealthCatalog.kind(metric.kind).label(chinese)
 
 @Composable private fun metricValueLabel(metric:HealthSummaryMetric):String {
     val number=java.text.NumberFormat.getNumberInstance().apply {maximumFractionDigits=if(metric.kind in setOf("Weight","SleepSession","Distance","SkinTemperature"))1 else 0}
@@ -697,6 +745,165 @@ private fun trendAxisLabel(trend:HealthTrendSeries,value:Double):String {
         }
     }
     return number.format(value)
+}
+
+@Composable private fun HealthCoachSection(
+    brief:HealthCoachBrief?,
+    message:HealthMessage?,
+    configured:Boolean,
+    busy:Boolean,
+    chinese:Boolean,
+    onGenerate:()->Unit,
+    onConfigure:()->Unit,
+    onEvidence:(String)->Unit
+) {
+    val signals=brief?.signals.orEmpty()
+    val hasData=signals.isNotEmpty()
+    var showAllSignals by remember {mutableStateOf(false)}
+    val visibleSignals=if(showAllSignals)signals else signals.take(1)
+    Surface(
+        color=MaterialTheme.colorScheme.primaryContainer.copy(alpha=.42f),
+        shape=RoundedCornerShape(24.dp),
+        modifier=Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                Text(stringResource(R.string.health_coach_title),style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.SemiBold)
+                if(message==null)Text(stringResource(R.string.health_coach_intro),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                brief?.dataAsOf?.let {Text(
+                    stringResource(R.string.health_coach_updated,Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))),
+                    style=MaterialTheme.typography.labelSmall,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant
+                )}
+            }
+            if(hasData) {
+                Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                    visibleSignals.forEachIndexed {index,signal->
+                        if(index>0)HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant.copy(alpha=.45f))
+                        HealthCoachSignalRow(signal,chinese,onEvidence)
+                    }
+                    if(signals.size>1)TextButton(onClick={showAllSignals=!showAllSignals},contentPadding=PaddingValues(0.dp)) {
+                        Text(if(showAllSignals)stringResource(R.string.health_coach_signals_less) else stringResource(R.string.health_coach_signals_all,signals.size))
+                    }
+                }
+            } else {
+                Text(stringResource(R.string.health_coach_no_data),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            brief?.oldCategories?.takeIf {it.isNotEmpty()}?.let {kinds->
+                Text(
+                    stringResource(R.string.health_coach_delayed,kinds.sorted().joinToString(" · ") {HealthCatalog.kind(it).label(chinese)}),
+                    style=MaterialTheme.typography.labelSmall,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            brief?.missingCategories?.takeIf {it.isNotEmpty()}?.let {kinds->
+                Text(
+                    stringResource(R.string.health_coach_missing,kinds.sorted().joinToString(" · ") {HealthCatalog.kind(it).label(chinese)}),
+                    style=MaterialTheme.typography.labelSmall,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if(message!=null) {
+                val display=message.text.replace(Regex("\\[[a-f0-9]{4,24}(?:-(?:median|min|max))?\\]"),"").trim()
+                HealthCard(MaterialTheme.colorScheme.surface.copy(alpha=.78f)) {
+                    Text((message.serviceName.ifBlank {"AI"})+" · "+message.model,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    if(display.isNotEmpty())Text(display)
+                    if(message.status!="complete")Text(
+                        stringResource(when(message.status){"generating"->R.string.health_coach_pending;"cancelled"->R.string.health_cancelled;else->R.string.health_failed}),
+                        style=MaterialTheme.typography.bodySmall,
+                        color=MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            if(configured)Button(enabled=!busy&&hasData,onClick=onGenerate,modifier=Modifier.fillMaxWidth()) {
+                Text(stringResource(if(message?.status=="complete")R.string.health_coach_regenerate else R.string.health_coach_generate))
+            } else OutlinedButton(onClick=onConfigure,modifier=Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.health_coach_configure))
+            }
+            if(message==null)Text(stringResource(R.string.health_coach_privacy),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable private fun HealthCoachSignalRow(signal:HealthCoachSignal,chinese:Boolean,onEvidence:(String)->Unit) {
+    val number=java.text.NumberFormat.getNumberInstance().apply {maximumFractionDigits=1}
+    val (title,value,detail,evidenceId)=when(signal) {
+        is HealthCoachSignal.Sleep->{
+            val primary=signal.primary
+            val supplemental=signal.supplemental.firstOrNull()
+            val extra=supplemental?.let {" · "+stringResource(R.string.health_other_sleep,healthMetricDisplay(it))}.orEmpty()
+            val comparison=signal.baselineMedianMinutes?.let {stringResource(R.string.health_coach_recent_nights,coachHours(it))}.orEmpty()
+            val goal=signal.goalMinutes?.let {stringResource(R.string.health_coach_goal,coachHours(it.toDouble()))}.orEmpty()
+            listOf(
+                stringResource(R.string.health_coach_sleep),
+                coachHours(primary.value)+extra,
+                listOf(comparison,goal).filter {it.isNotEmpty()}.joinToString(" · "),
+                primary.id
+            )
+        }
+        is HealthCoachSignal.Activity->{
+            val comparison=signal.baselineMedianSteps?.let {stringResource(R.string.health_coach_recent_days,coachSteps(it))}.orEmpty()
+            val goal=signal.goalSteps?.let {stringResource(R.string.health_coach_goal,coachSteps(it.toDouble()))}.orEmpty()
+            listOf(
+                stringResource(R.string.health_coach_activity),
+                coachSteps(signal.latest.value),
+                listOf(comparison,goal).filter {it.isNotEmpty()}.joinToString(" · "),
+                signal.latest.id
+            )
+        }
+        is HealthCoachSignal.Training->{
+            val total=coachDuration(signal.totalMinutes)
+            val detail=signal.goalDays?.let {stringResource(R.string.health_coach_training_detail,total,it)} ?: total
+            listOf(
+                stringResource(R.string.health_coach_training),
+                stringResource(R.string.health_coach_active_days,signal.activeDays),
+                detail,
+                signal.rows.lastOrNull()?.id.orEmpty()
+            )
+        }
+        is HealthCoachSignal.Recovery->{
+            val value=number.format(signal.latest.value)+" "+signal.latest.unit
+            val baseline=stringResource(R.string.health_coach_recent_nights,number.format(signal.baselineMedian)+" "+signal.latest.unit)
+            listOf(
+                stringResource(R.string.health_coach_recovery),
+                value,
+                baseline+(signal.sleepHeartRate?.let {" · "+stringResource(R.string.health_metric_sleep_hr)+" "+healthMetricDisplay(it)}.orEmpty()),
+                signal.latest.id
+            )
+        }
+        is HealthCoachSignal.Weight->{
+            val change=(signal.latest.value-signal.earliestRecent.value)/1000
+            val sign=if(change>0)"+" else ""
+            listOf(
+                stringResource(R.string.health_coach_weight),
+                number.format(signal.latest.value/1000)+" kg",
+                stringResource(R.string.health_coach_weight_change,sign+number.format(change)+" kg"),
+                signal.latest.id
+            )
+        }
+    }
+    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.Top) {
+        Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(2.dp)) {
+            Text(title,style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value,style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.SemiBold)
+            if(detail.isNotEmpty())Text(detail,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if(evidenceId.isNotEmpty())TextButton(onClick={onEvidence(evidenceId)}){Text(stringResource(R.string.health_detail))}
+    }
+}
+
+@Composable private fun coachHours(minutes:Double):String =
+    java.text.NumberFormat.getNumberInstance().apply {maximumFractionDigits=1}.format(minutes/60)+" "+stringResource(R.string.health_unit_hours)
+@Composable private fun coachSteps(value:Double):String =
+    java.text.NumberFormat.getNumberInstance().apply {maximumFractionDigits=0}.format(value)+" "+stringResource(R.string.health_unit_steps)
+@Composable private fun coachDuration(minutes:Double):String {
+    val total=minutes.toInt().coerceAtLeast(0)
+    val hours=total/60;val remainder=total%60
+    return when {
+        hours<=0->"$remainder "+stringResource(R.string.health_unit_min)
+        remainder==0->"$hours "+stringResource(R.string.health_unit_hours)
+        else->"$hours "+stringResource(R.string.health_unit_hours)+" $remainder "+stringResource(R.string.health_unit_min)
+    }
 }
 
 @Composable private fun HealthAiSection(enabled:Boolean,configured:Boolean,onReport:()->Unit,onChat:()->Unit,onConfigure:()->Unit,onPreset:(String)->Unit,presets:List<String>) {

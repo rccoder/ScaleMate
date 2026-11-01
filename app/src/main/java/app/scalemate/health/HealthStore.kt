@@ -116,14 +116,30 @@ class HealthStore(private val store:Store) {
     }
     fun affectedDates(upserts:List<HealthRecord>,deletes:List<HealthRecord>,zone:java.time.ZoneId):Map<String,Set<String>> {
         val affected=linkedMapOf<String,MutableSet<String>>()
-        (upserts+deletes).forEach {r->
-            val dates=affected.getOrPut(r.kind){linkedSetOf()}
-            dates+=healthRecordDates(r,zone)
-            store.readableDatabase.rawQuery("SELECT payload FROM health_records WHERE category=? AND (recordId=? OR (platformId<>'' AND platformId=?))",arrayOf(r.kind,r.id,r.platformId)).use {c->
-                while(c.moveToNext())dates+=healthRecordDates(HealthJson.cachedRecord(JSONObject(c.getString(0))),zone)
+        (upserts+deletes).forEach {r->affected.getOrPut(r.kind){linkedSetOf()}+=healthRecordDates(r,zone)}
+        upserts.groupBy {it.kind}.forEach {(category,records)->
+            val dates=affected.getOrPut(category){linkedSetOf()}
+            records.map {it.id}.distinct().chunked(400).forEach {page->
+                val placeholders=page.joinToString(","){"?"}
+                store.readableDatabase.rawQuery(
+                    "SELECT start,end FROM health_records WHERE category=? AND recordId IN ($placeholders)",
+                    (listOf(category)+page).toTypedArray()
+                ).use {c->while(c.moveToNext())dates+=recordDates(c.getLong(0),c.getLong(1),zone)}
+            }
+            records.mapNotNull {it.platformId.takeIf(String::isNotEmpty)}.distinct().chunked(400).forEach {page->
+                val placeholders=page.joinToString(","){"?"}
+                store.readableDatabase.rawQuery(
+                    "SELECT start,end FROM health_records WHERE category=? AND platformId IN ($placeholders)",
+                    (listOf(category)+page).toTypedArray()
+                ).use {c->while(c.moveToNext())dates+=recordDates(c.getLong(0),c.getLong(1),zone)}
             }
         }
         return affected
+    }
+    private fun recordDates(start:Long,end:Long,zone:java.time.ZoneId):Set<String> {
+        var day=java.time.Instant.ofEpochMilli(start).atZone(zone).toLocalDate()
+        val last=java.time.Instant.ofEpochMilli(if(end>start)end-1 else start).atZone(zone).toLocalDate()
+        return buildSet {while(day<=last){add(day.toString());day=day.plusDays(1)}}
     }
     fun upsert(records:List<HealthRecord>) {
         val db=store.writableDatabase;db.beginTransaction()
@@ -140,12 +156,13 @@ class HealthStore(private val store:Store) {
         upserts:List<HealthRecord>,
         deletes:List<HealthRecord>,
         aggregateDates:Map<String,Set<String>>,
-        zone:java.time.ZoneId
+        zone:java.time.ZoneId,
+        knownAffected:Map<String,Set<String>>?=null
     ):Map<String,Set<String>> {
         if(upserts.isEmpty()&&deletes.isEmpty())return aggregateDates
         val db=store.writableDatabase;db.beginTransaction()
         val affected=aggregateDates.mapValues {it.value.toMutableSet()}.toMutableMap()
-        affectedDates(upserts,deletes,zone).forEach {(category,dates)->affected.getOrPut(category){mutableSetOf()}+=dates}
+        (knownAffected ?: affectedDates(upserts,deletes,zone)).forEach {(category,dates)->affected.getOrPut(category){mutableSetOf()}+=dates}
         try {
             deletes.forEach {r->
                 db.delete("health_records","category=? AND (recordId=? OR (platformId<>'' AND platformId=?))",arrayOf(r.kind,r.id,r.platformId))

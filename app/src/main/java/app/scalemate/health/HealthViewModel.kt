@@ -2,6 +2,7 @@ package app.scalemate.health
 
 import android.app.Application
 import android.app.LocaleManager
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.scalemate.BuildConfig
@@ -31,7 +32,14 @@ data class HealthState(
 
 class HealthViewModel @JvmOverloads constructor(application:Application,private val syncSource:HealthSyncSource?=null,databaseName:String="scalemate.db"):AndroidViewModel(application) {
     private val db=Store(application,databaseName);private val store=HealthStore(db);private val food=FoodStore(db)
-    private val reader=HealthReader(application);private val ai=AiClient()
+    private val traceEnabled=Log.isLoggable("ScaleMateHealth",Log.DEBUG)
+    private fun trace(message:String) {
+        if(traceEnabled)Log.d("ScaleMateHealth",message)
+    }
+    private val reader=if(traceEnabled) HealthReader(application){event->
+        trace("read category=${event.category} operation=${event.operation} elapsedMs=${event.elapsedMs} error=${event.errorCode ?: 0} failure=${event.failure}")
+    } else HealthReader(application)
+    private val ai=AiClient()
     private val mutable=MutableStateFlow(HealthState());val state=mutable.asStateFlow()
     private var operation:Job?=null;private var generationId:String?=null
     private val settingsMutex=Mutex()
@@ -101,7 +109,9 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
             } else window
         }
         val (snapshot,fromCache)=withContext(Dispatchers.IO) {
-            val sync=HealthSync(store,syncSource ?: reader)
+            val sync=HealthSync(store,syncSource ?: reader,traceEnabled=traceEnabled,trace={event->
+                trace("sync category=${event.category} stage=${event.stage} elapsedMs=${event.elapsedMs} ${event.detail}")
+            },baselineDays=if(BuildConfig.HEALTH_AI_ENABLED)21 else 0)
             val cached=preferCache&&sync.canUseCache(requested,current.categories)
             val rawRoot=File(getApplication<Application>().cacheDir,"health_raw").apply {mkdirs()}
             val previous=current.snapshot?.takeIf {s->
@@ -117,12 +127,16 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
                 store.transaction {store.snapshot(result.snapshot);store.setting("activeSnapshot",result.snapshot.id)}
                 return@withContext result.snapshot to cached
             }
+            val rawStarted=System.nanoTime()
             val raw=File.createTempFile("snapshot-",".jsonl",rawRoot)
             val snapshot=try {
                 raw.bufferedWriter().use {out->store.writeCachedRaw(result.records,out)}
+                if(traceEnabled)trace("sync category=all stage=jsonl elapsedMs=${(System.nanoTime()-rawStarted)/1000000} records=${result.records.size}")
                 currentCoroutineContext().ensureActive()
                 result.snapshot.copy(rawFile=raw.name).also {snapshot->
+                    val publishStarted=System.nanoTime()
                     store.transaction {store.snapshot(snapshot);store.setting("activeSnapshot",snapshot.id)}
+                    if(traceEnabled)trace("sync category=all stage=publish elapsedMs=${(System.nanoTime()-publishStarted)/1000000}")
                 }
             }catch(e:Throwable){raw.delete();throw e}
             snapshot to cached

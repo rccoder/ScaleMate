@@ -42,7 +42,7 @@ class HealthReader(private val context:Context,private val observer:((HealthRead
             throw e
         }
     }
-    data class ChangeBatch(val records:List<HealthRecord>,val deletedPlatformIds:List<String>,val nextToken:String)
+    data class ChangeBatch(val records:List<HealthRecord>,val deletedPlatformIds:List<String>,val nextToken:String,val pages:Int)
     private var cachedManager:HealthConnectManager?=null
     private var checkedAt=0L
     private fun connection():HealthConnectManager? {val now=System.currentTimeMillis();if(now-checkedAt>1000){cachedManager=context.getSystemService(HealthConnectManager::class.java);checkedAt=now};return cachedManager}
@@ -104,7 +104,7 @@ class HealthReader(private val context:Context,private val observer:((HealthRead
             if(e.errorCode==HealthConnectException.ERROR_INVALID_ARGUMENT)throw HealthChangeTokenInvalid(e)
             throw e
         }
-        return HealthChanges(batch.records,batch.deletedPlatformIds,batch.nextToken)
+        return HealthChanges(batch.records,batch.deletedPlatformIds,batch.nextToken,batch.pages)
     }
     override suspend fun totals(category:String,start:Instant,end:Instant,zone:ZoneId)=totals(HealthCatalog.kind(category),start,end,zone)
     suspend fun routeRequests(window:HealthWindow):List<HealthRouteRequest> {
@@ -161,7 +161,7 @@ class HealthReader(private val context:Context,private val observer:((HealthRead
             pages++
             check(cursor.isNotBlank()&&pages<10000){"Invalid Health Connect change log"}
         }while(response.hasMorePages())
-        return ChangeBatch(records.values.toList(),deleted.toList(),cursor)
+        return ChangeBatch(records.values.toList(),deleted.toList(),cursor,pages)
     }
     private fun filter(start:Instant?,end:Instant)=TimeInstantRangeFilter.Builder().apply {if(start!=null)setStartTime(start);setEndTime(end)}.build()
     private suspend fun page(kind:HealthKind,start:Instant?,end:Instant,token:Long?=null,size:Int=1000):ReadRecordsResponse<Record> = measured(kind.id,"records"){suspendCancellableCoroutine {c->

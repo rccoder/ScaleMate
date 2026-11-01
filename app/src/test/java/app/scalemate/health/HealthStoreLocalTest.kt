@@ -137,6 +137,20 @@ class HealthStoreLocalTest {
             assertTrue(HealthJson.cacheRecord(health.records().single()).has("platformId"))
         }
     }
+    @Test fun affectedDatesBatchesLargeChangeSetsAndKeepsTheMovedRecordsOldDate() {
+        Store(context,name).use {db->
+            val health=HealthStore(db);val zone=java.time.ZoneId.of("Asia/Shanghai")
+            val first=java.time.Instant.parse("2026-10-24T04:00:00Z").toEpochMilli()
+            val second=java.time.Instant.parse("2026-10-25T04:00:00Z").toEpochMilli()
+            val moved=HealthRecord("moved","HeartRate","watch",first,platformId="platform-moved")
+            health.upsert(listOf(moved))
+            val upserts=listOf(moved.copy(start=second,end=second))+ (1..801).map {index->
+                HealthRecord("new-$index","HeartRate","watch",second,platformId="platform-$index")
+            }
+            val affected=health.affectedDates(upserts,emptyList(),zone)
+            assertEquals(setOf("2026-10-24","2026-10-25"),affected.getValue("HeartRate"))
+        }
+    }
     @Test fun failedCursorWriteRollsBackRecordChangesInTheSameTransaction() {
         Store(context,name).use {db->
             val health=HealthStore(db)

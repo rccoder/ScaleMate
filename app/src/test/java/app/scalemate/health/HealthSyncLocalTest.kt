@@ -111,6 +111,16 @@ class HealthSyncLocalTest {
             assertTrue(source.changeRequests.isEmpty())
         }
     }
+    @Test fun disabledAiSkipsTheUnusedTwentyOneDayBaselineWhenBuildingTheSnapshot()=runBlocking {
+        Store(context,name).use {db->
+            val store=HealthStore(db);val source=Source()
+            source.rows=listOf(record("older","2026-09-01",300.0),record("current","2026-10-25",500.0))
+            val result=HealthSync(store,source,baselineDays=0){now}.refresh(window,setOf("Nutrition"),emptyMap())
+            assertFalse(result.records.any {it.id=="older"})
+            assertTrue(result.records.any {it.id=="current"})
+            assertTrue(store.records().any {it.id=="older"})
+        }
+    }
     @Test fun unchangedSyncReusesOnlyASameDayHealthySnapshotOfTheSameWindow()=runBlocking {
         Store(context,name).use {db->
             val store=HealthStore(db);val source=Source();var clock=now

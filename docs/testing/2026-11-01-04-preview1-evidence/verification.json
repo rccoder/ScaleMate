@@ -1,0 +1,87 @@
+{
+  "tag": "v0.4.1-preview.1",
+  "versionName": "0.4.1-preview.1",
+  "versionCode": 19,
+  "releaseCommit": "f3815decf99214731198497cac3c23e130f19bd7",
+  "ci": {
+    "android": "https://github.com/rccoder/ScaleMate/actions/runs/41289900809",
+    "release": "https://github.com/rccoder/ScaleMate/actions/runs/41290218345"
+  },
+  "release": {
+    "url": "https://github.com/rccoder/ScaleMate/releases/tag/v0.4.1-preview.1",
+    "isDraft": false,
+    "isPrerelease": true,
+    "latestTag": "v0.4.0",
+    "assetCount": 7
+  },
+  "checks": {
+    "releaseScriptsPassed": 15,
+    "i18nPairs": 806,
+    "jvmTests": 277,
+    "jvmFailures": 0,
+    "jvmErrors": 0,
+    "jvmSkipped": 0,
+    "lintErrors": 0,
+    "lintWarnings": 133,
+    "assembleDebug": true,
+    "sha256sums": true,
+    "apkSignatureAndPackage": true,
+    "updateSignature": true,
+    "releasesSignature": true,
+    "updateManifest": true,
+    "releaseBodyMatchesRepositoryNotes": true
+  },
+  "apk": {
+    "fileName": "ScaleMate.apk",
+    "sizeBytes": 25926864,
+    "sha256": "7b64e39a2a1d6481c6a2cb04d0a2f762478c46fbc08185ee7bbc04c17f5bf367",
+    "certificateSha256": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5"
+  },
+  "assets": {
+    "SHA256SUMS": {
+      "sizeBytes": 80,
+      "sha256": "2fa2c342f6fd11e5edbe46afb89a57966c7fa5340e15eb6e0551238094187514"
+    },
+    "releases.json": {
+      "sizeBytes": 1988,
+      "sha256": "2f24b140f1b49cf4aa47fde653d2138cd47cf65d078e465d21ba576ca20524a8"
+    },
+    "releases.json.sig": {
+      "sizeBytes": 512,
+      "sha256": "ece8d74a3eb8979b0ff7e53214ed9ecb7b212714240956f6cb8e268a8ef681c2"
+    },
+    "signing-certificate.txt": {
+      "sizeBytes": 957,
+      "sha256": "7101d592bccd52f047dac7d1687cdf67aad27ae799e9fc0c4eaca182aa13f846"
+    },
+    "update.json": {
+      "sizeBytes": 2125,
+      "sha256": "674f7c6b08f7c9d08907322969afbe59ceecfd118eb6db6cb50fd782572bd7a1"
+    },
+    "update.json.sig": {
+      "sizeBytes": 512,
+      "sha256": "4d39a05f46073c2aac9cc7735dbdf2115a9a02c8573a26de63cad66ac64ea056"
+    }
+  },
+  "emulatorUpgrade": {
+    "device": "emulator-5556",
+    "androidApi": 36,
+    "before": {
+      "versionName": "0.4.0",
+      "versionCode": 18,
+      "firstInstallTime": "2026-10-31 12:09:19"
+    },
+    "after": {
+      "versionName": "0.4.1-preview.1",
+      "versionCode": 19,
+      "firstInstallTime": "2026-10-31 12:09:19",
+      "lastUpdateTime": "2026-11-01 16:54:24"
+    },
+    "installedApkSha256MatchesRelease": true,
+    "launched": true,
+    "settingsVersionVisible": true
+  },
+  "userConfirmation": {
+    "reportedWorking": true
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "tag": "v0.4.2-preview.3",
+  "releaseCommit": "05c4c6bea426880ef3a5abc10df7c284c0e32574",
+  "versionName": "0.4.2-preview.3",
+  "versionCode": 23,
+  "packageName": "app.scalemate",
+  "debuggable": false,
+  "isPrerelease": true,
+  "latest": "v0.4.1",
+  "sizeBytes": 26055652,
+  "sha256": "3a69977d7d4737ab740e0d153fb6a74720cb70f0aa7895613909a282a17250c6",
+  "certificateSha256": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5",
+  "assets": [
+    "SHA256SUMS",
+    "ScaleMate.apk",
+    "releases.json",
+    "releases.json.sig",
+    "signing-certificate.txt",
+    "update.json",
+    "update.json.sig"
+  ],
+  "apkAndMetadataVerified": true,
+  "healthCoachEnabled": true,
+  "legacyHealthAiEnabled": false
+}

@@ -1,0 +1,13 @@
+{
+  "fromVersion": "0.4.2-preview.3",
+  "fromCode": 23,
+  "toVersion": "0.4.2-preview.4",
+  "toCode": 24,
+  "firstInstallTimeBefore": "2026-10-31 12:09:19",
+  "firstInstallTimeAfter": "2026-10-31 12:09:19",
+  "installedApkSha256": "c49e0ad9bd21aac4fc4c107d537e03e03b7f525961f173a421551cfebe29e01f",
+  "normalSystemInstaller": true,
+  "cancelAndRetryPassed": true,
+  "nonemptyBusinessMigrationTested": false,
+  "phoneTested": false
+}

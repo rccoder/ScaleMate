@@ -1,0 +1,45 @@
+{
+  "environment": "API 36 emulator, real GitHub, fixed release public key",
+  "serial": "emulator-5556",
+  "finalRun": [
+    {
+      "case": "stable-cold",
+      "elapsedMs": 2467,
+      "requests": 3,
+      "entries": 1
+    },
+    {
+      "case": "stable-cached",
+      "elapsedMs": 107,
+      "requests": 1,
+      "entries": 1
+    },
+    {
+      "case": "preview-current",
+      "elapsedMs": 562,
+      "requests": 1,
+      "entries": 0
+    }
+  ],
+  "previousParallelRun": [
+    {
+      "case": "stable-cold",
+      "elapsedMs": 2235,
+      "requests": 3,
+      "entries": 1
+    },
+    {
+      "case": "stable-cached",
+      "elapsedMs": 106,
+      "requests": 1,
+      "entries": 1
+    },
+    {
+      "case": "preview-current",
+      "elapsedMs": 672,
+      "requests": 1,
+      "entries": 0
+    }
+  ],
+  "note": "Network samples, not a speed guarantee. Counts exclude HTTP redirects."
+}

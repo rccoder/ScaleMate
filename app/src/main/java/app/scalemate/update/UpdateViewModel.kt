@@ -333,16 +333,16 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
         mutable.value = mutable.value.copy(unmeteredOnly = value)
     }
 
-    fun downloadAndInstall() = startDownload(installAfterDownload = true)
+    fun downloadUpdate() = startDownload()
 
     private fun autoDownloadIfAllowed() {
         val state = mutable.value
         if (state.entry == null || state.phase != UpdatePhase.AVAILABLE) return
         if (state.unmeteredOnly && !onUnmeteredNetwork()) return
-        startDownload(installAfterDownload = false)
+        startDownload()
     }
 
-    private fun startDownload(installAfterDownload: Boolean) {
+    private fun startDownload() {
         val entry = mutable.value.entry ?: return
         if (checkJob?.isActive == true && mutable.value.phase == UpdatePhase.CHECKING) return
         if (downloadJob?.isCompleted == false) return
@@ -409,7 +409,6 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                     totalBytes = file.length(),
                     message = ""
                 )
-                if (installAfterDownload) install(file)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -451,7 +450,7 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun retry() {
-        if (mutable.value.entry == null) check() else downloadAndInstall()
+        if (mutable.value.entry == null) check() else downloadUpdate()
     }
 
     fun onNetworkChanged(unmetered: Boolean) {

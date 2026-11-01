@@ -5,8 +5,17 @@ import java.io.File
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 open class UpdateTransport {
+    suspend fun signedManifest(manifestUrl: String, signatureUrl: String): SignedUpdateManifest = coroutineScope {
+        val bytes = async(Dispatchers.IO) { downloadBytes(manifestUrl, 128 * 1024) }
+        val signature = async(Dispatchers.IO) { getText(signatureUrl, 64 * 1024) }
+        SignedUpdateManifest(bytes.await(), signature.await())
+    }
+
     open fun getText(url: String, maxBytes: Int = 2 * 1024 * 1024): String {
         httpsUrl(url, "request")
         val connection = open(url)
@@ -85,7 +94,7 @@ open class UpdateTransport {
 
     open fun downloadBytes(url: String, maxBytes: Int): ByteArray {
         httpsUrl(url, "download")
-        val connection = open(url, download = true)
+        val connection = open(url)
         try {
             val code = connection.responseCode
             if (code !in 200..299) throw UpdateFailure(
@@ -104,10 +113,10 @@ open class UpdateTransport {
 
     private fun open(url: String, download: Boolean = false): HttpURLConnection {
         val connection = URI(url).toURL().openConnection() as HttpURLConnection
-        connection.connectTimeout = if (download) 8_000 else 12_000
+        connection.connectTimeout = if (download) 8_000 else 4_000
         // A download route must produce bytes promptly. The existing 35 s
         // first-byte wait made one stalled proxy look like a frozen update.
-        connection.readTimeout = if (download) 10_000 else 18_000
+        connection.readTimeout = if (download) 10_000 else 6_000
         connection.requestMethod = "GET"
         connection.setRequestProperty("Accept", "application/json, application/octet-stream, text/plain")
         connection.setRequestProperty("User-Agent", "ScaleMate-Android-Updater/1")

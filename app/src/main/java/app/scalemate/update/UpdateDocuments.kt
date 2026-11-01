@@ -7,6 +7,9 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 /** A signed release manifest is the source of truth for version and APK metadata. */
 class UpdateManifestVerifier(
@@ -31,63 +34,79 @@ class UpdateManifestVerifier(
 }
 
 /**
- * Discovers release tags, then authenticates every candidate through its
+ * Discovers release tags, then authenticates the newest candidate per channel through its
  * per-release signed update.json. GitHub's "latest" asset cannot represent
  * both stable and prerelease channels at the same time.
  */
 class ReleaseIndexLoader(
     private val transport: UpdateTransport,
-    private val publicKey: PublicKey
+    private val publicKey: PublicKey,
+    private val readCached: (String) -> SignedUpdateManifest? = { null },
+    private val saveVerified: (String, SignedUpdateManifest) -> Unit = { _, _ -> }
 ) {
-    fun fetch(
+    suspend fun fetch(
         requestedChannel: UpdateChannel,
         preferredSourceId: String,
         discoverySourceId: String,
-        onAttempt: (source: UpdateSource, error: String) -> Unit = { _, _ -> }
+        onAttempt: (source: UpdateSource, error: String) -> Unit = { _, _ -> },
+        installed: InstalledRelease? = null
     ): Pair<List<ReleaseIndexEntry>, String> {
+        currentCoroutineContext().ensureActive()
         val (candidates, discoverySource) =
-            GitHubReleaseFetcher(transport).discover(discoverySourceId, onAttempt)
+            GitHubReleaseFetcher(transport).discover(discoverySourceId, onAttempt, requestedChannel)
         val wanted = candidates.filter {
             when (requestedChannel) {
                 UpdateChannel.STABLE -> it.channel == UpdateChannel.STABLE
                 UpdateChannel.PREVIEW -> true
             }
-        }.take(MAX_MANIFEST_CANDIDATES)
+        }
         if (wanted.isEmpty()) {
             return emptyList<ReleaseIndexEntry>() to discoverySource
         }
+        // Releases share a globally increasing code. An installed newest tag needs no
+        // historical manifests; installation still requires a signed higher code.
+        if (wanted.first().tag == installed?.let { "v${it.versionName}" }) {
+            return emptyList<ReleaseIndexEntry>() to discoverySource
+        }
         val entries = mutableListOf<ReleaseIndexEntry>()
-        var signedEntryCount = 0
-        for (candidate in wanted) {
-            try {
-                val manifest = fetchManifest(
-                    candidate.tag,
-                    preferredSourceId,
-                    onAttempt
-                )
-                entries += candidate.toEntry(manifest)
-                signedEntryCount += 1
-            } catch (error: Exception) {
-                onAttempt(
-                    UpdateSources.find(discoverySource) ?: UpdateSources.GITHUB_OFFICIAL,
-                    error.message?.take(120) ?: "manifest failed"
-                )
+        var failures = 0
+        for (channelCandidates in wanted.groupBy { it.channel }.values) {
+            for (candidate in channelCandidates.take(MAX_FALLBACK_CANDIDATES)) {
+                currentCoroutineContext().ensureActive()
+                if (candidate.tag == installed?.let { "v${it.versionName}" }) break
+                try {
+                    val manifest = fetchManifest(candidate.tag, preferredSourceId, onAttempt)
+                    entries += candidate.toEntry(manifest)
+                    break
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    failures += 1
+                    onAttempt(
+                        UpdateSources.find(discoverySource) ?: UpdateSources.GITHUB_OFFICIAL,
+                        error.message?.take(120) ?: "manifest failed"
+                    )
+                }
             }
         }
-        if (signedEntryCount == 0) {
+        if (failures > 0 && entries.none { installed == null || it.versionCode > installed.versionCode }) {
             throw UpdateFailure(UpdateFailure.Kind.NOT_FOUND, "No signed release found")
         }
         return entries to discoverySource
     }
 
-    private fun fetchManifest(
+    private suspend fun fetchManifest(
         tag: String,
         preferredSourceId: String,
         onAttempt: (UpdateSource, String) -> Unit
     ): UpdateManifest {
+        readCached(tag)?.let { cached ->
+            runCatching { cached.verify(publicKey, tag) }.getOrNull()?.let { return it }
+        }
         val sources = UpdateSources.assetOrder(preferredSourceId)
         var lastError: Exception? = null
         for (source in sources) {
+            currentCoroutineContext().ensureActive()
             try {
                 val manifestUrl = UpdateSources.assetUrl(source, tag, UPDATE_MANIFEST_NAME)
                 val signatureUrl = UpdateSources.assetUrl(
@@ -95,13 +114,10 @@ class ReleaseIndexLoader(
                     tag,
                     UPDATE_SIGNATURE_NAME
                 )
-                val raw = transport.downloadBytes(manifestUrl, 128 * 1024)
-                val signature = transport.getText(signatureUrl, 64 * 1024)
-                return UpdateManifestVerifier(publicKey)
-                    .verify(raw, signature)
-                    .also { manifest ->
-                        require(manifest.tag == tag) { "Manifest tag differs from release" }
-                    }
+                val signed = transport.signedManifest(manifestUrl, signatureUrl)
+                return signed.verify(publicKey, tag).also { saveVerified(tag, signed) }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 lastError = error
                 onAttempt(source, error.message?.take(120) ?: "manifest failed")
@@ -111,8 +127,15 @@ class ReleaseIndexLoader(
     }
 
     companion object {
-        private const val MAX_MANIFEST_CANDIDATES = 20
+        private const val MAX_FALLBACK_CANDIDATES = 3
     }
+}
+
+data class SignedUpdateManifest(val bytes: ByteArray, val signature: String) {
+    fun verify(publicKey: PublicKey, tag: String): UpdateManifest =
+        UpdateManifestVerifier(publicKey).verify(bytes, signature).also {
+            require(it.tag == tag) { "Manifest tag differs from release" }
+        }
 }
 
 class GitHubReleaseFetcher(
@@ -121,17 +144,24 @@ class GitHubReleaseFetcher(
 ) {
     fun discover(
         preferredSourceId: String,
-        onAttempt: (source: UpdateSource, error: String) -> Unit = { _, _ -> }
+        onAttempt: (source: UpdateSource, error: String) -> Unit = { _, _ -> },
+        channel: UpdateChannel = UpdateChannel.PREVIEW
     ): Pair<List<ReleaseCandidate>, String> {
         val errors = mutableListOf<String>()
         for (source in UpdateSources.discoveryOrder(preferredSourceId)) {
             try {
                 val raw = transport.getText(
-                    UpdateSources.releaseApiUrl(source),
+                    UpdateSources.releaseApiUrl(source, latest = channel == UpdateChannel.STABLE),
                     maxBytes = 2 * 1024 * 1024
                 )
-                val candidates = parseGitHubReleases(raw, now())
+                val candidates = if (channel == UpdateChannel.STABLE) {
+                    listOfNotNull(parseRelease(JSONObject(raw), now())).also {
+                        require(it.none { release -> release.prerelease }) { "Latest must be stable" }
+                    }
+                } else parseGitHubReleases(raw, now())
                 return candidates.sortedByDescending { it.publishedAt } to source.id
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 val reason = error.message?.take(120) ?: error.javaClass.simpleName
                 errors += "${source.id}: $reason"
@@ -203,6 +233,25 @@ class UpdateFailure(val kind: Kind, message: String) : Exception(message) {
 }
 
 class UpdateCache(private val prefs: android.content.SharedPreferences) {
+    fun signedManifest(tag: String): SignedUpdateManifest? {
+        val raw = prefs.getString("update.manifest.$tag", null) ?: return null
+        val signature = prefs.getString("update.manifestSignature.$tag", null) ?: return null
+        return SignedUpdateManifest(raw.toByteArray(Charsets.UTF_8), signature)
+    }
+
+    fun saveSignedManifest(tag: String, signed: SignedUpdateManifest) {
+        val tags = (listOf(tag) + prefs.getString("update.manifestTags", "").orEmpty().split('|'))
+            .filter { it.isNotBlank() }.distinct()
+        val editor = prefs.edit()
+            .putString("update.manifest.$tag", signed.bytes.toString(Charsets.UTF_8))
+            .putString("update.manifestSignature.$tag", signed.signature)
+            .putString("update.manifestTags", tags.take(8).joinToString("|"))
+        tags.drop(8).forEach {
+            editor.remove("update.manifest.$it").remove("update.manifestSignature.$it")
+                .remove("update.manifestSha.$it")
+        }
+        editor.apply()
+    }
     fun initializeChannel(default: UpdateChannel) {
         if (!prefs.contains("update.channel")) {
             prefs.edit().putString("update.channel", default.wireName).apply()
@@ -223,8 +272,6 @@ class UpdateCache(private val prefs: android.content.SharedPreferences) {
     fun lastCheckAt(): Long = prefs.getLong("update.lastCheckAt", 0)
     fun lastCheckSource(): String = prefs.getString("update.lastCheckSource", "") ?: ""
     fun lastError(): String = prefs.getString("update.lastError", "") ?: ""
-    fun lastManifestJson(tag: String): String? = prefs.getString("update.manifest.$tag", null)
-    fun lastManifestSha(tag: String): String? = prefs.getString("update.manifestSha.$tag", null)
 
     fun saveChannel(channel: UpdateChannel) {
         prefs.edit().putString("update.channel", channel.wireName).apply()
@@ -256,13 +303,6 @@ class UpdateCache(private val prefs: android.content.SharedPreferences) {
         prefs.getString("update.entryJson", null)?.let { raw ->
             runCatching { JSONObject(raw) }.getOrNull()?.let(::entryFromJson)
         }
-
-    fun saveManifest(manifest: UpdateManifest, raw: String, sha: String) {
-        prefs.edit()
-            .putString("update.manifest.${manifest.tag}", raw)
-            .putString("update.manifestSha.${manifest.tag}", sha)
-            .apply()
-    }
 
     fun saveError(error: String) {
         prefs.edit().putString("update.lastError", error.take(300)).apply()

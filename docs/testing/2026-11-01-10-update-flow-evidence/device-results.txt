@@ -1,0 +1,6 @@
+
+app.scalemate.UpdateInteractionDeviceTest:....
+
+Time: 12.102
+
+OK (4 tests)

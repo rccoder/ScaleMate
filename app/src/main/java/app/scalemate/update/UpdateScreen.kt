@@ -6,11 +6,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,17 +44,6 @@ fun UpdateScreen(
             .withLocale(locale)
             .withZone(ZoneId.systemDefault())
     }
-    val number = remember(locale) { NumberFormat.getIntegerInstance(locale) }
-    val installed = state.installed
-    val currentVersion = installed?.let {
-        if (it.packageName == "app.scalemate.fooddev") {
-            stringResource(R.string.settings_test_version, it.versionName)
-        } else {
-            "${it.versionName} · ${stringResource(if (it.isPreview) R.string.update_preview else R.string.update_stable)}"
-        }
-    } ?: stringResource(R.string.loading)
-    val entry = state.entry
-
     LaunchedEffect(state.showChannelWarning) {
         if (state.showChannelWarning) {
             channelWarning = true
@@ -70,131 +57,18 @@ fun UpdateScreen(
             .padding(vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                Modifier.padding(22.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    stringResource(R.string.update_current_version),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .75f)
-                )
-                Text(
-                    currentVersion,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                if (installed != null) {
-                    Text(
-                        stringResource(
-                            R.string.update_version_code,
-                            installed.versionCode,
-                            stringResource(
-                                if (installed.isPreview) R.string.update_preview else R.string.update_stable
-                            )
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .8f)
-                    )
-                }
-                if (state.lastCheckAt > 0) {
-                    Text(
-                        stringResource(
-                            R.string.update_last_checked,
-                            dateFormatter.format(Instant.ofEpochMilli(state.lastCheckAt))
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .8f)
-                    )
+        UpdateStatusContent(
+            state = state,
+            onCheck = vm::check,
+            onDownload = vm::downloadUpdate,
+            onInstall = vm::installVerified,
+            onCancel = vm::cancelDownload,
+            onOpenRelease = { entry ->
+                runCatching {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(entry.releaseUrl)))
                 }
             }
-        }
-
-        when (state.phase) {
-            UpdatePhase.AVAILABLE,
-            UpdatePhase.PREPARING,
-            UpdatePhase.DOWNLOADING,
-            UpdatePhase.VERIFYING,
-            UpdatePhase.WAITING_INSTALL,
-            UpdatePhase.INSTALLING -> entry?.let {
-                UpdateAvailableCard(
-                    entry = it,
-                    state = state,
-                    number = number,
-                    onDownload = vm::downloadAndInstall,
-                    onInstallVerified = vm::installVerified,
-                    onCancel = vm::cancelDownload,
-                    onOpenRelease = {
-                        runCatching {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it.releaseUrl)))
-                        }
-                    }
-                )
-            }
-            UpdatePhase.UP_TO_DATE -> {
-                InfoSurface(
-                    icon = Icons.Default.Check,
-                    title = stringResource(R.string.update_up_to_date),
-                    body = stringResource(R.string.update_up_to_date_hint)
-                )
-            }
-            UpdatePhase.ERROR -> {
-                InfoSurface(
-                    icon = Icons.Default.Warning,
-                    title = stringResource(R.string.update_check_failed),
-                    body = state.message.ifBlank { stringResource(R.string.update_retry_hint) }
-                )
-            }
-            else -> Unit
-        }
-
-        if (state.message.isNotBlank() && state.phase != UpdatePhase.ERROR) {
-            Text(state.message, color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall)
-        }
-
-        Button(
-            onClick = vm::check,
-            enabled = state.phase !in listOf(
-                UpdatePhase.CHECKING,
-                UpdatePhase.PREPARING,
-                UpdatePhase.DOWNLOADING,
-                UpdatePhase.VERIFYING,
-                UpdatePhase.INSTALLING
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 54.dp)
-        ) {
-            if (state.phase == UpdatePhase.CHECKING) {
-                CircularProgressIndicator(
-                    Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
-                Spacer(Modifier.width(10.dp))
-            } else {
-                Icon(Icons.Default.Refresh, null)
-                Spacer(Modifier.width(8.dp))
-            }
-            Text(
-                stringResource(
-                    if (state.phase == UpdatePhase.CHECKING) R.string.update_checking
-                    else R.string.update_check
-                )
-            )
-        }
-
-        if (state.phase == UpdatePhase.ERROR && state.entry != null) {
-            Button(onClick = vm::retry, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.update_download_retry))
-            }
-        }
+        )
 
         SettingsGroup(stringResource(R.string.update_channel)) {
             UpdateChoiceRow(
@@ -378,135 +252,164 @@ fun UpdateScreen(
 }
 
 @Composable
+internal fun UpdateStatusContent(
+    state: UpdateUiState,
+    onCheck: () -> Unit,
+    onDownload: () -> Unit,
+    onInstall: () -> Unit,
+    onCancel: () -> Unit,
+    onOpenRelease: (ReleaseIndexEntry) -> Unit
+) {
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
+    val dateFormatter = remember(locale) {
+        DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(locale)
+            .withZone(ZoneId.systemDefault())
+    }
+    val installed = state.installed
+    val entry = state.entry?.takeIf { state.hasUpdate }
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.primaryContainer,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(stringResource(R.string.update_current_version), style = MaterialTheme.typography.labelLarge)
+                Text(installed?.versionName ?: stringResource(R.string.loading),
+                    style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                installed?.let {
+                    Text(stringResource(R.string.update_version_code, it.versionCode,
+                        stringResource(if (it.isPreview) R.string.update_preview else R.string.update_stable)),
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                if (state.lastCheckAt > 0) Text(
+                    stringResource(R.string.update_last_checked, dateFormatter.format(Instant.ofEpochMilli(state.lastCheckAt))),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .75f)
+                )
+            }
+        }
+        if (entry != null) {
+            UpdateAvailableCard(entry, state, onCheck, onDownload, onInstall, onCancel) { onOpenRelease(entry) }
+        } else {
+            when (state.phase) {
+                UpdatePhase.UP_TO_DATE -> InfoSurface(Icons.Default.Check,
+                    stringResource(R.string.update_up_to_date), stringResource(R.string.update_up_to_date_hint))
+                UpdatePhase.ERROR -> InfoSurface(Icons.Default.Warning,
+                    stringResource(R.string.update_check_failed), state.message.ifBlank { stringResource(R.string.update_retry_hint) })
+                else -> Unit
+            }
+            Button(
+                onClick = onCheck,
+                enabled = state.loaded && installed != null && state.phase != UpdatePhase.CHECKING,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
+            ) {
+                if (state.phase == UpdatePhase.CHECKING) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary)
+                } else Icon(Icons.Default.Refresh, null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(when (state.phase) {
+                    UpdatePhase.CHECKING -> R.string.update_checking
+                    UpdatePhase.ERROR -> R.string.update_check_retry
+                    else -> R.string.update_check
+                }))
+            }
+            if (state.message.isNotBlank() && state.phase != UpdatePhase.ERROR) {
+                Text(state.message, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
 private fun UpdateAvailableCard(
     entry: ReleaseIndexEntry,
     state: UpdateUiState,
-    number: NumberFormat,
+    onCheck: () -> Unit,
     onDownload: () -> Unit,
-    onInstallVerified: () -> Unit,
+    onInstall: () -> Unit,
     onCancel: () -> Unit,
     onOpenRelease: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp)
-    ) {
-        Column(
-            Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+    var detailsExpanded by remember(entry.tag) { mutableStateOf(false) }
+    val busy = state.phase in setOf(UpdatePhase.CHECKING, UpdatePhase.PREPARING,
+        UpdatePhase.DOWNLOADING, UpdatePhase.VERIFYING, UpdatePhase.INSTALLING)
+    val number = remember { NumberFormat.getIntegerInstance() }
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(stringResource(if (entry.isPreview) R.string.update_preview_available else R.string.update_stable_available),
+                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer) {
-                    Icon(
-                        Icons.Default.Refresh,
-                        null,
-                        Modifier.padding(10.dp),
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(entry.versionName, style = MaterialTheme.typography.titleLarge)
-                    Text(
-                        stringResource(
-                            if (entry.isPreview) R.string.update_preview_available
-                            else R.string.update_stable_available
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Text(
-                    "${number.format(entry.apkSizeBytes / 1024 / 1024)} MB",
-                    style = MaterialTheme.typography.labelMedium
-                )
+                Text(entry.versionName, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold)
+                Text("${number.format(entry.apkSizeBytes / 1024 / 1024)} MB", style = MaterialTheme.typography.labelMedium)
             }
-            if (entry.highlights.isNotEmpty()) {
-                entry.highlights.take(5).forEach {
-                    Text("· $it", style = MaterialTheme.typography.bodyMedium)
+            when (state.phase) {
+                UpdatePhase.CHECKING, UpdatePhase.PREPARING, UpdatePhase.VERIFYING, UpdatePhase.INSTALLING -> {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
-            }
-            entry.knownIssues.take(4).forEach {
-                Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text(
-                        stringResource(R.string.update_known_issue, it),
-                        Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                }
-            }
-            if (state.phase == UpdatePhase.PREPARING) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-                Text(stringResource(R.string.update_preparing))
-            } else if (state.phase == UpdatePhase.VERIFYING) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-                Text(stringResource(R.string.update_verifying))
-            } else if (state.phase == UpdatePhase.DOWNLOADING) {
-                LinearProgressIndicator(
-                    progress = { state.progress },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(
-                    stringResource(
-                        R.string.update_download_route,
-                        updateSourceSummary(state.activeSourceId)
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(Modifier.fillMaxWidth()) {
-                    Text(
-                        stringResource(
-                            R.string.update_download_speed,
-                            state.downloadSpeedBytesPerSecond / 1024
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f)
-                    )
-                    state.remainingSeconds?.let { seconds ->
-                        Text(
-                            stringResource(R.string.update_download_remaining, seconds),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                UpdatePhase.DOWNLOADING -> {
+                    LinearProgressIndicator(progress = { state.progress }, modifier = Modifier.fillMaxWidth())
+                    Text(stringResource(R.string.update_download_progress, state.downloadedBytes / 1024 / 1024,
+                        state.totalBytes / 1024 / 1024), style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.update_download_route, updateSourceSummary(state.activeSourceId)),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(stringResource(R.string.update_download_speed, state.downloadSpeedBytesPerSecond / 1024),
+                            style = MaterialTheme.typography.bodySmall)
+                        state.remainingSeconds?.let {
+                            Text(stringResource(R.string.update_download_remaining, it), style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
-                Text(
-                    stringResource(
-                        R.string.update_download_progress,
-                        state.downloadedBytes / 1024 / 1024,
-                        state.totalBytes / 1024 / 1024
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.cancel))
+                UpdatePhase.WAITING_INSTALL -> Text(stringResource(R.string.update_waiting_install),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                else -> Unit
+            }
+            if (state.message.isNotBlank()) Text(state.message, style = MaterialTheme.typography.bodySmall,
+                color = if (state.phase == UpdatePhase.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+            Button(
+                onClick = if (state.phase == UpdatePhase.WAITING_INSTALL) onInstall else onDownload,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
+            ) {
+                Text(stringResource(when (state.phase) {
+                    UpdatePhase.CHECKING -> R.string.update_checking
+                    UpdatePhase.PREPARING -> R.string.update_preparing
+                    UpdatePhase.DOWNLOADING -> R.string.update_downloading
+                    UpdatePhase.VERIFYING -> R.string.update_verifying
+                    UpdatePhase.INSTALLING -> R.string.update_install_opening
+                    UpdatePhase.WAITING_INSTALL -> R.string.update_install_verified
+                    UpdatePhase.ERROR -> R.string.update_download_retry
+                    else -> R.string.update_download_install
+                }))
+            }
+            if (state.phase in setOf(UpdatePhase.PREPARING, UpdatePhase.DOWNLOADING, UpdatePhase.VERIFYING)) {
+                TextButton(onClick = onCancel, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                    Text(stringResource(R.string.update_cancel_download))
                 }
-            } else if (state.phase in listOf(UpdatePhase.WAITING_INSTALL, UpdatePhase.INSTALLING)) {
-                Text(
-                    stringResource(R.string.update_waiting_install),
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Button(onClick = onInstallVerified, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.update_install_verified))
-                }
-            } else {
-                Button(onClick = onDownload, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Add, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.update_download_install))
+            } else if (!busy && state.phase != UpdatePhase.WAITING_INSTALL) {
+                TextButton(onClick = onCheck, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                    Text(stringResource(R.string.update_recheck))
                 }
             }
-            TextButton(onClick = onOpenRelease, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(stringResource(R.string.update_release_notes))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            if (!detailsExpanded) entry.highlights.firstOrNull()?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            }
+            TextButton(onClick = { detailsExpanded = !detailsExpanded }, contentPadding = PaddingValues(0.dp)) {
+                Text(stringResource(if (detailsExpanded) R.string.update_changes_less else R.string.update_changes_more))
+            }
+            if (detailsExpanded) {
+                entry.highlights.take(5).forEach { Text("· $it", style = MaterialTheme.typography.bodyMedium) }
+                entry.knownIssues.take(4).forEach {
+                    Text(stringResource(R.string.update_known_issue, it), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
+                }
+                TextButton(onClick = onOpenRelease) { Text(stringResource(R.string.update_release_notes)) }
             }
         }
     }

@@ -5,6 +5,7 @@ import java.security.Signature
 import java.util.Base64
 import org.junit.Assert.*
 import org.junit.Test
+import kotlinx.coroutines.runBlocking
 
 class UpdateSecurityTest {
     private val keys = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
@@ -34,21 +35,23 @@ class UpdateSecurityTest {
     }
 
     @Test fun manualRouteDoesNotFallBackWhenManifestIsMissing() {
-        val requests = mutableListOf<String>()
+        val requests = java.util.Collections.synchronizedList(mutableListOf<String>())
         val transport = object : UpdateTransport() {
-            override fun getText(url: String, maxBytes: Int): String = """[{
+            override fun getText(url: String, maxBytes: Int): String = """{
                 "tag_name":"v0.3.0","prerelease":false,"draft":false,
                 "assets":[{"name":"ScaleMate.apk"},{"name":"update.json"},{"name":"update.json.sig"}]
-            }]"""
+            }"""
             override fun downloadBytes(url: String, maxBytes: Int): ByteArray {
                 requests += url
                 throw UpdateFailure(UpdateFailure.Kind.NOT_FOUND, "404")
             }
         }
         assertThrows(UpdateFailure::class.java) {
-            ReleaseIndexLoader(transport, keys.public).fetch(
-                UpdateChannel.STABLE, "ghfast-top", UpdateSources.AUTO
-            )
+            runBlocking {
+                ReleaseIndexLoader(transport, keys.public).fetch(
+                    UpdateChannel.STABLE, "ghfast-top", UpdateSources.AUTO
+                )
+            }
         }
         assertEquals(1, requests.size)
         assertTrue(requests.single().startsWith("https://ghfast.top/"))
@@ -64,9 +67,11 @@ class UpdateSecurityTest {
             },{"tag_name":"v0.2.1","assets":[{"name":"ScaleMate.apk"}]}]"""
             override fun downloadBytes(url: String, maxBytes: Int) = bytes
         }
-        val entries = ReleaseIndexLoader(transport, keys.public).fetch(
-            UpdateChannel.STABLE, UpdateSources.AUTO, UpdateSources.AUTO
-        ).first
+        val entries = runBlocking {
+            ReleaseIndexLoader(transport, keys.public).fetch(
+                UpdateChannel.PREVIEW, UpdateSources.AUTO, UpdateSources.AUTO
+            ).first
+        }
         assertEquals(listOf("v0.3.0"), entries.map { it.tag })
         assertEquals(6, entries.single().versionCode)
     }

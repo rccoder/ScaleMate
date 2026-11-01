@@ -75,7 +75,9 @@ class UpdateRepository(
     ): CheckResult = withContext(Dispatchers.IO) {
         val (entries, sourceId) = ReleaseIndexLoader(
             transport,
-            updatePublicKey
+            updatePublicKey,
+            cache::signedManifest,
+            cache::saveSignedManifest
         )
             // The selected route controls APK transfer only. Discovery must
             // stay on API-capable routes; some working file proxies block API.
@@ -83,7 +85,8 @@ class UpdateRepository(
                 requestedChannel,
                 cache.selectedSource(),
                 UpdateSources.AUTO,
-                onSourceFailure
+                onSourceFailure,
+                installedApp().let { InstalledRelease(it.versionName, it.versionCode, it.isPreview, it.installerPackage) }
             )
         val now = System.currentTimeMillis()
         cache.saveCheck(entries.maxByOrNull { it.versionCode }, "signed-manifest", sourceId, now)
@@ -96,6 +99,11 @@ class UpdateRepository(
 
     suspend fun loadManifest(entry: ReleaseIndexEntry): UpdateManifest =
         withContext(Dispatchers.IO) {
+            cache.signedManifest(entry.tag)?.let { cached ->
+                runCatching {
+                    cached.verify(updatePublicKey, entry.tag).also { validateManifestAgainstIndex(it, entry) }
+                }.getOrNull()?.let { return@withContext it }
+            }
             val selected = cache.selectedSource()
             val sources = UpdateSources.assetOrder(selected)
             var last: Exception? = null
@@ -112,13 +120,10 @@ class UpdateRepository(
                         entry.tag,
                         UPDATE_SIGNATURE_NAME
                     )
-                    val raw = transport.downloadBytes(manifestUrl, 128 * 1024)
-                    val manifest = UpdateManifestVerifier(updatePublicKey).verify(
-                        raw,
-                        transport.getText(signatureUrl, 64 * 1024)
-                    )
+                    val signed = transport.signedManifest(manifestUrl, signatureUrl)
+                    val manifest = signed.verify(updatePublicKey, entry.tag)
                     validateManifestAgainstIndex(manifest, entry)
-                    cache.saveManifest(manifest, raw.toString(Charsets.UTF_8), sha256Hex(raw))
+                    cache.saveSignedManifest(entry.tag, signed)
                     return@withContext manifest
                 } catch (error: CancellationException) {
                     throw error

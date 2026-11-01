@@ -125,11 +125,11 @@ object UpdateSources {
     fun assetUrl(source: UpdateSource, tag: String, asset: String = UPDATE_APK_NAME): String =
         source.urlFor(tag, asset)
 
-    fun releaseApiUrl(source: UpdateSource): String = when (source.kind) {
-        UpdateSourceKind.GITHUB -> githubReleaseApiUrl()
+    fun releaseApiUrl(source: UpdateSource, latest: Boolean = false): String = when (source.kind) {
+        UpdateSourceKind.GITHUB -> if (latest) githubLatestReleaseApiUrl() else githubReleaseApiUrl()
         UpdateSourceKind.THIRD_PARTY_PROXY -> githubProxyReleaseApiUrl(
             URI(source.urlFor("", UPDATE_RELEASE_INDEX_NAME)).host
-        )
+        ).let { if (latest) it.substringBefore('?') + "/latest" else it }
     }
 
     private fun proxy(
@@ -196,6 +196,9 @@ fun githubReleaseUrl(tag: String): String =
 
 fun githubReleaseApiUrl(page: Int = 1): String =
     "https://api.github.com/repos/$UPDATE_REPOSITORY_OWNER/$UPDATE_REPOSITORY_NAME/releases?per_page=100&page=$page"
+
+fun githubLatestReleaseApiUrl(): String =
+    "https://api.github.com/repos/$UPDATE_REPOSITORY_OWNER/$UPDATE_REPOSITORY_NAME/releases/latest"
 
 fun githubProxyReleaseApiUrl(host: String, page: Int = 1): String =
     "https://" + host.trim().trimEnd('/') +

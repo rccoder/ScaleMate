@@ -1,0 +1,23 @@
+{
+  "tag": "v0.4.2",
+  "releaseCommit": "4eb61e6e738b82c4026d4c44a3049bc081f00de4",
+  "versionName": "0.4.2",
+  "versionCode": 25,
+  "packageName": "app.scalemate",
+  "debuggable": false,
+  "isPrerelease": false,
+  "latest": "v0.4.2",
+  "sizeBytes": 26075148,
+  "sha256": "83f3e649fc334f429eab5ee572f16da3f67880f72889a69e2b8c9aa41a305b67",
+  "certificateSha256": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5",
+  "assets": [
+    "SHA256SUMS",
+    "ScaleMate.apk",
+    "releases.json",
+    "releases.json.sig",
+    "signing-certificate.txt",
+    "update.json",
+    "update.json.sig"
+  ],
+  "apkAndMetadataVerified": true
+}

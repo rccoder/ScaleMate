@@ -1,0 +1,17 @@
+{
+  "fromVersion": "0.4.2-preview.4",
+  "fromCode": 24,
+  "toVersion": "0.4.2",
+  "toCode": 25,
+  "firstInstallTimeBefore": "2026-10-31 12:09:19",
+  "firstInstallTimeAfter": "2026-10-31 12:09:19",
+  "installedApkSha256": "83f3e649fc334f429eab5ee572f16da3f67880f72889a69e2b8c9aa41a305b67",
+  "normalSystemInstaller": true,
+  "cancelDownloadAndRetryPassed": true,
+  "downloadWaitsForInstallClick": true,
+  "cancelInstallAndRetryPassed": true,
+  "sampleMealRetained": true,
+  "sampleFavoriteRetained": true,
+  "privateUserDataMigrationTested": false,
+  "phoneUpgraded": false
+}

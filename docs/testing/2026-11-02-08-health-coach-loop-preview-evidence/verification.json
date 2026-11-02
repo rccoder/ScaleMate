@@ -1,0 +1,98 @@
+{
+  "tag": "v0.4.3-preview.2",
+  "releaseUrl": "https://github.com/rccoder/ScaleMate/releases/tag/v0.4.3-preview.2",
+  "commit": "7c3c38652c3646832a8c07cc214c9c19ba1d8180",
+  "ciRun": "https://github.com/rccoder/ScaleMate/actions/runs/41446655390",
+  "releaseRun": "https://github.com/rccoder/ScaleMate/actions/runs/41447460185",
+  "release": {
+    "name": "称伴 · ScaleMate 0.4.3-preview.2",
+    "draft": false,
+    "prerelease": true,
+    "latestTag": "v0.4.2",
+    "assetCount": 7,
+    "assets": [
+      {
+        "name": "SHA256SUMS",
+        "sizeBytes": 80,
+        "digest": "sha256:ad51edaff2541220475185f17d2a9ba48473b6f2fa9ba03ca2d4edcdf2009474"
+      },
+      {
+        "name": "ScaleMate.apk",
+        "sizeBytes": 26426544,
+        "digest": "sha256:7ad12ecb24f3295321cf104b4bcfc64a4e0a0b01c6ed9be7efb4ed7a7d646bbc"
+      },
+      {
+        "name": "releases.json",
+        "sizeBytes": 1950,
+        "digest": "sha256:f132c17070cd885272bb1bca89573b4bdcbdb612f6cb5dfadce301734f3c816c"
+      },
+      {
+        "name": "releases.json.sig",
+        "sizeBytes": 512,
+        "digest": "sha256:63031181cc89643995b30b42571df747076144d38f6df2ee6225be97eadd3bd8"
+      },
+      {
+        "name": "signing-certificate.txt",
+        "sizeBytes": 957,
+        "digest": "sha256:7101d592bccd52f047dac7d1687cdf67aad27ae799e9fc0c4eaca182aa13f846"
+      },
+      {
+        "name": "update.json",
+        "sizeBytes": 2087,
+        "digest": "sha256:045615a1e33c4edfa51e451e1091938c3da96539a4d6f9fe1385e17f8d863fa0"
+      },
+      {
+        "name": "update.json.sig",
+        "sizeBytes": 512,
+        "digest": "sha256:2a4b90d35f41490c9a7fe857d75bb96f55edfb2a1e17508258a70991ff074ecf"
+      }
+    ]
+  },
+  "apk": {
+    "sha256": "7ad12ecb24f3295321cf104b4bcfc64a4e0a0b01c6ed9be7efb4ed7a7d646bbc",
+    "sizeBytes": 26426544,
+    "sha256sumsVerified": true,
+    "fixedSignatureVerified": true,
+    "certificateSha256": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5",
+    "publicKeySha256": "159749322f1e08c8ef648ba4de38cf295d98ff098ac1f5220f84f664d1c27c7f",
+    "package": "app.scalemate",
+    "versionName": "0.4.3-preview.2",
+    "versionCode": 27,
+    "nonDebuggable": true,
+    "installedApkSha256Matches": true
+  },
+  "metadata": {
+    "updateJsonSignatureVerified": true,
+    "releasesJsonSignatureVerified": true,
+    "updateManifestVerified": true,
+    "channel": "preview"
+  },
+  "downloadSources": {
+    "successful": [
+      "github-official",
+      "gh-proxy-com",
+      "ghproxy-net",
+      "gh-proxy-org"
+    ],
+    "failed": [
+      "ghfast-top",
+      "gh-llkk-cc"
+    ]
+  },
+  "emulatorUpgrade": {
+    "serial": "emulator-5554",
+    "apiLevel": 36,
+    "fromVersionName": "0.4.3-preview.1",
+    "fromVersionCode": 26,
+    "toVersionName": "0.4.3-preview.2",
+    "toVersionCode": 27,
+    "previewChannelSelected": true,
+    "updateFoundInApp": true,
+    "downloadVerifiedInApp": true,
+    "androidConfirmationShown": true,
+    "installedOverExistingApp": true,
+    "firstInstallTimeBefore": "2026-10-31 12:09:19",
+    "firstInstallTimeAfter": "2026-10-31 12:09:19",
+    "launchAfterUpgrade": true
+  }
+}

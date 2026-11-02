@@ -72,7 +72,13 @@ import kotlinx.coroutines.withContext
     val today=LocalDate.now(ZoneId.of(s.window.zone))
     val todayMetrics=HealthOverview.today(s.snapshot,today)
     val coachBrief=remember(s.snapshot,s.goals,today){HealthCoach.brief(s.snapshot,s.goals,today)}
-    val coachMessage=s.coachMessage?.takeIf {it.snapshotId==s.snapshot?.id}
+    val coachPlans=HealthCoachPlans.recent(s.coachPlans,today).filter {plan->plan.categories.all {it in s.categories&&s.permissions[it]=="ready"}}
+    val coachMessage=coachPlans.firstOrNull()?.message ?: s.coachMessage?.takeIf {
+        s.coachPlans.isEmpty()&&it.snapshotId==s.snapshot?.id&&it.evidenceIds.isNotEmpty()&&
+            it.evidenceIds.all {id->s.snapshot?.evidence?.any {e->e.id==id&&s.permissions[e.kind]=="ready"}==true}&&
+            Instant.ofEpochMilli(it.createdAt).atZone(ZoneId.of(s.window.zone)).toLocalDate()==today
+    }
+    var coachPreferences by remember {mutableStateOf(false)}
     val configuredService=s.serviceId.takeIf {id->s.services.any {it.id==id}}
     val save=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")){uri->
         val file=exportingFile
@@ -80,7 +86,7 @@ import kotlinx.coroutines.withContext
     }
     fun date(time:Long?)=time?.let {DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it))} ?: "—"
     fun go(next:String){if(next=="range"&&page!="custom")rangeWindow=s.window;page=next}
-    fun disabledPage(next:String)=!BuildConfig.HEALTH_AI_ENABLED&&next in setOf("chat","conversations","reports","report","export","reminders","goals","privacy")
+    fun disabledPage(next:String)=!BuildConfig.HEALTH_AI_ENABLED&&(next in setOf("chat","conversations","reports","report","export","reminders","privacy")||next=="goals"&&!BuildConfig.HEALTH_COACH_ENABLED)
     fun settings(){try {context.startActivity(Intent("android.health.connect.action.HEALTH_HOME_SETTINGS"))}catch(_:Exception){localError=R.string.open_error}}
     fun share() {try {
         val uris=ArrayList(s.exports.map {FileProvider.getUriForFile(context,"${context.packageName}.foodphotos",it)})
@@ -179,7 +185,11 @@ import kotlinx.coroutines.withContext
                         chinese=chinese,
                         onGenerate=vm::coach,
                         onConfigure=manageServices,
-                        onEvidence={id->vm.evidence(id,coachMessage?.snapshotId.orEmpty())}
+                        onEvidence={id->vm.evidence(id)},
+                        profile=s.coachProfile.forDay(today),plans=coachPlans,today=today,
+                        generating=s.coachGenerating,currentSnapshotId=s.snapshot?.id.orEmpty(),
+                        onPreferences={coachPreferences=true},onFeedback=vm::coachFeedback,
+                        onPlanEvidence={id,snapshotId->vm.evidence(id,snapshotId)}
                     )
                 }
                 if(BuildConfig.HEALTH_AI_ENABLED) {
@@ -356,7 +366,11 @@ import kotlinx.coroutines.withContext
         Spacer(Modifier.height(20.dp))
     }
     if(deleteHistory)AlertDialog(onDismissRequest={deleteHistory=false},title={Text(stringResource(R.string.health_clear_history))},text={Text(stringResource(R.string.health_clear_confirm))},confirmButton={TextButton(onClick={deleteHistory=false;vm.clearHistory()}){Text(stringResource(R.string.health_delete))}},dismissButton={TextButton(onClick={deleteHistory=false}){Text(stringResource(R.string.cancel))}})
-    s.consent?.let {pending->AlertDialog(onDismissRequest=vm::cancelConsent,title={Text(stringResource(R.string.health_consent_title))},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(pending.service.name+" · "+pending.service.model);Text(pending.service.baseUrl);Text("${pending.window.start} — ${pending.window.end}");Text(pending.categories.map {HealthCatalog.kind(it).label(chinese)}.joinToString(" · "));Text(stringResource(R.string.health_consent_note))}},confirmButton={TextButton(onClick=vm::consent){Text(stringResource(R.string.health_consent_agree))}},dismissButton={TextButton(onClick=vm::cancelConsent){Text(stringResource(R.string.cancel))}})}
+    if(coachPreferences)HealthCoachPreferences(s.coachProfile,today,
+        onSave={vm.coachProfile(it);coachPreferences=false},
+        onGoals={coachPreferences=false;go("goals")},
+        onClear={vm.clearCoach();coachPreferences=false},onDismiss={coachPreferences=false})
+    s.consent?.let {pending->AlertDialog(onDismissRequest=vm::cancelConsent,title={Text(stringResource(R.string.health_consent_title))},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(pending.service.name+" · "+pending.service.model);Text(pending.service.baseUrl);Text("${pending.window.start} — ${pending.window.end}");Text(pending.categories.map {HealthCatalog.kind(it).label(chinese)}.joinToString(" · "));Text(stringResource(if(pending.mode==HealthRequestMode.COACH)R.string.health_coach_consent_context else R.string.health_consent_note))}},confirmButton={TextButton(onClick=vm::consent){Text(stringResource(R.string.health_consent_agree))}},dismissButton={TextButton(onClick=vm::cancelConsent){Text(stringResource(R.string.cancel))}})}
     s.selectedEvidence?.let {e->AlertDialog(onDismissRequest=vm::closeEvidence,title={Text(stringResource(R.string.health_detail_title))},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(HealthCatalog.kind(e.kind).label(chinese),style=MaterialTheme.typography.titleMedium);Text(healthMetricDisplay(e),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold);HealthLabel(stringResource(R.string.health_date),e.date);HealthLabel(stringResource(R.string.health_source),e.source);HealthLabel(stringResource(R.string.health_metric),stringResource(metricLabelResource(e.kind,e.field)));if(s.selectedEvidenceRecordCount>0)HealthLabel(stringResource(R.string.health_records),s.selectedEvidenceRecordCount.toString());e.coverage?.let {HealthLabel(stringResource(R.string.health_coverage),"${(it*100).toInt()}%")};if(e.partial)Text(stringResource(R.string.health_partial),color=MaterialTheme.colorScheme.onSurfaceVariant);if(s.selectedEvidencePeriod=="baseline")Text(stringResource(R.string.health_baseline),color=MaterialTheme.colorScheme.onSurfaceVariant);HealthEvidenceRecords(e,s.selectedEvidenceRecords,s.selectedEvidenceReferences,chinese);Text(healthCalculationNote(e),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}},confirmButton={TextButton(onClick=vm::closeEvidence){Text(stringResource(R.string.done))}})}
     if(preview.isNotEmpty())AlertDialog(onDismissRequest={preview=""},title={Text(stringResource(R.string.health_export))},text={Text(preview,modifier=Modifier.verticalScroll(rememberScrollState()))},confirmButton={TextButton(onClick={preview=""}){Text(stringResource(R.string.done))}})
 }
@@ -747,79 +761,82 @@ private fun trendAxisLabel(trend:HealthTrendSeries,value:Double):String {
     return number.format(value)
 }
 
-@Composable private fun HealthCoachSection(
-    brief:HealthCoachBrief?,
-    message:HealthMessage?,
-    configured:Boolean,
-    busy:Boolean,
-    chinese:Boolean,
-    onGenerate:()->Unit,
-    onConfigure:()->Unit,
-    onEvidence:(String)->Unit
+@OptIn(ExperimentalLayoutApi::class)
+@Composable internal fun HealthCoachSection(
+    brief:HealthCoachBrief?,message:HealthMessage?,configured:Boolean,busy:Boolean,chinese:Boolean,
+    onGenerate:()->Unit,onConfigure:()->Unit,onEvidence:(String)->Unit,
+    profile:HealthCoachProfile,plans:List<HealthCoachPlan>,today:LocalDate,generating:Boolean,
+    currentSnapshotId:String,onPreferences:()->Unit,onFeedback:(String,HealthCoachFeedback)->Unit,
+    onPlanEvidence:(String,String)->Unit={_,_->}
 ) {
     val signals=brief?.signals.orEmpty()
-    val hasData=signals.isNotEmpty()
+    val hasData=signals.isNotEmpty()||(brief?.availableFactCount ?: 0)>0
+    val plan=plans.firstOrNull()
     var showAllSignals by remember {mutableStateOf(false)}
-    val visibleSignals=if(showAllSignals)signals else signals.take(1)
-    Surface(
-        color=MaterialTheme.colorScheme.primaryContainer.copy(alpha=.42f),
-        shape=RoundedCornerShape(24.dp),
-        modifier=Modifier.fillMaxWidth()
-    ) {
+    val visibleSignals=if(showAllSignals)signals else emptyList()
+    Surface(color=MaterialTheme.colorScheme.primaryContainer.copy(alpha=.42f),shape=RoundedCornerShape(24.dp),modifier=Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                Text(stringResource(R.string.health_coach_title),style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.SemiBold)
-                if(message==null)Text(stringResource(R.string.health_coach_intro),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                brief?.dataAsOf?.let {Text(
-                    stringResource(R.string.health_coach_updated,Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))),
-                    style=MaterialTheme.typography.labelSmall,
-                    color=MaterialTheme.colorScheme.onSurfaceVariant
-                )}
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                Text(stringResource(R.string.health_coach_title),Modifier.weight(1f),style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.SemiBold)
+                TextButton(enabled=!busy,onClick=onPreferences){Text(stringResource(R.string.health_coach_preferences))}
             }
-            if(hasData) {
-                Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                    visibleSignals.forEachIndexed {index,signal->
-                        if(index>0)HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant.copy(alpha=.45f))
-                        HealthCoachSignalRow(signal,chinese,onEvidence)
-                    }
-                    if(signals.size>1)TextButton(onClick={showAllSignals=!showAllSignals},contentPadding=PaddingValues(0.dp)) {
-                        Text(if(showAllSignals)stringResource(R.string.health_coach_signals_less) else stringResource(R.string.health_coach_signals_all,signals.size))
-                    }
-                }
-            } else {
-                Text(stringResource(R.string.health_coach_no_data),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            brief?.oldCategories?.takeIf {it.isNotEmpty()}?.let {kinds->
-                Text(
-                    stringResource(R.string.health_coach_delayed,kinds.sorted().joinToString(" · ") {HealthCatalog.kind(it).label(chinese)}),
-                    style=MaterialTheme.typography.labelSmall,
-                    color=MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            brief?.missingCategories?.takeIf {it.isNotEmpty()}?.let {kinds->
-                Text(
-                    stringResource(R.string.health_coach_missing,kinds.sorted().joinToString(" · ") {HealthCatalog.kind(it).label(chinese)}),
-                    style=MaterialTheme.typography.labelSmall,
-                    color=MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if(message!=null) {
-                val display=message.text.replace(Regex("\\[[a-f0-9]{4,24}(?:-(?:median|min|max))?\\]"),"").trim()
+            Text(stringResource(coachFocusLabel(profile.focus))+" · "+stringResource(R.string.health_coach_minutes,profile.minutes)+if(profile.energy==HealthCoachEnergy.TIRED)" · "+stringResource(R.string.health_coach_tired_today) else "",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(message==null)Text(stringResource(R.string.health_coach_intro),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(message!=null&&(message.status=="complete"||plan!=null)) {
                 HealthCard(MaterialTheme.colorScheme.surface.copy(alpha=.78f)) {
-                    Text((message.serviceName.ifBlank {"AI"})+" · "+message.model,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    if(plan!=null)Text(stringResource(R.string.health_coach_plan_date,plan.date),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    val display=message.text.replace(Regex("\\[[a-f0-9]{4,24}(?:-(?:median|min|max))?\\]"),"").trim()
                     if(display.isNotEmpty())Text(display)
-                    if(message.status!="complete")Text(
-                        stringResource(when(message.status){"generating"->R.string.health_coach_pending;"cancelled"->R.string.health_cancelled;else->R.string.health_failed}),
-                        style=MaterialTheme.typography.bodySmall,
-                        color=MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if(plan!=null) {
+                        if(plan.evidence.isNotEmpty())FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                            plan.evidence.forEach {e->
+                                val value=HealthPrompt.renderCoach("[${e.id}]",listOf(e),chinese).first
+                                AssistChip(onClick={onPlanEvidence(e.id,plan.message.snapshotId)},label={Text(HealthCatalog.kind(e.kind).label(chinese)+" · "+(if(e.field.startsWith("recentTypical"))stringResource(R.string.health_coach_typical)+" " else "")+value)})
+                            }
+                        }
+                        HorizontalDivider()
+                        Text(stringResource(if(plan.date==today.toString())R.string.health_coach_action_today else R.string.health_coach_action_previous),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
+                        Text(plan.action.replace(Regex("\\[[a-f0-9]{4,24}(?:-(?:median|min|max))?\\]"),""),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Medium)
+                        val status=when(plan.feedback) {
+                            HealthCoachFeedback.PROPOSED->null
+                            HealthCoachFeedback.ACCEPTED->R.string.health_coach_accepted
+                            HealthCoachFeedback.DONE->R.string.health_coach_done_note
+                            HealthCoachFeedback.MISSED->R.string.health_coach_missed_note
+                            HealthCoachFeedback.TOO_HARD->R.string.health_coach_hard_note
+                        }
+                        status?.let {Text(stringResource(it),style=MaterialTheme.typography.bodySmall)}
+                        if(plan.date==today.toString()) {
+                            FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                if(plan.feedback==HealthCoachFeedback.PROPOSED)FilledTonalButton(enabled=!busy,onClick={onFeedback(plan.message.id,HealthCoachFeedback.ACCEPTED)}){Text(stringResource(R.string.health_coach_accept))}
+                                if(plan.feedback in setOf(HealthCoachFeedback.PROPOSED,HealthCoachFeedback.ACCEPTED)) {
+                                    TextButton(enabled=!busy,onClick={onFeedback(plan.message.id,HealthCoachFeedback.DONE)}){Text(stringResource(R.string.health_coach_done))}
+                                    TextButton(enabled=!busy,onClick={onFeedback(plan.message.id,HealthCoachFeedback.MISSED)}){Text(stringResource(R.string.health_coach_missed))}
+                                    TextButton(enabled=!busy,onClick={onFeedback(plan.message.id,HealthCoachFeedback.TOO_HARD)}){Text(stringResource(R.string.health_coach_too_hard))}
+                                } else if(plan.feedback!=HealthCoachFeedback.PROPOSED)TextButton(enabled=!busy,onClick={onFeedback(plan.message.id,HealthCoachFeedback.PROPOSED)}){Text(stringResource(R.string.health_coach_undo))}
+                            }
+                        }
+                        if(plan.message.snapshotId!=currentSnapshotId||plan.profile!=profile)Text(stringResource(R.string.health_coach_changed),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if(message.status!="complete"&&!generating)Text(stringResource(if(message.status=="failed")R.string.health_failed else R.string.health_cancelled),style=MaterialTheme.typography.bodySmall)
                 }
             }
+            if(generating)Text(stringResource(R.string.health_coach_pending),style=MaterialTheme.typography.bodySmall)
+            if(plans.isNotEmpty())Text(stringResource(R.string.health_coach_week_progress,HealthCoachPlans.completedDays(plans,today)),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(!hasData)Text(stringResource(R.string.health_coach_no_data),style=MaterialTheme.typography.bodySmall)
             if(configured)Button(enabled=!busy&&hasData,onClick=onGenerate,modifier=Modifier.fillMaxWidth()) {
-                Text(stringResource(if(message?.status=="complete")R.string.health_coach_regenerate else R.string.health_coach_generate))
-            } else OutlinedButton(onClick=onConfigure,modifier=Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.health_coach_configure))
+                Text(stringResource(when {
+                    plan?.feedback==HealthCoachFeedback.TOO_HARD->R.string.health_coach_generate_easier
+                    plan?.feedback==HealthCoachFeedback.DONE&&plan.date==today.toString()&&plan.profile.focus==profile.focus->R.string.health_coach_review
+                    message?.status=="complete"->R.string.health_coach_regenerate
+                    else->R.string.health_coach_generate
+                }))
+            } else OutlinedButton(onClick=onConfigure,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_coach_configure))}
+            if(signals.isNotEmpty())TextButton(onClick={showAllSignals=!showAllSignals},contentPadding=PaddingValues(0.dp)) {
+                Text(stringResource(if(showAllSignals)R.string.health_coach_signals_less else R.string.health_coach_signals_all,signals.size))
             }
+            visibleSignals.forEach {HealthCoachSignalRow(it,chinese,onEvidence)}
+            brief?.dataAsOf?.let {Text(stringResource(R.string.health_coach_updated,Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+            brief?.oldCategories?.takeIf {it.isNotEmpty()}?.let {kinds->Text(stringResource(R.string.health_coach_delayed,kinds.sorted().joinToString(" · "){HealthCatalog.kind(it).label(chinese)}),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}
             if(message==null)Text(stringResource(R.string.health_coach_privacy),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -871,6 +888,10 @@ private fun trendAxisLabel(trend:HealthTrendSeries,value:Double):String {
                 signal.latest.id
             )
         }
+        is HealthCoachSignal.Nutrition->listOf(
+            stringResource(R.string.health_coach_nutrition),number.format(signal.latest.value)+" "+signal.latest.unit,
+            stringResource(R.string.health_coach_nutrition_note),signal.latest.id
+        )
         is HealthCoachSignal.Weight->{
             val change=(signal.latest.value-signal.earliestRecent.value)/1000
             val sign=if(change>0)"+" else ""

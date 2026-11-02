@@ -1,0 +1,8 @@
+{
+  "syntheticFacts": true,
+  "realAI": true,
+  "model": "deepseek\/deepseek-v4-flash",
+  "elapsedMs": 1756,
+  "observation": "昨晚睡眠比近期常见水平短，且你今早感觉疲惫；今天的步数只是截至最新记录的少量活动，并不代表全天活动量。",
+  "action": "今天先做五分钟的轻缓活动，例如起床后或午后在家中慢慢走动或做温和拉伸，不要勉强加量。"
+}

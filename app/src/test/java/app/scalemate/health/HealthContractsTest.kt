@@ -105,9 +105,10 @@ class HealthContractsTest {
         val nutrition=fact.copy(id="nutrition-coach",kind="Nutrition",field="energy",date="2026-10-24",value=1800.0,unit="kcal")
         val s=snapshot(listOf(relevant,calories,nutrition)+irrelevant).copy(categories=setOf("SleepSession","Steps","TotalCaloriesBurned","Nutrition"))
         val (messages,input)=HealthPrompt.coachMessages(s,HealthGoals(),"zh")
-        assertEquals(1,input.facts.size)
-        assertEquals(relevant.id,input.sourceId(input.facts.single().id))
-        assertTrue(input.facts.single().id.matches(Regex("[a-f0-9]{8}")))
+        assertEquals(setOf("Steps","Nutrition"),input.facts.map {it.kind}.toSet())
+        assertEquals(relevant.id,input.sourceId(input.facts.single {it.kind=="Steps"}.id))
+        assertTrue(input.facts.all {it.id.matches(Regex("[a-f0-9]{8}"))})
+        assertTrue(messages.getJSONObject(0).getString("content").contains("recorded nutrition"))
         assertTrue(messages.getJSONObject(1).getString("content").toByteArray().size<160000)
     }
     @Test fun coachPromptPrefersMeasuredSleepOverSessionFallback() {

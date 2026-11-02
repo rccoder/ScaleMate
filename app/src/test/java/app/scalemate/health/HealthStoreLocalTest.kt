@@ -13,6 +13,34 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[35],manifest=Config.NONE)
 class HealthStoreLocalTest {
+    @Test fun coachFeedbackSurvivesReopenAndNeedsItsOwnContextConsent() {
+        val today=java.time.LocalDate.parse("2026-11-02")
+        val service=AiService(id="coach-service",name="Synthetic service",version=2)
+        val message=HealthMessage(role="assistant",text="Synthetic observation.")
+        val profile=HealthCoachProfile(HealthCoachFocus.SLEEP,5)
+        val plan=HealthCoachPlan(message,today.toString(),"Prepare a quiet bedtime routine.",profile,setOf("Steps"),HealthCoachFeedback.DONE)
+        Store(context,name).use {db->
+            val health=HealthStore(db)
+            health.consent(service,setOf("Steps"))
+            assertFalse(health.consented(service,setOf("Steps"),"coach-v2:"))
+            health.consent(service,setOf("Steps"),"coach-v2:")
+            assertTrue(health.consented(service,setOf("Steps"),"coach-v2:"))
+            assertFalse(health.consented(service.copy(version=3),setOf("Steps"),"coach-v2:"))
+            assertFalse(health.consented(service,setOf("Weight"),"coach-v2:"))
+            health.coachProfile(profile);health.coachPlans(listOf(plan),today)
+        }
+        Store(context,name).use {db->
+            val health=HealthStore(db)
+            assertEquals(profile,health.coachProfile())
+            assertEquals(plan,health.coachPlans().single())
+            health.categories(setOf("Steps"));health.goals(HealthGoals(steps=6000))
+            health.clearCoach()
+            assertTrue(health.coachPlans().isEmpty())
+            assertFalse(health.consented(service,setOf("Steps"),"coach-v2:"))
+            assertEquals(setOf("Steps"),health.categories())
+            assertEquals(6000L,health.goals().steps)
+        }
+    }
     private val context get()=RuntimeEnvironment.getApplication()
     private val name="health-local-validation.db"
     @After fun cleanup(){context.deleteDatabase(name)}

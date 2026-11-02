@@ -6,6 +6,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HealthCoachTest {
+    @Test fun oneWeightReadingRemainsUsableWithoutInventingATrend() {
+        val fact=row("Weight","weight","2026-11-01",71000.0,"g")
+        val brief=HealthCoach.brief(snapshot(listOf(fact)),HealthGoals(),LocalDate.parse("2026-11-01"))!!
+        assertEquals(1,brief.availableFactCount)
+        assertTrue(brief.signals.filterIsInstance<HealthCoachSignal.Weight>().isEmpty())
+    }
+    @Test fun nutritionOnlyDataCanSupportRecordedIntakeCoachingWithoutLocalMealFallback() {
+        val fact=row("Nutrition","energy","2026-11-01",1000.0,"kcal",partial=true)
+        val brief=HealthCoach.brief(snapshot(listOf(fact)),HealthGoals(),LocalDate.parse("2026-11-01"))!!
+        assertEquals(fact,brief.signals.filterIsInstance<HealthCoachSignal.Nutrition>().single().latest)
+    }
+    @Test fun comparisonsDoNotTreatASourceChangeAsAChangeInHealth() {
+        val previous=row("SleepSession","sleepMinutes","2026-10-31",300.0,"min",source="Old source")
+        val latest=row("SleepSession","sleepMinutes","2026-11-01",450.0,"min",source="New source")
+        val brief=HealthCoach.brief(snapshot(listOf(previous,latest)),HealthGoals(),LocalDate.parse("2026-11-01"))!!
+        assertEquals(null,brief.signals.filterIsInstance<HealthCoachSignal.Sleep>().single().baselineMedianMinutes)
+    }
     private val window=HealthWindow("2026-10-25","2026-11-01","Asia/Shanghai")
     private fun row(
         kind:String,

@@ -1,0 +1,31 @@
+{
+  "model": "deepseek/deepseek-v4-flash",
+  "realService": true,
+  "temporaryModelOverride": true,
+  "rounds": [
+    {
+      "round": 1,
+      "elapsedMs": 2503,
+      "facts": 17,
+      "payloadBytes": 15476,
+      "feedbackItems": 0,
+      "generalData": true
+    },
+    {
+      "round": 2,
+      "elapsedMs": 1909,
+      "facts": 17,
+      "payloadBytes": 15656,
+      "feedbackItems": 1,
+      "generalData": true
+    },
+    {
+      "round": 3,
+      "elapsedMs": 2164,
+      "facts": 17,
+      "payloadBytes": 15803,
+      "feedbackItems": 2,
+      "generalData": true
+    }
+  ]
+}

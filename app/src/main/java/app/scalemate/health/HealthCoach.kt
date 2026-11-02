@@ -5,7 +5,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
-enum class HealthCoachTopic { SLEEP, ACTIVITY, TRAINING, RECOVERY, WEIGHT }
+enum class HealthCoachTopic { SLEEP, ACTIVITY, TRAINING, RECOVERY, WEIGHT, NUTRITION }
 
 sealed interface HealthCoachSignal {
     val topic:HealthCoachTopic
@@ -56,6 +56,10 @@ sealed interface HealthCoachSignal {
         override val topic=HealthCoachTopic.WEIGHT
         override val evidence=listOf(latest,earliestRecent).distinctBy {it.id}
     }
+    data class Nutrition(val latest:HealthEvidence):HealthCoachSignal {
+        override val topic=HealthCoachTopic.NUTRITION
+        override val evidence=listOf(latest)
+    }
 }
 
 data class HealthCoachBrief(
@@ -63,7 +67,8 @@ data class HealthCoachBrief(
     val dataAsOf:Long?,
     val oldCategories:Set<String>,
     val missingCategories:Set<String>,
-    val signals:List<HealthCoachSignal>
+    val signals:List<HealthCoachSignal>,
+    val availableFactCount:Int=signals.sumOf {it.evidence.size}
 )
 
 object HealthCoach {
@@ -90,7 +95,7 @@ object HealthCoach {
             .sortedBy {it.date}
         val latestSleep=sleepRows.lastOrNull()
         val sleep=latestSleep?.let {primary->
-            val baseline=sleepRows.filter {it.date<primary.date}.takeLast(7).map {it.value}
+            val baseline=sleepRows.filter {it.date<primary.date&&it.source==primary.source&&it.field==primary.field&&it.unit==primary.unit}.takeLast(7).map {it.value}
             val supplemental=snapshot.evidence.filter {
                 it.kind=="SleepSession"&&it.date==primary.date&&it.field in setOf("additionalSleepMinutes","additionalSessionMinutes")
             }.sortedBy {it.field=="additionalSessionMinutes"}
@@ -105,7 +110,7 @@ object HealthCoach {
         val activityRows=rows("Steps",setOf("count"),complete=false)
         val latestActivity=activityRows.lastOrNull()
         val activity=latestActivity?.let {latest->
-            val baseline=activityRows.filter {it.date<latest.date&&!it.partial}.takeLast(7).map {it.value}
+            val baseline=activityRows.filter {it.date<latest.date&&!it.partial&&it.source==latest.source&&it.unit==latest.unit}.takeLast(7).map {it.value}
             HealthCoachSignal.Activity(latest,HealthMetrics.median(baseline),goals.steps)
         }
 
@@ -127,27 +132,29 @@ object HealthCoach {
         val hrvRows=rows("HeartRateVariabilityRmssd",setOf("nightRmssd","sampleMedian"))
         val latestHrv=hrvRows.lastOrNull()
         val recovery=latestHrv?.let {latest->
-            val baseline=hrvRows.filter {it.date<latest.date}.takeLast(7).map {it.value}
+            val baseline=hrvRows.filter {it.date<latest.date&&it.source==latest.source&&it.field==latest.field&&it.unit==latest.unit}.takeLast(7).map {it.value}
             val baselineMedian=HealthMetrics.median(baseline) ?: return@let null
             val sleepHeartRate=snapshot.evidence.filter {
-                it.kind=="HeartRate"&&it.field=="sleepBpm"&&it.date==latest.date
+                it.kind=="HeartRate"&&it.field=="sleepBpm"&&it.date==latest.date&&it.source==latest.source
             }.maxByOrNull {it.id}
             HealthCoachSignal.Recovery(latest,baselineMedian,sleepHeartRate)
         }
 
         val weightRows=rows("Weight",setOf("weight"))
         val weight=weightRows.lastOrNull()?.let {latest->
-            val earliest=weightRows.filter {it.date<latest.date}.takeLast(7).firstOrNull() ?: return@let null
+            val earliest=weightRows.filter {it.date<latest.date&&it.source==latest.source&&it.field==latest.field&&it.unit==latest.unit}.takeLast(7).firstOrNull() ?: return@let null
             HealthCoachSignal.Weight(latest,earliest)
         }
 
-        val ordered=listOfNotNull(sleep,activity,training,recovery,weight)
+        val nutrition=rows("Nutrition",setOf("energy"),complete=false).lastOrNull {it.algorithm!="daily-median-v1"}?.let(HealthCoachSignal::Nutrition)
+        val ordered=listOfNotNull(sleep,activity,training,recovery,weight,nutrition)
         val missing=snapshot.coverage.filter {it.status in setOf("no_records","not_authorized","unsupported","read_failed")}.map {it.kind}.toSet()
         val activeKinds=setOf("Steps","HeartRate")
         val old=snapshot.coverage.filter {coverage->
             coverage.kind in activeKinds&&coverage.latest?.let {now-it>6*60*60*1000}==true
         }.map {it.kind}.toSet()
-        return HealthCoachBrief(today.toString(),snapshot.dataAsOf,old,missing,ordered)
+        val factCount=HealthPrompt.coachSnapshot(snapshot,today).evidence.size
+        return HealthCoachBrief(today.toString(),snapshot.dataAsOf,old,missing,ordered,factCount)
     }
 
     fun dateSpan(signal:HealthCoachSignal):Long? {

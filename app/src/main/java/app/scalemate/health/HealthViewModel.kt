@@ -22,7 +22,7 @@ import kotlinx.coroutines.sync.withLock
 enum class HealthRequestMode { CHAT, COACH }
 data class PendingHealthRequest(
     val question:String,val report:Boolean,val service:AiService,val categories:Set<String>,val window:HealthWindow,
-    val mode:HealthRequestMode=HealthRequestMode.CHAT
+    val mode:HealthRequestMode=HealthRequestMode.CHAT,val coachProfile:HealthCoachProfile?=null
 )
 data class HealthState(
     val loaded:Boolean=false,val available:Boolean=true,val categories:Set<String> = emptySet(),val permissions:Map<String,String> = emptyMap(),
@@ -32,7 +32,8 @@ data class HealthState(
     val conversations:List<HealthConversation> = emptyList(),val conversation:HealthConversation=HealthConversation(),val reports:List<HealthReport> = emptyList(),
     val busy:Boolean=false,val generating:Boolean=false,val progress:String="",val error:Int?=null,val consent:PendingHealthRequest?=null,
     val exports:List<File> = emptyList(),val selectedEvidence:HealthEvidence?=null,val selectedEvidencePeriod:String="",val selectedEvidenceRecords:List<HealthRecord> = emptyList(),val selectedEvidenceRecordCount:Int=0,val selectedEvidenceReferences:List<HealthDetailReference> = emptyList(),val lastCheck:Long?=null,val sources:Map<String,String> = emptyMap(),val routeRequests:List<HealthRouteRequest> = emptyList(),val pendingRoute:HealthRouteRequest?=null,val syncStatus:String="idle",val syncProgress:String="",
-    val coachMessage:HealthMessage?=null,val coachGenerating:Boolean=false
+    val coachMessage:HealthMessage?=null,val coachGenerating:Boolean=false,
+    val coachProfile:HealthCoachProfile=HealthCoachProfile(),val coachPlans:List<HealthCoachPlan> = emptyList()
 )
 
 class HealthViewModel @JvmOverloads constructor(application:Application,private val syncSource:HealthSyncSource?=null,databaseName:String="scalemate.db"):AndroidViewModel(application) {
@@ -66,9 +67,9 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
                 historySupported=reader.supports(HealthCatalog.HISTORY),historyGranted=reader.granted(HealthCatalog.HISTORY),backgroundSupported=reader.supports(HealthCatalog.BACKGROUND),backgroundGranted=reader.granted(HealthCatalog.BACKGROUND),
                 window=if(!current.loaded)cached?.window ?: current.window else current.window,snapshot=cached,services=services,serviceId=current.serviceId.takeIf {id->services.any {it.id==id}} ?: food.setting("text").takeIf {id->services.any {it.id==id}} ?: services.singleOrNull()?.id.orEmpty(),
                 goals=store.goals(),reminderSettings=store.reminderSettings(),reminders=store.reminders(),conversations=store.conversations(),conversation=current.conversation,reports=store.reports(),lastCheck=store.setting("lastBackgroundCheck").toLongOrNull(),sources=store.sources())
-            .copy(coachMessage=store.coachMessage())
+            .copy(coachMessage=store.coachMessage(),coachProfile=store.coachProfile(),coachPlans=store.coachPlans())
         }
-        mutable.update {s->val revoked=s.permissions.any {(kind,status)->status=="ready"&&data.permissions[kind]!="ready"};val keep=!revoked&&(s.busy||s.snapshot?.id!=before);s.copy(loaded=true,available=data.available,categories=data.categories,permissions=data.permissions,window=if(keep)s.window else data.window,historySupported=data.historySupported,historyGranted=data.historyGranted,backgroundSupported=data.backgroundSupported,backgroundGranted=data.backgroundGranted,snapshot=if(keep)s.snapshot else data.snapshot,services=data.services,serviceId=data.serviceId,goals=data.goals,reminderSettings=data.reminderSettings,reminders=data.reminders,conversations=data.conversations,conversation=if(revoked)HealthConversation() else s.conversation,reports=data.reports,lastCheck=data.lastCheck,sources=data.sources,coachMessage=if(s.coachGenerating)s.coachMessage else data.coachMessage)}
+        mutable.update {s->val revoked=s.permissions.any {(kind,status)->status=="ready"&&data.permissions[kind]!="ready"};val keep=!revoked&&(s.busy||s.snapshot?.id!=before);s.copy(loaded=true,available=data.available,categories=data.categories,permissions=data.permissions,window=if(keep)s.window else data.window,historySupported=data.historySupported,historyGranted=data.historyGranted,backgroundSupported=data.backgroundSupported,backgroundGranted=data.backgroundGranted,snapshot=if(keep)s.snapshot else data.snapshot,services=data.services,serviceId=data.serviceId,goals=data.goals,reminderSettings=data.reminderSettings,reminders=data.reminders,conversations=data.conversations,conversation=if(revoked)HealthConversation() else s.conversation,reports=data.reports,lastCheck=data.lastCheck,sources=data.sources,coachMessage=if(s.coachGenerating)s.coachMessage else data.coachMessage,coachProfile=data.coachProfile,coachPlans=data.coachPlans)}
         if(BuildConfig.HEALTH_AI_ENABLED&&data.reminderSettings.enabled)HealthReminders.schedule(getApplication(),true)
         val current=mutable.value
         if(refreshIfStale&&!current.busy&&current.categories.any {current.permissions[it]=="ready"}&&(current.snapshot==null||System.currentTimeMillis()-current.snapshot.readAt>60000))refresh()
@@ -166,17 +167,37 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
         if(mutable.value.busy||!BuildConfig.HEALTH_COACH_ENABLED)return
         val service=mutable.value.services.find {it.id==mutable.value.serviceId} ?: run {mutable.update {it.copy(error=R.string.health_no_service)};return}
         request(PendingHealthRequest(
-            HealthCoach.coachQuestion(),false,service,mutable.value.categories,mutable.value.window,HealthRequestMode.COACH
+            HealthCoach.coachQuestion(),false,service,mutable.value.categories,mutable.value.window,HealthRequestMode.COACH,mutable.value.coachProfile
         ))
     }
     private fun request(pending:PendingHealthRequest)=task {
-        val allowed=withContext(Dispatchers.IO){store.consented(pending.service,pending.categories)}
+        val allowed=withContext(Dispatchers.IO){store.consented(pending.service,pending.categories,if(pending.mode==HealthRequestMode.COACH)"coach-v2:" else "")}
         if(allowed) {
             if(pending.mode==HealthRequestMode.COACH)generateCoach(pending) else generate(pending)
         } else mutable.update {it.copy(consent=pending)}
     }
     fun cancelConsent(){mutable.update {it.copy(consent=null)}}
-    fun consent() {val pending=mutable.value.consent ?: return;mutable.update {it.copy(consent=null)};task {withContext(Dispatchers.IO){store.consent(pending.service,pending.categories)};if(pending.mode==HealthRequestMode.COACH)generateCoach(pending) else generate(pending)}}
+    fun consent() {val pending=mutable.value.consent ?: return;mutable.update {it.copy(consent=null)};task {withContext(Dispatchers.IO){store.consent(pending.service,pending.categories,if(pending.mode==HealthRequestMode.COACH)"coach-v2:" else "")};if(pending.mode==HealthRequestMode.COACH)generateCoach(pending) else generate(pending)}}
+    fun coachProfile(profile:HealthCoachProfile) {
+        if(mutable.value.busy)return
+        mutable.update {it.copy(coachProfile=profile,consent=null)}
+        task {withContext(Dispatchers.IO){store.coachProfile(profile)}}
+    }
+    fun coachFeedback(id:String,feedback:HealthCoachFeedback) {
+        if(mutable.value.busy)return
+        task {
+            val today=LocalDate.now(java.time.ZoneId.of(mutable.value.window.zone))
+            val plans=withContext(Dispatchers.IO) {
+                val updated=store.coachPlans().map {if(it.message.id==id)it.copy(feedback=feedback) else it}
+                store.coachPlans(updated,today);store.coachPlans()
+            }
+            mutable.update {it.copy(coachPlans=plans)}
+        }
+    }
+    fun clearCoach() {
+        if(mutable.value.busy)return
+        task {withContext(Dispatchers.IO){store.clearCoach()};mutable.update {it.copy(coachMessage=null,coachPlans=emptyList(),coachProfile=HealthCoachProfile())}}
+    }
     private fun generate(pending:PendingHealthRequest) {
         if(mutable.value.busy)return
         mutable.update {it.copy(busy=true,generating=true,error=null)}
@@ -245,7 +266,9 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
                 checkNotNull(snapshot){"No health snapshot"}
                 val appLocales=getApplication<Application>().getSystemService(LocaleManager::class.java).applicationLocales
                 val language=(if(appLocales.isEmpty)java.util.Locale.getDefault() else appLocales[0]).toLanguageTag()
-                val (messages,input)=HealthPrompt.coachMessages(snapshot,mutable.value.goals,language)
+                check(pending.coachProfile==mutable.value.coachProfile)
+                val profile=mutable.value.coachProfile.forDay(LocalDate.now(java.time.ZoneId.of(snapshot.window.zone)))
+                val (messages,input)=HealthPrompt.coachMessages(snapshot,mutable.value.goals,language,profile,mutable.value.coachPlans)
                 val derived=input.facts.mapNotNull {fact->
                     val sourceId=input.sourceId(fact.id)
                     fact.takeIf {snapshot.evidence.none {it.id==sourceId} }?.copy(id=sourceId)
@@ -263,16 +286,21 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
                     },
                     disableReasoning=pending.service.format=="openai"&&pending.service.model.contains("deepseek",ignoreCase=true)
                 )
-                val (answer,aliases)=HealthPrompt.validate(raw,input)
-                val refs=aliases.map(input::sourceId)
+                val today=LocalDate.now(java.time.ZoneId.of(snapshot.window.zone))
+                val answer=HealthPrompt.validateCoach(raw,input,today)
+                val refs=answer.references.map(input::sourceId)
                 val chinese=getApplication<Application>().resources.configuration.locales[0].language=="zh"
-                val rendered=HealthPrompt.renderCoach(answer,input.facts,chinese).first
+                val rendered=if(answer.generalData)getApplication<Application>().getString(R.string.health_coach_no_recent_measurements) else HealthPrompt.coachObservation(answer.observation)
                 val complete=pendingMessage.copy(
                     text=rendered,
                     status="complete",evidenceIds=refs
                 )
-                withContext(Dispatchers.IO){store.coachMessage(complete)}
-                mutable.update {it.copy(coachMessage=complete)}
+                val evidence=if(answer.generalData)emptyList() else input.facts.filter {it.id in answer.references}.take(2).map {it.copy(id=input.sourceId(it.id))}
+                val plan=HealthCoachPlans.generated(complete,today,HealthPrompt.renderCoach(answer.action,input.facts,chinese).first,profile,input.facts.map {it.kind}.toSet(),mutable.value.coachPlans,evidence)
+                val plans=withContext(Dispatchers.IO){store.transaction {
+                    store.coachMessage(complete);store.coachPlans(listOf(plan)+store.coachPlans(),today);store.coachPlans()
+                }}
+                mutable.update {it.copy(coachMessage=complete,coachPlans=plans)}
             }catch(e:CancellationException){
                 throw e
             }catch(e:Exception){
@@ -381,6 +409,6 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
         operation=viewModelScope.launch {try {val files=withContext(Dispatchers.IO){HealthExport.write(File(getApplication<Application>().cacheDir,"health_exports"),File(getApplication<Application>().cacheDir,"health_raw"),s,question,raw)};mutable.update {it.copy(exports=files)}}catch(e:CancellationException){throw e}catch(_:Exception){mutable.update {it.copy(error=R.string.health_export_error)}}finally {mutable.update {it.copy(busy=false)}}}
     }
     fun feedback(id:String,value:String)=task {withContext(Dispatchers.IO){store.feedback(id,value)};val reminders=withContext(Dispatchers.IO){store.reminders()};mutable.update {it.copy(reminders=reminders)}}
-    fun clearHistory(){if(mutable.value.busy)return;task {withContext(Dispatchers.IO){store.clear();File(getApplication<Application>().cacheDir,"health_raw").deleteRecursively();File(getApplication<Application>().cacheDir,"health_exports").deleteRecursively()};mutable.update {it.copy(snapshot=null,conversation=HealthConversation(),conversations=emptyList(),reports=emptyList(),reminders=emptyList(),exports=emptyList(),coachMessage=null)}}}
+    fun clearHistory(){if(mutable.value.busy)return;task {withContext(Dispatchers.IO){store.clear();File(getApplication<Application>().cacheDir,"health_raw").deleteRecursively();File(getApplication<Application>().cacheDir,"health_exports").deleteRecursively()};mutable.update {it.copy(snapshot=null,conversation=HealthConversation(),conversations=emptyList(),reports=emptyList(),reminders=emptyList(),exports=emptyList(),coachMessage=null,coachPlans=emptyList(),coachProfile=HealthCoachProfile())}}}
     override fun onCleared(){operation?.cancel();db.close();super.onCleared()}
 }

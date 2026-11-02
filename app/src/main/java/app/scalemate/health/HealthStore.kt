@@ -46,11 +46,11 @@ class HealthStore(private val store:Store) {
     fun reminderSettings(s:HealthReminderSettings)=setting("reminders",HealthJson.reminders(s).toString())
     fun sources():Map<String,String> {val o=setting("sources").takeIf {it.isNotBlank()}?.let(::JSONObject) ?: return emptyMap();return o.keys().asSequence().associateWith {o.getString(it)}}
     fun sources(map:Map<String,String>)=setting("sources",JSONObject(map).toString())
-    fun consented(service:AiService,categories:Set<String>):Boolean {
-        val accepted=setting("consent:${service.id}:${service.version}").takeIf {it.isNotBlank()} ?: return false
+    fun consented(service:AiService,categories:Set<String>,scope:String=""):Boolean {
+        val accepted=setting("consent:$scope${service.id}:${service.version}").takeIf {it.isNotBlank()} ?: return false
         return HealthJson.strings(JSONArray(accepted)).toSet().containsAll(categories)
     }
-    fun consent(service:AiService,categories:Set<String>)=setting("consent:${service.id}:${service.version}",JSONArray(categories.sorted()).toString())
+    fun consent(service:AiService,categories:Set<String>,scope:String="")=setting("consent:$scope${service.id}:${service.version}",JSONArray(categories.sorted()).toString())
     fun snapshot(s:HealthSnapshot) {store.writableDatabase.insertWithOnConflict("health_snapshots",null,ContentValues().apply {put("id",s.id);put("createdAt",s.readAt);put("payload",HealthJson.snapshot(s).toString())},SQLiteDatabase.CONFLICT_REPLACE)}
     fun snapshot(id:String):HealthSnapshot?=store.readableDatabase.rawQuery("SELECT payload FROM health_snapshots WHERE id=?",arrayOf(id)).use {if(it.moveToFirst())HealthJson.snapshot(JSONObject(it.getString(0))) else null}
     fun latest():HealthSnapshot?=store.readableDatabase.rawQuery("SELECT payload FROM health_snapshots ORDER BY createdAt DESC LIMIT 1",null).use {if(it.moveToFirst())HealthJson.snapshot(JSONObject(it.getString(0))) else null}
@@ -203,11 +203,23 @@ class HealthStore(private val store:Store) {
     fun deleteReport(id:String){store.writableDatabase.delete("health_reports","id=?",arrayOf(id));prune()}
     fun coachMessage():HealthMessage?=setting("coach:latest").takeIf {it.isNotBlank()}?.let {HealthJson.message(JSONObject(it))}
     fun coachMessage(message:HealthMessage){setting("coach:latest",HealthJson.message(message).toString())}
+    fun coachProfile():HealthCoachProfile=setting("coach:profile").takeIf {it.isNotBlank()}?.let {runCatching {HealthCoachPlans.profile(JSONObject(it))}.getOrNull()} ?: HealthCoachProfile()
+    fun coachProfile(profile:HealthCoachProfile)=setting("coach:profile",HealthCoachPlans.profile(profile).toString())
+    fun coachPlans():List<HealthCoachPlan> = setting("coach:plans").takeIf {it.isNotBlank()}?.let {raw->
+        val rows=runCatching {JSONArray(raw)}.getOrNull() ?: return emptyList()
+        (0 until rows.length()).mapNotNull {runCatching {HealthCoachPlans.plan(rows.getJSONObject(it))}.getOrNull()}
+    }.orEmpty()
+    fun coachPlans(plans:List<HealthCoachPlan>,today:java.time.LocalDate)=setting("coach:plans",JSONArray(HealthCoachPlans.recent(plans,today).map(HealthCoachPlans::json)).toString())
+    fun clearCoach(){store.writableDatabase.delete("health_settings","key LIKE 'coach:%' OR key LIKE 'consent:coach-v2:%'",null)}
     fun reminders():List<HealthReminder> = store.readableDatabase.rawQuery("SELECT payload FROM health_reminders ORDER BY createdAt DESC",null).use {c->buildList {while(c.moveToNext())add(HealthJson.reminder(JSONObject(c.getString(0))))}}
     fun reminder(r:HealthReminder):Boolean = store.writableDatabase.insertWithOnConflict("health_reminders",null,ContentValues().apply {put("id",r.id);put("eventKey",r.key);put("dayKey",java.time.Instant.ofEpochMilli(r.createdAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString());put("createdAt",r.createdAt);put("payload",HealthJson.reminder(r).toString())},SQLiteDatabase.CONFLICT_IGNORE)!=-1L
     fun feedback(id:String,value:String) {val r=reminders().find {it.id==id} ?: return;store.writableDatabase.update("health_reminders",ContentValues().apply {put("payload",HealthJson.reminder(r.copy(feedback=value)).toString())},"id=?",arrayOf(id))}
     fun clear() {val db=store.writableDatabase;db.beginTransaction();try {listOf("health_snapshots","health_reports","health_conversations","health_reminders","health_records","health_sync_state").forEach {db.delete(it,null,null)};db.delete("health_settings","key LIKE 'consent:%' OR key LIKE 'sync:%' OR key LIKE 'coach:%' OR key='activeSnapshot'",null);db.setTransactionSuccessful()}finally {db.endTransaction()}}
     fun prune(now:Long=System.currentTimeMillis()) {
+        val today=java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+        val plans=coachPlans()
+        if(plans.isNotEmpty())coachPlans(plans,today)
+        coachMessage()?.takeIf {now-it.createdAt>7L*86400000}?.let {setting("coach:latest","")}
         val cutoff=now-90L*86400000
         store.writableDatabase.delete("health_reports","createdAt<?",arrayOf(cutoff.toString()))
         store.writableDatabase.delete("health_reminders","createdAt<?",arrayOf(cutoff.toString()))

@@ -1,0 +1,8 @@
+
+app.scalemate.HealthCoachLiveDeviceTest:.
+app.scalemate.HealthCoachFlowDeviceTest:.
+app.scalemate.HealthCoachInteractionDeviceTest:....
+
+Time: 27.832
+
+OK (6 tests)

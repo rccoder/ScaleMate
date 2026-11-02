@@ -1,0 +1,26 @@
+{
+  "device": "emulator-5556",
+  "androidApi": 36,
+  "channel": "preview",
+  "downloadSource": "GitHub official",
+  "before": {
+    "versionName": "0.4.2",
+    "versionCode": 25,
+    "firstInstallTime": "2026-10-31 12:09:19"
+  },
+  "after": {
+    "versionName": "0.4.3-preview.1",
+    "versionCode": 26,
+    "firstInstallTime": "2026-10-31 12:09:19",
+    "lastUpdateTime": "2026-11-02 18:05:28"
+  },
+  "installedApkSha256": "39475a122467148eb65ce1864f07721141b704afe4f8a4b3e5bb61107dc310c0",
+  "installedApkMatchesRelease": true,
+  "androidInstallerConfirmationUsed": true,
+  "uninstalledOrClearedData": false,
+  "launchSucceeded": true,
+  "latestCheckShowsCurrentVersion": true,
+  "crashBufferEmpty": true,
+  "previewChannelPreserved": true,
+  "automaticRouteSelectionPreserved": true
+}

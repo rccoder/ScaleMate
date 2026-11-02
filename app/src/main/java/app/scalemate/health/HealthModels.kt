@@ -262,7 +262,9 @@ object HealthOverview {
 data class HealthMessage(
     val id:String=healthId(),val role:String,val text:String,val createdAt:Long=System.currentTimeMillis(),
     val snapshotId:String="",val serviceId:String="",val serviceName:String="",val model:String="",val configVersion:Long=0,
-    val status:String="complete",val evidenceIds:List<String> = emptyList()
+    val status:String="complete",val evidenceIds:List<String> = emptyList(),
+    val memoryCandidate:HealthCoachMemoryCandidate?=null,
+    val planChangeCandidate:HealthCoachPlanChangeCandidate?=null
 )
 data class HealthConversation(val id:String=healthId(),val title:String="",val messages:List<HealthMessage> = emptyList())
 data class HealthReport(val id:String=healthId(),val snapshotId:String,val message:HealthMessage)

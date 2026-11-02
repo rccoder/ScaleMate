@@ -205,12 +205,24 @@ class HealthStore(private val store:Store) {
     fun coachMessage(message:HealthMessage){setting("coach:latest",HealthJson.message(message).toString())}
     fun coachProfile():HealthCoachProfile=setting("coach:profile").takeIf {it.isNotBlank()}?.let {runCatching {HealthCoachPlans.profile(JSONObject(it))}.getOrNull()} ?: HealthCoachProfile()
     fun coachProfile(profile:HealthCoachProfile)=setting("coach:profile",HealthCoachPlans.profile(profile).toString())
+    fun coachConversation():HealthConversation=setting("coach:conversation").takeIf {it.isNotBlank()}?.let {runCatching {HealthJson.conversation(JSONObject(it))}.getOrNull()} ?: HealthConversation()
+    fun coachConversation(conversation:HealthConversation)=setting("coach:conversation",HealthJson.conversation(conversation).toString())
+    fun coachMemories():List<HealthCoachMemory> = setting("coach:memories").takeIf {it.isNotBlank()}?.let {raw->
+        val rows=runCatching {JSONArray(raw)}.getOrNull() ?: return emptyList()
+        (0 until rows.length()).mapNotNull {runCatching {HealthCoachPlans.memory(rows.getJSONObject(it))}.getOrNull()}
+    }.orEmpty()
+    fun coachMemories(memories:List<HealthCoachMemory>)=setting("coach:memories",JSONArray(memories.map(HealthCoachPlans::memory)).toString())
+    fun coachScheduleChanges():List<HealthCoachScheduleChange> = setting("coach:scheduleChanges").takeIf {it.isNotBlank()}?.let {raw->
+        val rows=runCatching {JSONArray(raw)}.getOrNull() ?: return emptyList()
+        (0 until rows.length()).mapNotNull {runCatching {HealthCoachPlans.scheduleChange(rows.getJSONObject(it))}.getOrNull()}
+    }.orEmpty()
+    fun coachScheduleChanges(changes:List<HealthCoachScheduleChange>)=setting("coach:scheduleChanges",JSONArray(changes.map(HealthCoachPlans::scheduleChange)).toString())
     fun coachPlans():List<HealthCoachPlan> = setting("coach:plans").takeIf {it.isNotBlank()}?.let {raw->
         val rows=runCatching {JSONArray(raw)}.getOrNull() ?: return emptyList()
         (0 until rows.length()).mapNotNull {runCatching {HealthCoachPlans.plan(rows.getJSONObject(it))}.getOrNull()}
     }.orEmpty()
     fun coachPlans(plans:List<HealthCoachPlan>,today:java.time.LocalDate)=setting("coach:plans",JSONArray(HealthCoachPlans.recent(plans,today).map(HealthCoachPlans::json)).toString())
-    fun clearCoach(){store.writableDatabase.delete("health_settings","key LIKE 'coach:%' OR key LIKE 'consent:coach-v2:%'",null)}
+    fun clearCoach(){store.writableDatabase.delete("health_settings","key LIKE 'coach:%' OR key LIKE 'consent:coach-v2:%' OR key LIKE 'consent:coach-v3:%'",null)}
     fun reminders():List<HealthReminder> = store.readableDatabase.rawQuery("SELECT payload FROM health_reminders ORDER BY createdAt DESC",null).use {c->buildList {while(c.moveToNext())add(HealthJson.reminder(JSONObject(c.getString(0))))}}
     fun reminder(r:HealthReminder):Boolean = store.writableDatabase.insertWithOnConflict("health_reminders",null,ContentValues().apply {put("id",r.id);put("eventKey",r.key);put("dayKey",java.time.Instant.ofEpochMilli(r.createdAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString());put("createdAt",r.createdAt);put("payload",HealthJson.reminder(r).toString())},SQLiteDatabase.CONFLICT_IGNORE)!=-1L
     fun feedback(id:String,value:String) {val r=reminders().find {it.id==id} ?: return;store.writableDatabase.update("health_reminders",ContentValues().apply {put("payload",HealthJson.reminder(r.copy(feedback=value)).toString())},"id=?",arrayOf(id))}
@@ -219,6 +231,10 @@ class HealthStore(private val store:Store) {
         val today=java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
         val plans=coachPlans()
         if(plans.isNotEmpty())coachPlans(plans,today)
+        val memories=coachMemories()
+        if(memories.any {!it.active(today)})coachMemories(memories.filter {it.active(today)})
+        val changes=coachScheduleChanges()
+        if(changes.any {!it.active(today)})coachScheduleChanges(changes.filter {it.active(today)})
         coachMessage()?.takeIf {now-it.createdAt>7L*86400000}?.let {setting("coach:latest","")}
         val cutoff=now-90L*86400000
         store.writableDatabase.delete("health_reports","createdAt<?",arrayOf(cutoff.toString()))

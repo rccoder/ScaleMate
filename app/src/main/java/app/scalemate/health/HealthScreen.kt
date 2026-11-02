@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -69,6 +70,8 @@ import kotlinx.coroutines.withContext
     var showAllTrends by rememberSaveable {mutableStateOf(false)}
     var view by rememberSaveable {mutableStateOf("cards")}
     var rangeWindow by remember {mutableStateOf(s.window)}
+    var coachQuestion by rememberSaveable {mutableStateOf("")}
+    var coachMemoryDraft by rememberSaveable {mutableStateOf("")}
     val today=LocalDate.now(ZoneId.of(s.window.zone))
     val todayMetrics=HealthOverview.today(s.snapshot,today)
     val coachBrief=remember(s.snapshot,s.goals,today){HealthCoach.brief(s.snapshot,s.goals,today)}
@@ -86,7 +89,11 @@ import kotlinx.coroutines.withContext
     }
     fun date(time:Long?)=time?.let {DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it))} ?: "—"
     fun go(next:String){if(next=="range"&&page!="custom")rangeWindow=s.window;page=next}
-    fun disabledPage(next:String)=!BuildConfig.HEALTH_AI_ENABLED&&(next in setOf("chat","conversations","reports","report","export","reminders","privacy")||next=="goals"&&!BuildConfig.HEALTH_COACH_ENABLED)
+    fun disabledPage(next:String)=when {
+        !BuildConfig.HEALTH_AI_ENABLED&&next in setOf("chat","conversations","reports","report","export","reminders","privacy")->true
+        !BuildConfig.HEALTH_COACH_ENABLED&&next in setOf("goals","coach","coachMemory")->true
+        else->false
+    }
     fun settings(){try {context.startActivity(Intent("android.health.connect.action.HEALTH_HOME_SETTINGS"))}catch(_:Exception){localError=R.string.open_error}}
     fun share() {try {
         val uris=ArrayList(s.exports.map {FileProvider.getUriForFile(context,"${context.packageName}.foodphotos",it)})
@@ -98,6 +105,7 @@ import kotlinx.coroutines.withContext
     LaunchedEffect(Unit){vm.reload(refreshIfStale=true)}
     LaunchedEffect(page){resetScroll()}
     LaunchedEffect(s.conversation.messages.lastOrNull()?.status,s.conversation.messages.lastOrNull()?.id){if(s.conversation.messages.lastOrNull()?.status=="complete"&&s.conversation.messages.lastOrNull()?.role=="assistant"&&s.conversation.messages.lastOrNull {it.role=="user"}?.text==question.trim())question=""}
+    LaunchedEffect(s.coachConversation.messages.lastOrNull()?.status,s.coachConversation.messages.lastOrNull()?.id){if(s.coachConversation.messages.lastOrNull()?.status=="complete"&&s.coachConversation.messages.lastOrNull()?.role=="assistant"&&s.coachConversation.messages.lastOrNull {it.role=="user"}?.text==coachQuestion.trim())coachQuestion=""}
     LaunchedEffect(Unit){if(disabledPage(page))page="home"}
     LaunchedEffect(initialReminderId){if(initialReminderId.isNotEmpty()){if(BuildConfig.HEALTH_AI_ENABLED){selectedReminder=initialReminderId;page="reminders"};consumeReminder()}}
     LaunchedEffect(selectedReminder,s.reminders){s.reminders.find {it.id==selectedReminder&&it.id!=loadedReminder}?.let {r->loadedReminder=r.id;if(r.snapshotId.isNotEmpty())vm.openSnapshot(r.snapshotId)}}
@@ -189,7 +197,9 @@ import kotlinx.coroutines.withContext
                         profile=s.coachProfile.forDay(today),plans=coachPlans,today=today,
                         generating=s.coachGenerating,currentSnapshotId=s.snapshot?.id.orEmpty(),
                         onPreferences={coachPreferences=true},onFeedback=vm::coachFeedback,
-                        onPlanEvidence={id,snapshotId->vm.evidence(id,snapshotId)}
+                        onPlanEvidence={id,snapshotId->vm.evidence(id,snapshotId)},
+                        onAsk={go("coach")},onMemory={go("coachMemory")},
+                        scheduleChanges=s.coachScheduleChanges
                     )
                 }
                 if(BuildConfig.HEALTH_AI_ENABLED) {
@@ -220,6 +230,80 @@ import kotlinx.coroutines.withContext
                                 stringResource(R.string.health_main_source_note)
                             ){go("sources")}
                         }
+                    }
+                }
+            }
+            "coach"->{
+                Text(stringResource(R.string.health_coach_ask),style=MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.health_coach_ask_hint),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                if(configuredService==null) {
+                    HealthCard(MaterialTheme.colorScheme.primaryContainer) {
+                        Text(stringResource(R.string.health_ai_not_configured),fontWeight=FontWeight.Medium)
+                        Text(stringResource(R.string.health_ai_not_configured_hint),style=MaterialTheme.typography.bodySmall)
+                        Button(onClick=manageServices,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_configure_ai))}
+                    }
+                } else {
+                    val selectedService=s.services.find {it.id==s.serviceId}
+                    if(selectedService!=null)Text(selectedService.name+" · "+selectedService.model,style=MaterialTheme.typography.labelSmall)
+                    if(s.coachConversation.messages.isEmpty()) {
+                        Text(stringResource(R.string.health_coach_conversation_empty),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    s.coachConversation.messages.takeLast(30).forEach {message->
+                        HealthCard(if(message.role=="user")MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant) {
+                            if(message.role=="assistant")Text(message.serviceName+" · "+message.model,style=MaterialTheme.typography.labelSmall)
+                            if(message.text.isNotEmpty())Text(message.text.replace(Regex("\\[[a-f0-9]{4,24}(?:-(?:median|min|max))?\\]"),""))
+                            message.memoryCandidate?.let {candidate->
+                                CoachMemoryCandidateCard(candidate,onAccept={vm.coachAcceptMemory(message.id)},onDismiss={vm.coachDismissCandidate(message.id)})
+                            }
+                            message.planChangeCandidate?.let {candidate->
+                                CoachPlanCandidateCard(candidate,s.coachProfile.forDay(today),onAccept={vm.coachAcceptPlanChange(message.id)},onDismiss={vm.coachDismissCandidate(message.id)})
+                            }
+                            if(message.status!="complete"&&message.text.isBlank())Text(
+                                stringResource(when(message.status){"generating"->R.string.health_pending;"cancelled"->R.string.health_cancelled;else->R.string.health_failed}),
+                                style=MaterialTheme.typography.bodySmall
+                            )
+                            FlowRow {message.evidenceIds.forEach {id->val e=s.snapshot?.evidence?.find {it.id==id};TextButton(onClick={vm.evidence(id,message.snapshotId)}){Text(e?.let {HealthCatalog.kind(it.kind).label(chinese)+" · "+healthMetricDisplay(it)} ?: stringResource(R.string.health_detail))}}}
+                        }
+                    }
+                    if(s.coachConversation.messages.lastOrNull()?.status in setOf("failed","cancelled")) {
+                        TextButton(enabled=!s.busy,onClick=vm::coachRetry){Text(stringResource(R.string.health_coach_retry))}
+                    }
+                    val quickPrompts=listOf(
+                        stringResource(R.string.health_coach_quick_goal),
+                        stringResource(R.string.health_coach_quick_plan),
+                        stringResource(R.string.health_coach_quick_week)
+                    )
+                    FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                        quickPrompts.forEach {prompt->AssistChip(enabled=!s.busy,onClick={vm.coachAsk(prompt)},label={Text(prompt)})}
+                    }
+                    OutlinedTextField(
+                        value=coachQuestion,onValueChange={coachQuestion=it},enabled=!s.busy,
+                        label={Text(stringResource(R.string.health_question))},modifier=Modifier.fillMaxWidth(),minLines=2
+                    )
+                    Button(
+                        enabled=!s.busy&&coachQuestion.isNotBlank(),
+                        onClick={vm.coachAsk(coachQuestion)},modifier=Modifier.fillMaxWidth()
+                    ){Text(stringResource(R.string.health_coach_send))}
+                    TextButton(enabled=!s.busy,onClick=vm::coachNewConversation){Text(stringResource(R.string.health_coach_new_conversation))}
+                }
+            }
+            "coachMemory"->{
+                Text(stringResource(R.string.health_coach_memory_title),style=MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.health_coach_memory_hint),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(
+                    value=coachMemoryDraft,onValueChange={coachMemoryDraft=it},enabled=!s.busy,
+                    label={Text(stringResource(R.string.health_coach_memory_placeholder))},modifier=Modifier.fillMaxWidth(),minLines=2
+                )
+                Button(
+                    enabled=!s.busy&&coachMemoryDraft.isNotBlank(),
+                    onClick={vm.coachMemoryAdd(coachMemoryDraft);coachMemoryDraft=""},
+                    modifier=Modifier.fillMaxWidth()
+                ){Text(stringResource(R.string.health_coach_memory_add))}
+                if(s.coachMemories.none {it.active(today)})Text(stringResource(R.string.health_coach_memory_empty))
+                s.coachMemories.filter {it.active(today)}.sortedByDescending {it.createdAt}.forEach {memory->
+                    HealthCard {
+                        Text(memory.text)
+                        TextButton(enabled=!s.busy,onClick={vm.coachMemoryRemove(memory.id)}){Text(stringResource(R.string.health_coach_memory_forget))}
                     }
                 }
             }
@@ -369,8 +453,9 @@ import kotlinx.coroutines.withContext
     if(coachPreferences)HealthCoachPreferences(s.coachProfile,today,
         onSave={vm.coachProfile(it);coachPreferences=false},
         onGoals={coachPreferences=false;go("goals")},
-        onClear={vm.clearCoach();coachPreferences=false},onDismiss={coachPreferences=false})
-    s.consent?.let {pending->AlertDialog(onDismissRequest=vm::cancelConsent,title={Text(stringResource(R.string.health_consent_title))},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(pending.service.name+" · "+pending.service.model);Text(pending.service.baseUrl);Text("${pending.window.start} — ${pending.window.end}");Text(pending.categories.map {HealthCatalog.kind(it).label(chinese)}.joinToString(" · "));Text(stringResource(if(pending.mode==HealthRequestMode.COACH)R.string.health_coach_consent_context else R.string.health_consent_note))}},confirmButton={TextButton(onClick=vm::consent){Text(stringResource(R.string.health_consent_agree))}},dismissButton={TextButton(onClick=vm::cancelConsent){Text(stringResource(R.string.cancel))}})}
+        onClear={vm.clearCoach();coachPreferences=false},onDismiss={coachPreferences=false},
+        onMemory={coachPreferences=false;go("coachMemory")})
+    s.consent?.let {pending->AlertDialog(onDismissRequest=vm::cancelConsent,title={Text(stringResource(R.string.health_consent_title))},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(pending.service.name+" · "+pending.service.model);Text(pending.service.baseUrl);Text("${pending.window.start} — ${pending.window.end}");Text(pending.categories.map {HealthCatalog.kind(it).label(chinese)}.joinToString(" · "));Text(stringResource(when(pending.mode){HealthRequestMode.COACH->R.string.health_coach_consent_context;HealthRequestMode.COACH_FOLLOW_UP->R.string.health_coach_follow_up_consent;else->R.string.health_consent_note}))}},confirmButton={TextButton(onClick=vm::consent){Text(stringResource(R.string.health_consent_agree))}},dismissButton={TextButton(onClick=vm::cancelConsent){Text(stringResource(R.string.cancel))}})}
     s.selectedEvidence?.let {e->AlertDialog(onDismissRequest=vm::closeEvidence,title={Text(stringResource(R.string.health_detail_title))},text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(HealthCatalog.kind(e.kind).label(chinese),style=MaterialTheme.typography.titleMedium);Text(healthMetricDisplay(e),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold);HealthLabel(stringResource(R.string.health_date),e.date);HealthLabel(stringResource(R.string.health_source),e.source);HealthLabel(stringResource(R.string.health_metric),stringResource(metricLabelResource(e.kind,e.field)));if(s.selectedEvidenceRecordCount>0)HealthLabel(stringResource(R.string.health_records),s.selectedEvidenceRecordCount.toString());e.coverage?.let {HealthLabel(stringResource(R.string.health_coverage),"${(it*100).toInt()}%")};if(e.partial)Text(stringResource(R.string.health_partial),color=MaterialTheme.colorScheme.onSurfaceVariant);if(s.selectedEvidencePeriod=="baseline")Text(stringResource(R.string.health_baseline),color=MaterialTheme.colorScheme.onSurfaceVariant);HealthEvidenceRecords(e,s.selectedEvidenceRecords,s.selectedEvidenceReferences,chinese);Text(healthCalculationNote(e),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}},confirmButton={TextButton(onClick=vm::closeEvidence){Text(stringResource(R.string.done))}})}
     if(preview.isNotEmpty())AlertDialog(onDismissRequest={preview=""},title={Text(stringResource(R.string.health_export))},text={Text(preview,modifier=Modifier.verticalScroll(rememberScrollState()))},confirmButton={TextButton(onClick={preview=""}){Text(stringResource(R.string.done))}})
 }
@@ -762,16 +847,74 @@ private fun trendAxisLabel(trend:HealthTrendSeries,value:Double):String {
 }
 
 @OptIn(ExperimentalLayoutApi::class)
+@Composable private fun CoachMemoryCandidateCard(
+    candidate:HealthCoachMemoryCandidate,onAccept:()->Unit,onDismiss:()->Unit
+) {
+    HorizontalDivider()
+    Text(stringResource(R.string.health_coach_memory_candidate),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
+    Text(candidate.text)
+    if(candidate.expiresAt.isNotBlank())Text(
+        stringResource(R.string.health_coach_memory_expires,candidate.expiresAt),
+        style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    when(candidate.status) {
+        "accepted"->Text(stringResource(R.string.health_coach_memory_candidate_accepted),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.primary)
+        "dismissed"->Text(stringResource(R.string.health_coach_candidate_dismissed),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        else->FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(onClick=onAccept){Text(stringResource(R.string.health_coach_memory_candidate_accept))}
+            TextButton(onClick=onDismiss){Text(stringResource(R.string.health_coach_candidate_dismiss))}
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable private fun CoachPlanCandidateCard(
+    candidate:HealthCoachPlanChangeCandidate,profile:HealthCoachProfile,onAccept:()->Unit,onDismiss:()->Unit
+) {
+    val resources=LocalResources.current
+    val currentDays=profile.days.sorted().joinToString(" · ") {resources.getString(coachWeekdayLabel(it))}
+    HorizontalDivider()
+    Text(
+        stringResource(if(candidate.temporary)R.string.health_coach_plan_change_temporary else R.string.health_coach_plan_change_permanent),
+        style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary
+    )
+    Text(candidate.date+" · "+candidate.action)
+    candidate.minutes?.let {Text(stringResource(R.string.health_coach_minutes,it),style=MaterialTheme.typography.bodySmall)}
+    if(currentDays.isNotBlank())Text(
+        stringResource(R.string.health_coach_plan_change_current,currentDays,profile.minutes),
+        style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    if(candidate.reason.isNotBlank())Text(candidate.reason,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    if(!candidate.temporary&&candidate.days.isNotEmpty()) {
+        val days=candidate.days.sorted().joinToString(" · ") {resources.getString(coachWeekdayLabel(it))}
+        Text(stringResource(R.string.health_coach_plan_change_days,days),style=MaterialTheme.typography.bodySmall)
+    }
+    when(candidate.status) {
+        "accepted"->Text(
+            stringResource(if(candidate.temporary)R.string.health_coach_plan_change_applied_temporary else R.string.health_coach_plan_change_applied_permanent),
+            style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.primary
+        )
+        "dismissed"->Text(stringResource(R.string.health_coach_candidate_dismissed),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        else->FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(onClick=onAccept){Text(stringResource(R.string.health_coach_plan_change_accept))}
+            TextButton(onClick=onDismiss){Text(stringResource(R.string.health_coach_candidate_dismiss))}
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable internal fun HealthCoachSection(
     brief:HealthCoachBrief?,message:HealthMessage?,configured:Boolean,busy:Boolean,chinese:Boolean,
     onGenerate:()->Unit,onConfigure:()->Unit,onEvidence:(String)->Unit,
     profile:HealthCoachProfile,plans:List<HealthCoachPlan>,today:LocalDate,generating:Boolean,
     currentSnapshotId:String,onPreferences:()->Unit,onFeedback:(String,HealthCoachFeedback)->Unit,
-    onPlanEvidence:(String,String)->Unit={_,_->}
+    onPlanEvidence:(String,String)->Unit={_,_->},onAsk:()->Unit={},onMemory:()->Unit={},
+    scheduleChanges:List<HealthCoachScheduleChange> = emptyList()
 ) {
     val signals=brief?.signals.orEmpty()
     val hasData=signals.isNotEmpty()||(brief?.availableFactCount ?: 0)>0
     val plan=plans.firstOrNull()
+    val todayChange=scheduleChanges.filter {it.active(today)}.minByOrNull {it.date}?.takeIf {it.date==today.toString()}
     var showAllSignals by remember {mutableStateOf(false)}
     val visibleSignals=if(showAllSignals)signals else emptyList()
     Surface(color=MaterialTheme.colorScheme.primaryContainer.copy(alpha=.42f),shape=RoundedCornerShape(24.dp),modifier=Modifier.fillMaxWidth()) {
@@ -780,7 +923,23 @@ private fun trendAxisLabel(trend:HealthTrendSeries,value:Double):String {
                 Text(stringResource(R.string.health_coach_title),Modifier.weight(1f),style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.SemiBold)
                 TextButton(enabled=!busy,onClick=onPreferences){Text(stringResource(R.string.health_coach_preferences))}
             }
+            Text(stringResource(coachGoalLabel(profile.goalType))+(profile.target.takeIf {it.isNotBlank()}?.let {" · $it"}.orEmpty()),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Text(stringResource(coachFocusLabel(profile.focus))+" · "+stringResource(R.string.health_coach_minutes,profile.minutes)+if(profile.energy==HealthCoachEnergy.TIRED)" · "+stringResource(R.string.health_coach_tired_today) else "",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            val resources=LocalResources.current
+            val dayLabels=profile.days.sorted().joinToString(" · ") {resources.getString(coachWeekdayLabel(it))}
+            Text(
+                if(dayLabels.isBlank())stringResource(R.string.health_coach_weekly_empty) else stringResource(R.string.health_coach_weekly_plan,dayLabels,profile.minutes),
+                style=MaterialTheme.typography.bodySmall,
+                color=MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            todayChange?.let {change->
+                Text(stringResource(R.string.health_coach_today_change,change.action),style=MaterialTheme.typography.bodySmall,fontWeight=FontWeight.Medium)
+            }
+            val upcomingChanges=scheduleChanges.filter {it.active(today)&&it.date!=today.toString()}.sortedBy {it.date}.take(3)
+            if(upcomingChanges.isNotEmpty()) {
+                Text(stringResource(R.string.health_coach_upcoming_changes),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                upcomingChanges.forEach {change->Text("${change.date} · ${change.action}",style=MaterialTheme.typography.bodySmall)}
+            }
             if(message==null)Text(stringResource(R.string.health_coach_intro),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             if(message!=null&&(message.status=="complete"||plan!=null)) {
                 HealthCard(MaterialTheme.colorScheme.surface.copy(alpha=.78f)) {
@@ -801,6 +960,7 @@ private fun trendAxisLabel(trend:HealthTrendSeries,value:Double):String {
                             HealthCoachFeedback.PROPOSED->null
                             HealthCoachFeedback.ACCEPTED->R.string.health_coach_accepted
                             HealthCoachFeedback.DONE->R.string.health_coach_done_note
+                            HealthCoachFeedback.PARTIAL->R.string.health_coach_partial_note
                             HealthCoachFeedback.MISSED->R.string.health_coach_missed_note
                             HealthCoachFeedback.TOO_HARD->R.string.health_coach_hard_note
                         }
@@ -810,6 +970,7 @@ private fun trendAxisLabel(trend:HealthTrendSeries,value:Double):String {
                                 if(plan.feedback==HealthCoachFeedback.PROPOSED)FilledTonalButton(enabled=!busy,onClick={onFeedback(plan.message.id,HealthCoachFeedback.ACCEPTED)}){Text(stringResource(R.string.health_coach_accept))}
                                 if(plan.feedback in setOf(HealthCoachFeedback.PROPOSED,HealthCoachFeedback.ACCEPTED)) {
                                     TextButton(enabled=!busy,onClick={onFeedback(plan.message.id,HealthCoachFeedback.DONE)}){Text(stringResource(R.string.health_coach_done))}
+                                    TextButton(enabled=!busy,onClick={onFeedback(plan.message.id,HealthCoachFeedback.PARTIAL)}){Text(stringResource(R.string.health_coach_partial))}
                                     TextButton(enabled=!busy,onClick={onFeedback(plan.message.id,HealthCoachFeedback.MISSED)}){Text(stringResource(R.string.health_coach_missed))}
                                     TextButton(enabled=!busy,onClick={onFeedback(plan.message.id,HealthCoachFeedback.TOO_HARD)}){Text(stringResource(R.string.health_coach_too_hard))}
                                 } else if(plan.feedback!=HealthCoachFeedback.PROPOSED)TextButton(enabled=!busy,onClick={onFeedback(plan.message.id,HealthCoachFeedback.PROPOSED)}){Text(stringResource(R.string.health_coach_undo))}
@@ -831,6 +992,10 @@ private fun trendAxisLabel(trend:HealthTrendSeries,value:Double):String {
                     else->R.string.health_coach_generate
                 }))
             } else OutlinedButton(onClick=onConfigure,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_coach_configure))}
+            FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                AssistChip(enabled=!busy,onClick=onAsk,label={Text(stringResource(R.string.health_coach_ask))})
+                AssistChip(enabled=!busy,onClick=onMemory,label={Text(stringResource(R.string.health_coach_memory))})
+            }
             if(signals.isNotEmpty())TextButton(onClick={showAllSignals=!showAllSignals},contentPadding=PaddingValues(0.dp)) {
                 Text(stringResource(if(showAllSignals)R.string.health_coach_signals_less else R.string.health_coach_signals_all,signals.size))
             }

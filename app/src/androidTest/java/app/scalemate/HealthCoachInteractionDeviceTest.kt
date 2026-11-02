@@ -95,6 +95,15 @@ class HealthCoachInteractionDeviceTest {
         compose.onNodeWithText("重新生成建议").performScrollTo().assertIsNotEnabled()
         screenshot("04-generating-keeps-action")
     }
+    @Test fun partialCompletionNeedsNoSecondWorkoutOrCatchUpTask() {
+        show()
+        compose.onNodeWithText("今天试试").performScrollTo().performClick()
+        compose.onNodeWithText("部分完成").performScrollTo().performClick()
+        compose.onNodeWithText("已记下部分完成。下次会把安排拆得更小，不要求补做。").performScrollTo().assertIsDisplayed()
+        assertEquals(HealthCoachFeedback.PARTIAL,plan.value.feedback)
+        compose.onNodeWithText("今天试试").assertDoesNotExist()
+        screenshot("07-partial")
+    }
     @Test fun preferencesAreEditableAndOldActionsAreNotPresentedAsTodaysTask() {
         show()
         compose.onNodeWithText("我的安排").performScrollTo().performClick()

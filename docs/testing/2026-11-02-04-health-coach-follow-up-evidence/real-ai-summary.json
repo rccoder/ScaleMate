@@ -1,0 +1,74 @@
+{
+  "model": "workbuddy/deepseek-v4.1-flash",
+  "syntheticProfileAndMemories": true,
+  "realAI": true,
+  "snapshotFactsRead": 536,
+  "finalFailures": [],
+  "rounds": [
+    {
+      "round": 1,
+      "question": "我的数据够支持这个目标吗？还缺什么？",
+      "elapsedMs": 5152,
+      "factsSent": 17,
+      "payloadBytes": 14424,
+      "referenceCount": 5,
+      "answerCharacters": 296,
+      "memoryCandidate": false,
+      "planChangeCandidate": false,
+      "planTemporary": null,
+      "error": null
+    },
+    {
+      "round": 2,
+      "question": "今天需要按周一三五的计划做吗？我只有二十分钟。",
+      "elapsedMs": 3962,
+      "factsSent": 17,
+      "payloadBytes": 15622,
+      "referenceCount": 2,
+      "answerCharacters": 368,
+      "memoryCandidate": false,
+      "planChangeCandidate": false,
+      "planTemporary": null,
+      "error": null
+    },
+    {
+      "round": 3,
+      "question": "这周运动量够不够？你能判断训练质量吗？",
+      "elapsedMs": 4371,
+      "factsSent": 17,
+      "payloadBytes": 16986,
+      "referenceCount": 7,
+      "answerCharacters": 491,
+      "memoryCandidate": false,
+      "planChangeCandidate": false,
+      "planTemporary": null,
+      "error": null
+    },
+    {
+      "round": 4,
+      "question": "周五没空，把周五改到周六，只改这一次。",
+      "elapsedMs": 3826,
+      "factsSent": 17,
+      "payloadBytes": 18620,
+      "referenceCount": 1,
+      "answerCharacters": 228,
+      "memoryCandidate": false,
+      "planChangeCandidate": true,
+      "planTemporary": true,
+      "error": null
+    },
+    {
+      "round": 5,
+      "question": "记住：我不喜欢跑步。",
+      "elapsedMs": 3409,
+      "factsSent": 17,
+      "payloadBytes": 19550,
+      "referenceCount": 2,
+      "answerCharacters": 256,
+      "memoryCandidate": true,
+      "planChangeCandidate": false,
+      "planTemporary": null,
+      "error": null
+    }
+  ]
+}

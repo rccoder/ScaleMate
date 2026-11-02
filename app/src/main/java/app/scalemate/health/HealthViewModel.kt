@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-enum class HealthRequestMode { CHAT, COACH }
+enum class HealthRequestMode { CHAT, COACH, COACH_FOLLOW_UP }
 data class PendingHealthRequest(
     val question:String,val report:Boolean,val service:AiService,val categories:Set<String>,val window:HealthWindow,
     val mode:HealthRequestMode=HealthRequestMode.CHAT,val coachProfile:HealthCoachProfile?=null
@@ -33,7 +33,9 @@ data class HealthState(
     val busy:Boolean=false,val generating:Boolean=false,val progress:String="",val error:Int?=null,val consent:PendingHealthRequest?=null,
     val exports:List<File> = emptyList(),val selectedEvidence:HealthEvidence?=null,val selectedEvidencePeriod:String="",val selectedEvidenceRecords:List<HealthRecord> = emptyList(),val selectedEvidenceRecordCount:Int=0,val selectedEvidenceReferences:List<HealthDetailReference> = emptyList(),val lastCheck:Long?=null,val sources:Map<String,String> = emptyMap(),val routeRequests:List<HealthRouteRequest> = emptyList(),val pendingRoute:HealthRouteRequest?=null,val syncStatus:String="idle",val syncProgress:String="",
     val coachMessage:HealthMessage?=null,val coachGenerating:Boolean=false,
-    val coachProfile:HealthCoachProfile=HealthCoachProfile(),val coachPlans:List<HealthCoachPlan> = emptyList()
+    val coachProfile:HealthCoachProfile=HealthCoachProfile(),val coachPlans:List<HealthCoachPlan> = emptyList(),
+    val coachConversation:HealthConversation=HealthConversation(),val coachMemories:List<HealthCoachMemory> = emptyList(),
+    val coachScheduleChanges:List<HealthCoachScheduleChange> = emptyList()
 )
 
 class HealthViewModel @JvmOverloads constructor(application:Application,private val syncSource:HealthSyncSource?=null,databaseName:String="scalemate.db"):AndroidViewModel(application) {
@@ -67,9 +69,11 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
                 historySupported=reader.supports(HealthCatalog.HISTORY),historyGranted=reader.granted(HealthCatalog.HISTORY),backgroundSupported=reader.supports(HealthCatalog.BACKGROUND),backgroundGranted=reader.granted(HealthCatalog.BACKGROUND),
                 window=if(!current.loaded)cached?.window ?: current.window else current.window,snapshot=cached,services=services,serviceId=current.serviceId.takeIf {id->services.any {it.id==id}} ?: food.setting("text").takeIf {id->services.any {it.id==id}} ?: services.singleOrNull()?.id.orEmpty(),
                 goals=store.goals(),reminderSettings=store.reminderSettings(),reminders=store.reminders(),conversations=store.conversations(),conversation=current.conversation,reports=store.reports(),lastCheck=store.setting("lastBackgroundCheck").toLongOrNull(),sources=store.sources())
-            .copy(coachMessage=store.coachMessage(),coachProfile=store.coachProfile(),coachPlans=store.coachPlans())
+            .copy(coachMessage=store.coachMessage(),coachProfile=store.coachProfile(),coachPlans=store.coachPlans(),
+                coachConversation=store.coachConversation(),coachMemories=store.coachMemories(),
+                coachScheduleChanges=store.coachScheduleChanges())
         }
-        mutable.update {s->val revoked=s.permissions.any {(kind,status)->status=="ready"&&data.permissions[kind]!="ready"};val keep=!revoked&&(s.busy||s.snapshot?.id!=before);s.copy(loaded=true,available=data.available,categories=data.categories,permissions=data.permissions,window=if(keep)s.window else data.window,historySupported=data.historySupported,historyGranted=data.historyGranted,backgroundSupported=data.backgroundSupported,backgroundGranted=data.backgroundGranted,snapshot=if(keep)s.snapshot else data.snapshot,services=data.services,serviceId=data.serviceId,goals=data.goals,reminderSettings=data.reminderSettings,reminders=data.reminders,conversations=data.conversations,conversation=if(revoked)HealthConversation() else s.conversation,reports=data.reports,lastCheck=data.lastCheck,sources=data.sources,coachMessage=if(s.coachGenerating)s.coachMessage else data.coachMessage,coachProfile=data.coachProfile,coachPlans=data.coachPlans)}
+        mutable.update {s->val revoked=s.permissions.any {(kind,status)->status=="ready"&&data.permissions[kind]!="ready"};val keep=!revoked&&(s.busy||s.snapshot?.id!=before);s.copy(loaded=true,available=data.available,categories=data.categories,permissions=data.permissions,window=if(keep)s.window else data.window,historySupported=data.historySupported,historyGranted=data.historyGranted,backgroundSupported=data.backgroundSupported,backgroundGranted=data.backgroundGranted,snapshot=if(keep)s.snapshot else data.snapshot,services=data.services,serviceId=data.serviceId,goals=data.goals,reminderSettings=data.reminderSettings,reminders=data.reminders,conversations=data.conversations,conversation=if(revoked)HealthConversation() else s.conversation,reports=data.reports,lastCheck=data.lastCheck,sources=data.sources,coachMessage=if(s.coachGenerating)s.coachMessage else data.coachMessage,coachProfile=data.coachProfile,coachPlans=data.coachPlans,coachConversation=if(revoked)HealthConversation() else if(s.generating)s.coachConversation else data.coachConversation,coachMemories=data.coachMemories,coachScheduleChanges=data.coachScheduleChanges)}
         if(BuildConfig.HEALTH_AI_ENABLED&&data.reminderSettings.enabled)HealthReminders.schedule(getApplication(),true)
         val current=mutable.value
         if(refreshIfStale&&!current.busy&&current.categories.any {current.permissions[it]=="ready"}&&(current.snapshot==null||System.currentTimeMillis()-current.snapshot.readAt>60000))refresh()
@@ -170,18 +174,103 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
             HealthCoach.coachQuestion(),false,service,mutable.value.categories,mutable.value.window,HealthRequestMode.COACH,mutable.value.coachProfile
         ))
     }
+    fun coachAsk(question:String) {
+        if(mutable.value.busy||question.isBlank()||!BuildConfig.HEALTH_COACH_ENABLED)return
+        if(question.length>2000){mutable.update {it.copy(error=R.string.health_question_long)};return}
+        val service=mutable.value.services.find {it.id==mutable.value.serviceId} ?: run {mutable.update {it.copy(error=R.string.health_no_service)};return}
+        request(PendingHealthRequest(
+            question.trim(),false,service,mutable.value.categories,mutable.value.window,
+            HealthRequestMode.COACH_FOLLOW_UP,mutable.value.coachProfile
+        ))
+    }
+    fun coachRetry() {
+        if(mutable.value.busy)return
+        val question=mutable.value.coachConversation.messages.lastOrNull {it.role=="user"}?.text ?: return
+        coachAsk(question)
+    }
+    private fun consentScope(mode:HealthRequestMode)=when(mode) {
+        HealthRequestMode.COACH->"coach-v2:"
+        HealthRequestMode.COACH_FOLLOW_UP->"coach-v3:"
+        else->""
+    }
     private fun request(pending:PendingHealthRequest)=task {
-        val allowed=withContext(Dispatchers.IO){store.consented(pending.service,pending.categories,if(pending.mode==HealthRequestMode.COACH)"coach-v2:" else "")}
+        val allowed=withContext(Dispatchers.IO){store.consented(pending.service,pending.categories,consentScope(pending.mode))}
         if(allowed) {
-            if(pending.mode==HealthRequestMode.COACH)generateCoach(pending) else generate(pending)
+            when(pending.mode) {
+                HealthRequestMode.COACH->generateCoach(pending)
+                HealthRequestMode.COACH_FOLLOW_UP->generateCoachFollowUp(pending)
+                else->generate(pending)
+            }
         } else mutable.update {it.copy(consent=pending)}
     }
     fun cancelConsent(){mutable.update {it.copy(consent=null)}}
-    fun consent() {val pending=mutable.value.consent ?: return;mutable.update {it.copy(consent=null)};task {withContext(Dispatchers.IO){store.consent(pending.service,pending.categories,if(pending.mode==HealthRequestMode.COACH)"coach-v2:" else "")};if(pending.mode==HealthRequestMode.COACH)generateCoach(pending) else generate(pending)}}
+    fun consent() {val pending=mutable.value.consent ?: return;mutable.update {it.copy(consent=null)};task {withContext(Dispatchers.IO){store.consent(pending.service,pending.categories,consentScope(pending.mode))};when(pending.mode) {
+        HealthRequestMode.COACH->generateCoach(pending)
+        HealthRequestMode.COACH_FOLLOW_UP->generateCoachFollowUp(pending)
+        else->generate(pending)
+    }}}
     fun coachProfile(profile:HealthCoachProfile) {
         if(mutable.value.busy)return
         mutable.update {it.copy(coachProfile=profile,consent=null)}
         task {withContext(Dispatchers.IO){store.coachProfile(profile)}}
+    }
+    fun coachMemoryAdd(text:String,expiresAt:String="") {
+        if(mutable.value.busy||text.isBlank())return
+        val memory=HealthCoachMemory(text=text.trim(),expiresAt=expiresAt.trim())
+        val updated=mutable.value.coachMemories+memory
+        mutable.update {it.copy(coachMemories=updated)}
+        task {withContext(Dispatchers.IO){store.coachMemories(updated)}}
+    }
+    fun coachMemoryRemove(id:String) {
+        if(mutable.value.busy)return
+        val updated=mutable.value.coachMemories.filterNot {it.id==id}
+        mutable.update {it.copy(coachMemories=updated)}
+        task {withContext(Dispatchers.IO){store.coachMemories(updated)}}
+    }
+    fun coachAcceptMemory(messageId:String) {
+        if(mutable.value.busy)return
+        val conversation=mutable.value.coachConversation
+        val message=conversation.messages.find {it.id==messageId} ?: return
+        val candidate=message.memoryCandidate?.takeIf {it.status=="proposed"} ?: return
+        val memory=HealthCoachPlans.acceptedMemory(candidate)
+        val updated=conversation.copy(messages=conversation.messages.map {
+            if(it.id==messageId)it.copy(memoryCandidate=candidate.copy(status="accepted")) else it
+        })
+        mutable.update {it.copy(coachConversation=updated,coachMemories=it.coachMemories+memory)}
+        task {withContext(Dispatchers.IO){store.coachConversation(updated);store.coachMemories(mutable.value.coachMemories)}}
+    }
+    fun coachAcceptPlanChange(messageId:String) {
+        if(mutable.value.busy)return
+        val conversation=mutable.value.coachConversation
+        val message=conversation.messages.find {it.id==messageId} ?: return
+        val candidate=message.planChangeCandidate?.takeIf {it.status=="proposed"} ?: return
+        val profile=if(candidate.temporary)mutable.value.coachProfile else HealthCoachPlans.applyPermanentSchedule(mutable.value.coachProfile,candidate)
+        val change=HealthCoachPlans.acceptedScheduleChange(candidate)
+        val changes=(mutable.value.coachScheduleChanges.filterNot {it.date==candidate.date}+change).sortedBy {it.date}
+        val updated=conversation.copy(messages=conversation.messages.map {
+            if(it.id==messageId)it.copy(planChangeCandidate=candidate.copy(status="accepted")) else it
+        })
+        mutable.update {it.copy(coachConversation=updated,coachProfile=profile,coachScheduleChanges=changes)}
+        task {withContext(Dispatchers.IO){store.coachConversation(updated);store.coachProfile(profile);store.coachScheduleChanges(changes)}}
+    }
+    fun coachDismissCandidate(messageId:String) {
+        if(mutable.value.busy)return
+        val conversation=mutable.value.coachConversation
+        val updated=conversation.copy(messages=conversation.messages.map {message->
+            if(message.id!=messageId)message else message.copy(
+                memoryCandidate=message.memoryCandidate?.takeIf {it.status=="proposed"}?.copy(status="dismissed") ?: message.memoryCandidate,
+                planChangeCandidate=message.planChangeCandidate?.takeIf {it.status=="proposed"}?.copy(status="dismissed") ?: message.planChangeCandidate
+            )
+        })
+        if(updated==conversation)return
+        mutable.update {it.copy(coachConversation=updated)}
+        task {withContext(Dispatchers.IO){store.coachConversation(updated)}}
+    }
+    fun coachNewConversation() {
+        if(mutable.value.busy)return
+        val conversation=HealthConversation()
+        mutable.update {it.copy(coachConversation=conversation,consent=null)}
+        task {withContext(Dispatchers.IO){store.coachConversation(conversation)}}
     }
     fun coachFeedback(id:String,feedback:HealthCoachFeedback) {
         if(mutable.value.busy)return
@@ -196,7 +285,7 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
     }
     fun clearCoach() {
         if(mutable.value.busy)return
-        task {withContext(Dispatchers.IO){store.clearCoach()};mutable.update {it.copy(coachMessage=null,coachPlans=emptyList(),coachProfile=HealthCoachProfile())}}
+        task {withContext(Dispatchers.IO){store.clearCoach()};mutable.update {it.copy(coachMessage=null,coachPlans=emptyList(),coachProfile=HealthCoachProfile(),coachConversation=HealthConversation(),coachMemories=emptyList(),coachScheduleChanges=emptyList())}}
     }
     private fun generate(pending:PendingHealthRequest) {
         if(mutable.value.busy)return
@@ -268,7 +357,8 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
                 val language=(if(appLocales.isEmpty)java.util.Locale.getDefault() else appLocales[0]).toLanguageTag()
                 check(pending.coachProfile==mutable.value.coachProfile)
                 val profile=mutable.value.coachProfile.forDay(LocalDate.now(java.time.ZoneId.of(snapshot.window.zone)))
-                val (messages,input)=HealthPrompt.coachMessages(snapshot,mutable.value.goals,language,profile,mutable.value.coachPlans)
+                val (messages,input)=HealthPrompt.coachMessages(snapshot,mutable.value.goals,language,profile,mutable.value.coachPlans,
+                    java.time.Instant.now(),mutable.value.coachMemories,mutable.value.coachScheduleChanges)
                 val derived=input.facts.mapNotNull {fact->
                     val sourceId=input.sourceId(fact.id)
                     fact.takeIf {snapshot.evidence.none {it.id==sourceId} }?.copy(id=sourceId)
@@ -317,6 +407,91 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
                     busy=false,generating=false,coachGenerating=false,progress="",
                     coachMessage=it.coachMessage?.let {m->if(m.status=="generating")m.copy(text="",status="cancelled") else m}
                 )}
+            }
+        }
+    }
+    private fun generateCoachFollowUp(pending:PendingHealthRequest) {
+        if(mutable.value.busy)return
+        val assistantId=healthId()
+        val previous=mutable.value.coachConversation
+        val user=HealthMessage(role="user",text=pending.question,snapshotId=mutable.value.snapshot?.id.orEmpty())
+        val assistant=HealthMessage(
+            id=assistantId,role="assistant",text="",snapshotId=user.snapshotId,
+            serviceId=pending.service.id,serviceName=pending.service.name,model=pending.service.model,
+            configVersion=pending.service.version,status="generating"
+        )
+        var conversation=previous.copy(title=previous.title.ifBlank {pending.question.take(60)},messages=previous.messages+user+assistant)
+        generationId=assistantId
+        mutable.update {it.copy(busy=true,generating=true,error=null,coachConversation=conversation)}
+        operation=viewModelScope.launch {
+            try {
+                val current=withContext(Dispatchers.IO){food.services().find {it.id==pending.service.id}}
+                check(current?.version==pending.service.version&&pending.categories==mutable.value.categories&&pending.window==mutable.value.window)
+                var snapshot=mutable.value.snapshot
+                val revoked=snapshot?.categories?.any {!reader.canUseCached(HealthCatalog.kind(it))}==true
+                if(revoked||snapshot==null||System.currentTimeMillis()-snapshot.readAt>6*3600000) {
+                    snapshot=if(pending.categories.any {reader.canUseCached(HealthCatalog.kind(it))})refreshNow() else null
+                }
+                val appLocales=getApplication<Application>().getSystemService(LocaleManager::class.java).applicationLocales
+                val language=(if(appLocales.isEmpty)java.util.Locale.getDefault() else appLocales[0]).toLanguageTag()
+                val profile=mutable.value.coachProfile.forDay(LocalDate.now(java.time.ZoneId.of(snapshot?.window?.zone ?: mutable.value.window.zone)))
+                val (messages,input)=HealthPrompt.coachFollowUpMessages(
+                    snapshot,mutable.value.goals,language,profile,mutable.value.coachMemories,
+                    mutable.value.coachPlans,previous,pending.question,
+                    scheduleChanges=mutable.value.coachScheduleChanges
+                )
+                if(snapshot!=null) {
+                    val derived=input.facts.mapNotNull {fact->
+                        val sourceId=input.sourceId(fact.id)
+                        fact.takeIf {snapshot.evidence.none {it.id==sourceId}}?.copy(id=sourceId)
+                    }
+                    snapshot=snapshot.copy(evidence=(snapshot.evidence+derived).distinctBy {it.id})
+                    withContext(Dispatchers.IO){store.snapshot(snapshot)}
+                    mutable.update {it.copy(snapshot=snapshot)}
+                }
+                val raw=ai.streamText(
+                    pending.service,messages,
+                    {text->
+                        if(generationId==assistantId)mutable.update {
+                            it.copy(coachConversation=conversation.copy(messages=conversation.messages.map {m->
+                                if(m.id==assistantId)m.copy(text=HealthPrompt.preview(text)) else m
+                            }))
+                        }
+                    },
+                    disableReasoning=pending.service.format=="openai"&&pending.service.model.contains("deepseek",ignoreCase=true)
+                )
+                val reply=HealthPrompt.validateCoachReply(raw,input,today=LocalDate.now(java.time.ZoneId.of(snapshot?.window?.zone ?: mutable.value.window.zone)))
+                val complete=assistant.copy(
+                    text=reply.text,status="complete",evidenceIds=reply.references,
+                    memoryCandidate=reply.memoryCandidate,planChangeCandidate=reply.planChangeCandidate
+                )
+                conversation=conversation.copy(messages=conversation.messages.map {if(it.id==assistantId)complete else it})
+                withContext(Dispatchers.IO){store.coachConversation(conversation)}
+                mutable.update {it.copy(coachConversation=conversation)}
+            } catch(e:CancellationException) {
+                withContext(NonCancellable+Dispatchers.IO) {
+                    store.coachConversation(conversation.copy(messages=conversation.messages.map {
+                        if(it.id==assistantId)it.copy(text="",status="cancelled") else it
+                    }))
+                }
+                throw e
+            } catch(e:Exception) {
+                val error=when(e) {
+                    is FoodFailure->when(e.resource){R.string.food_ai_invalid->R.string.health_invalid_response;R.string.food_ai_timeout->R.string.health_ai_timeout;R.string.food_ai_network->R.string.health_ai_network;else->e.resource}
+                    is HealthInputTooLarge->R.string.health_input_too_large
+                    else->R.string.health_invalid_response
+                }
+                val failed=conversation.copy(messages=conversation.messages.map {
+                    if(it.id==assistantId)it.copy(text=getApplication<Application>().getString(error),status="failed") else it
+                })
+                withContext(Dispatchers.IO){store.coachConversation(failed)}
+                mutable.update {it.copy(coachConversation=failed,error=error)}
+            } finally {
+                generationId=null
+                mutable.update {it.copy(busy=false,generating=false,progress="",
+                    coachConversation=it.coachConversation.copy(messages=it.coachConversation.messages.map {m->
+                        if(m.id==assistantId&&m.status=="generating")m.copy(text="",status="cancelled") else m
+                    }))}
             }
         }
     }
@@ -409,6 +584,6 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
         operation=viewModelScope.launch {try {val files=withContext(Dispatchers.IO){HealthExport.write(File(getApplication<Application>().cacheDir,"health_exports"),File(getApplication<Application>().cacheDir,"health_raw"),s,question,raw)};mutable.update {it.copy(exports=files)}}catch(e:CancellationException){throw e}catch(_:Exception){mutable.update {it.copy(error=R.string.health_export_error)}}finally {mutable.update {it.copy(busy=false)}}}
     }
     fun feedback(id:String,value:String)=task {withContext(Dispatchers.IO){store.feedback(id,value)};val reminders=withContext(Dispatchers.IO){store.reminders()};mutable.update {it.copy(reminders=reminders)}}
-    fun clearHistory(){if(mutable.value.busy)return;task {withContext(Dispatchers.IO){store.clear();File(getApplication<Application>().cacheDir,"health_raw").deleteRecursively();File(getApplication<Application>().cacheDir,"health_exports").deleteRecursively()};mutable.update {it.copy(snapshot=null,conversation=HealthConversation(),conversations=emptyList(),reports=emptyList(),reminders=emptyList(),exports=emptyList(),coachMessage=null,coachPlans=emptyList(),coachProfile=HealthCoachProfile())}}}
+    fun clearHistory(){if(mutable.value.busy)return;task {withContext(Dispatchers.IO){store.clear();File(getApplication<Application>().cacheDir,"health_raw").deleteRecursively();File(getApplication<Application>().cacheDir,"health_exports").deleteRecursively()};mutable.update {it.copy(snapshot=null,conversation=HealthConversation(),conversations=emptyList(),reports=emptyList(),reminders=emptyList(),exports=emptyList(),coachMessage=null,coachPlans=emptyList(),coachProfile=HealthCoachProfile(),coachConversation=HealthConversation(),coachMemories=emptyList(),coachScheduleChanges=emptyList())}}}
     override fun onCleared(){operation?.cancel();db.close();super.onCleared()}
 }

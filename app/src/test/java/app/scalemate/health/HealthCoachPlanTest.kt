@@ -21,9 +21,10 @@ class HealthCoachPlanTest {
     @Test fun completedDaysAreSelfReportedUniqueDatesNotGenerationsOrAcceptedPlans() {
         val plans=listOf(plan(feedback=HealthCoachFeedback.DONE),plan(feedback=HealthCoachFeedback.DONE),
             plan("2026-11-01",HealthCoachFeedback.ACCEPTED),plan("2026-10-31",HealthCoachFeedback.DONE),
+            plan("2026-10-30",HealthCoachFeedback.PARTIAL),
             plan("2026-10-25",HealthCoachFeedback.DONE),plan("2026-11-03",HealthCoachFeedback.DONE))
         assertEquals(2,HealthCoachPlans.completedDays(plans,today))
-        assertEquals(4,HealthCoachPlans.recent(plans,today).size)
+        assertEquals(5,HealthCoachPlans.recent(plans,today).size)
     }
     @Test fun tiredContextExpiresRatherThanInventingLongTermFatigue() {
         val profile=HealthCoachProfile(HealthCoachFocus.ACTIVITY,5,HealthCoachEnergy.TIRED,today.toString())
@@ -121,5 +122,107 @@ class HealthCoachPlanTest {
         assertEquals(1,HealthCoachPlans.recent(listOf(next,done),today).size)
         val newGoal=HealthCoachPlans.generated(next.message,today,"Prepare for sleep.",HealthCoachProfile(HealthCoachFocus.SLEEP),done.categories,listOf(done))
         assertEquals(HealthCoachFeedback.PROPOSED,newGoal.feedback)
+    }
+    @Test fun profileRoundTripKeepsGoalScheduleEquipmentAndLimits() {
+        val profile=HealthCoachProfile(
+            HealthCoachFocus.ACTIVITY,30,HealthCoachEnergy.NORMAL,"",
+            HealthCoachGoalType.STRENGTH,"12 周力量目标",setOf(1,3,5),"哑铃、弹力带","避免跳跃"
+        )
+        assertEquals(profile,HealthCoachPlans.profile(HealthCoachPlans.profile(profile)))
+    }
+    @Test fun temporaryMemoriesExpireAndConfirmedMemoriesReachFollowUpContext() {
+        val active=HealthCoachMemory(text="周一三五晚上有空",kind="schedule",createdAt=now.toEpochMilli())
+        val expired=HealthCoachMemory(text="这周出差",kind="temporary",createdAt=now.toEpochMilli(),expiresAt="2026-11-01")
+        assertTrue(active.active(today))
+        assertFalse(expired.active(today))
+        val profile=HealthCoachProfile(
+            focus=HealthCoachFocus.WEIGHT,goalType=HealthCoachGoalType.WEIGHT,
+            target="目标 70 kg",days=setOf(1,3,5)
+        )
+        val (messages,input)=HealthPrompt.coachFollowUpMessages(
+            snapshot(),HealthGoals(),"zh",profile,listOf(active,expired),emptyList(),HealthConversation(),
+            "我的数据够支持目标吗？",now
+        )
+        val payload=JSONObject(messages.getJSONObject(1).getString("content"))
+        assertEquals(1,payload.getJSONArray("confirmedMemories").length())
+        assertEquals("目标 70 kg",payload.getJSONObject("userReportedContext").getString("target"))
+        assertEquals(3,payload.getJSONObject("weeklyPlan").getJSONArray("days").length())
+        val id=input.facts.first().id
+        val reply=HealthPrompt.validateCoachReply(
+            JSONObject().put("text","目前有活动记录 [$id]，目标 70 kg，周计划为 3 天。")
+                .put("suggestions",JSONArray().put("先按当前 3 天安排继续记录。")).toString(),
+            input
+        )
+        assertTrue(reply.references.contains(id))
+    }
+    @Test fun followUpReturnsOnlyUserConfirmableMemoryAndPlanCandidates() {
+        val profile=HealthCoachProfile(goalType=HealthCoachGoalType.STRENGTH,target="12 周力量目标",days=setOf(1,3,5),minutes=30)
+        val (_,input)=HealthPrompt.coachFollowUpMessages(
+            snapshot(),HealthGoals(),"zh",profile,emptyList(),emptyList(),HealthConversation(),
+            "周五没空，改到周六；以后我不喜欢跑步。",now
+        )
+        val id=input.facts.first().id
+        val raw=JSONObject()
+            .put("text","可以，先按调整后的安排执行 [$id]。")
+            .put("suggestions",JSONArray().put("周六安排一次力量训练。"))
+            .put("memoryCandidate",JSONObject().put("text","不喜欢跑步").put("kind","preference"))
+            .put("proposedPlanChange",JSONObject().put("date","2026-11-07")
+                .put("action","把周五力量训练改到周六，做 30 分钟。").put("minutes",30)
+                .put("days",JSONArray()).put("temporary",true).put("reason","周五没空"))
+        val reply=HealthPrompt.validateCoachReply(raw.toString(),input,today)
+        assertEquals("不喜欢跑步",reply.memoryCandidate!!.text)
+        assertEquals("proposed",reply.memoryCandidate.status)
+        assertEquals("2026-11-07",reply.planChangeCandidate!!.date)
+        assertTrue(reply.planChangeCandidate.temporary)
+        assertTrue(reply.references.contains(id))
+    }
+    @Test fun candidateConfirmationChangesAPlanOnlyWhenTheUserAppliesIt() {
+        val profile=HealthCoachProfile(goalType=HealthCoachGoalType.STRENGTH,days=setOf(1,3,5),minutes=30)
+        val permanent=HealthCoachPlanChangeCandidate(
+            "2026-11-07","周六 30 分钟力量训练",30,setOf(2,4,6),temporary=false,reason="周五没空"
+        )
+        assertEquals(setOf(1,3,5),profile.days)
+        val changed=HealthCoachPlans.applyPermanentSchedule(profile,permanent)
+        assertEquals(setOf(2,4,6),changed.days)
+        assertEquals(30,changed.minutes)
+        val temporary=permanent.copy(temporary=true,days=emptySet())
+        val change=HealthCoachPlans.acceptedScheduleChange(temporary)
+        assertTrue(change.active(today))
+        assertEquals("2026-11-07",change.date)
+    }
+    @Test fun messageRoundTripKeepsCandidateReviewState() {
+        val memory=HealthCoachMemoryCandidate("周一三五晚上有空","schedule")
+        val plan=HealthCoachPlanChangeCandidate("2026-11-07","周六散步 20 分钟",20,temporary=true,reason="周五没空")
+        val message=HealthMessage(role="assistant",text="Synthetic",memoryCandidate=memory,planChangeCandidate=plan)
+        val restored=HealthJson.message(HealthJson.message(message))
+        assertEquals(memory,restored.memoryCandidate)
+        assertEquals(plan,restored.planChangeCandidate)
+    }
+    @Test fun malformedNullableCandidateAndEvidenceAliasesAreRepairedBeforeValidation() {
+        val (_,input)=HealthPrompt.coachFollowUpMessages(
+            snapshot(),HealthGoals(),"zh",HealthCoachProfile(),emptyList(),emptyList(),
+            HealthConversation(),"记住我不喜欢跑步",now
+        )
+        val id=input.facts.first().id
+        val malformed="""{"text":"可以[$id]","claims":[],"suggestions":["先记录。"],"memoryCandidate":, "proposedPlanChange":null,}"""
+            .replace("[$id]","[evidenceId:$id]")
+        val reply=HealthPrompt.validateCoachReply(malformed,input,today)
+        assertEquals(null,reply.memoryCandidate)
+        assertTrue(reply.references.contains(id))
+        assertTrue(HealthPrompt.normalizeModelJson(malformed).contains("\"memoryCandidate\":null"))
+    }
+    @Test fun followUpDropsUnknownEvidenceAliasesButGeneralAnswersStillRejectThem() {
+        val (_,input)=HealthPrompt.coachFollowUpMessages(
+            snapshot(),HealthGoals(),"zh",HealthCoachProfile(),emptyList(),emptyList(),
+            HealthConversation(),"今天按计划吗",now
+        )
+        val id=input.facts.first().id
+        val raw=JSONObject().put("text","按计划可以继续做 [$id]，另一个引用 [deadbeef] 不应显示。")
+            .put("claims",JSONArray().put(JSONObject().put("evidenceId","deadbeef")))
+            .put("suggestions",JSONArray().put("先做几分钟热身。")).toString()
+        val reply=HealthPrompt.validateCoachReply(raw,input,today)
+        assertTrue(reply.references.contains(id))
+        assertFalse(reply.text.contains("deadbeef"))
+        assertThrows(IllegalStateException::class.java){HealthPrompt.validate(raw,input)}
     }
 }

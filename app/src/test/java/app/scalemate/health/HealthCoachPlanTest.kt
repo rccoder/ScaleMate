@@ -48,6 +48,15 @@ class HealthCoachPlanTest {
         assertEquals("TOO_HARD",payload.getJSONArray("recentActions").getJSONObject(0).getString("feedback"))
         assertFalse(payload.toString().contains("Private revoked context"))
     }
+    @Test fun followUpPayloadMakesTodayScheduleDeterministic() {
+        val (messages,_)=HealthPrompt.coachFollowUpMessages(
+            snapshot(),HealthGoals(),"zh",HealthCoachProfile(days=setOf(1,3,5)),emptyList(),emptyList(),
+            HealthConversation(),"今天按计划吗",now
+        )
+        val payload=JSONObject(messages.getJSONObject(messages.length()-1).getString("content"))
+        assertEquals(1,payload.getInt("todayWeekday"))
+        assertTrue(payload.getBoolean("todayScheduled"))
+    }
     @Test fun compactSegmentReferencesAlwaysResolveToSentAliases() {
         val (_,input)=HealthPrompt.coachMessages(snapshot(),HealthGoals(),"en",now=now)
         assertTrue(input.grouped.isNotEmpty())
@@ -207,7 +216,7 @@ class HealthCoachPlanTest {
         val malformed="""{"text":"可以[$id]","claims":[],"suggestions":["先记录。"],"memoryCandidate":, "proposedPlanChange":null,}"""
             .replace("[$id]","[evidenceId:$id]")
         val reply=HealthPrompt.validateCoachReply(malformed,input,today)
-        assertEquals(null,reply.memoryCandidate)
+        assertEquals("我不喜欢跑步",reply.memoryCandidate?.text)
         assertTrue(reply.references.contains(id))
         assertTrue(HealthPrompt.normalizeModelJson(malformed).contains("\"memoryCandidate\":null"))
     }
@@ -224,5 +233,82 @@ class HealthCoachPlanTest {
         assertTrue(reply.references.contains(id))
         assertFalse(reply.text.contains("deadbeef"))
         assertThrows(IllegalStateException::class.java){HealthPrompt.validate(raw,input)}
+    }
+    @Test fun followUpDropsShortMalformedReferencesAndDoesNotAppendDuplicateSuggestions() {
+        val (_,input)=HealthPrompt.coachFollowUpMessages(
+            snapshot(),HealthGoals(),"zh",HealthCoachProfile(),emptyList(),emptyList(),
+            HealthConversation(),"我的数据够吗",now
+        )
+        val id=input.facts.first().id
+        val suggestion="先记录一次状态。"
+        val raw=JSONObject().put("text","目前只能看趋势 [$id]，计划约半刻钟，另一个短引用 [312]、长引用 [7d6521d9-39cf-4f32-ad68-9d5be9f4da50] 和内部字段 [hasRecentMeasurements] 不应显示，『evidenceId』显示内容也要清理。\n\n• $suggestion")
+            .put("claims",JSONArray().put(JSONObject().put("value",5000)))
+            .put("suggestions",JSONArray().put(suggestion)).toString()
+        val reply=HealthPrompt.validateCoachReply(raw,input,today)
+        assertTrue(reply.references.contains(id))
+        assertFalse(reply.text.contains("[312]"))
+        assertFalse(reply.text.contains("7d6521d9"))
+        assertFalse(reply.text.contains("hasRecentMeasurements"))
+        assertFalse(reply.text.contains("evidenceId"))
+        assertFalse(reply.text.contains("半刻钟"))
+        assertTrue(reply.text.contains("计划时长"))
+        assertEquals(1,Regex("先记录一次状态。").findAll(reply.text).count())
+    }
+    @Test fun followUpKeepsOnlyMemoryWordsTheUserExplicitlySaid() {
+        val (_,input)=HealthPrompt.coachFollowUpMessages(
+            snapshot(),HealthGoals(),"zh",HealthCoachProfile(),emptyList(),emptyList(),
+            HealthConversation(),"记住：我不喜欢跑步。",now
+        )
+        val raw=JSONObject().put("text","可以把这条作为待确认记忆。").put("claims",JSONArray())
+            .put("suggestions",JSONArray())
+            .put("memoryCandidate",JSONObject().put("text","我不喜欢跑步，运动安排尽量不用跑步").put("kind","preference"))
+            .toString()
+        val reply=HealthPrompt.validateCoachReply(raw,input,today)
+        assertEquals("我不喜欢跑步",reply.memoryCandidate?.text)
+    }
+    @Test fun explicitRememberCommandFallsBackWhenModelOmitsMemoryCandidate() {
+        val (_,input)=HealthPrompt.coachFollowUpMessages(
+            snapshot(),HealthGoals(),"zh",HealthCoachProfile(),emptyList(),emptyList(),
+            HealthConversation(),"记住：我不喜欢跑步。",now
+        )
+        val raw=JSONObject().put("text","好的。").put("claims",JSONArray())
+            .put("suggestions",JSONArray()).toString()
+        val reply=HealthPrompt.validateCoachReply(raw,input,today)
+        assertEquals("我不喜欢跑步",reply.memoryCandidate?.text)
+        assertEquals("preference",reply.memoryCandidate?.kind)
+    }
+    @Test fun questionAboutExistingMemoryDoesNotCreateANewCandidate() {
+        val (_,input)=HealthPrompt.coachFollowUpMessages(
+            snapshot(),HealthGoals(),"zh",HealthCoachProfile(),emptyList(),emptyList(),
+            HealthConversation(),"你还记住什么？",now
+        )
+        val raw=JSONObject().put("text","目前没有已确认记忆。").put("claims",JSONArray())
+            .put("suggestions",JSONArray()).toString()
+        assertNull(HealthPrompt.validateCoachReply(raw,input,today).memoryCandidate)
+    }
+    @Test fun renderedCoachTextUsesExactValuesAndSourceIdsRemainStable() {
+        val (_,input)=HealthPrompt.coachFollowUpMessages(
+            snapshot(),HealthGoals(),"zh",HealthCoachProfile(),emptyList(),emptyList(),
+            HealthConversation(),"最近怎么样",now
+        )
+        val fact=input.facts.first()
+        val formatted=java.text.NumberFormat.getNumberInstance().format(fact.value)
+        val (rendered,sourceIds)=HealthPrompt.renderCoachForStorage(
+            "最近记录 [${fact.id}]。",listOf(fact.id),input,true
+        )
+        assertEquals("最近记录 $formatted 步。",rendered)
+        assertEquals(listOf(input.sourceId(fact.id)),sourceIds)
+        assertTrue(input.sourceIds.containsKey(fact.id))
+    }
+    @Test fun renderedCoachTextDoesNotRepeatApproximateAndExactMeasurements() {
+        val exercise=HealthEvidence(
+            "abcdef123456","ExerciseSession",today.toString(),"Synthetic source",
+            "exerciseDuration",36.84,"min"
+        )
+        val input=HealthPromptInput(listOf(exercise),emptyList(),"这周运动量够吗")
+        val (rendered,_)=HealthPrompt.renderCoachForStorage(
+            "可以看到约三十七分钟的运动记录 [${exercise.id}]。",listOf(exercise.id),input,true
+        )
+        assertEquals("可以看到记录 36.84 分钟。",rendered)
     }
 }

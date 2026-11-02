@@ -150,7 +150,8 @@ class HealthCoachFollowUpDeviceTest {
             compose.waitUntil(15000){vm.state.value.loaded&&!vm.state.value.busy}
 
             compose.onNodeWithText("问问教练").performScrollTo().performClick()
-            compose.onNodeWithText("我的数据够支持目标吗？").performScrollTo().performClick()
+            compose.onNodeWithText("提问或补充你的感受").performScrollTo().performTextInput("记住：我不喜欢跑步")
+            compose.onNodeWithText("发送").performScrollTo().performClick()
             compose.waitUntil(30000) {
                 val state=vm.state.value
                 !state.busy&&state.coachConversation.messages.lastOrNull()?.status in setOf("complete","failed","cancelled")

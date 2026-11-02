@@ -165,12 +165,15 @@ If no personal data exists, explain that you are answering general questions wit
         val input=baseInput.copy(allowedNumbers=allowedNumbers)
         val system=messages.getJSONObject(0)
         val payload=JSONObject(messages.getJSONObject(messages.length()-1).getString("content"))
+        val todayProfile=profile.forDay(today)
+        val activeChanges=scheduleChanges.filter {it.active(today)}.sortedBy {it.date}.take(14)
         payload.put("today",today.toString()).put("localTime",now.atZone(zone).toLocalTime().toString())
-        payload.put("userReportedContext",HealthCoachPlans.profile(profile.forDay(today)))
+            .put("todayWeekday",today.dayOfWeek.value)
+            .put("todayScheduled",activeChanges.any {it.date==today.toString()}||today.dayOfWeek.value in todayProfile.days)
+        payload.put("userReportedContext",HealthCoachPlans.profile(todayProfile))
         payload.put("confirmedMemories",JSONArray(memories.filter {it.active(today)}.take(12).map(HealthCoachPlans::memory)))
         payload.put("weeklyPlan",JSONObject().put("days",JSONArray(profile.days.sorted())).put("minutes",profile.minutes)
             .put("goalType",profile.goalType.name).put("target",profile.target))
-        val activeChanges=scheduleChanges.filter {it.active(today)}.sortedBy {it.date}.take(14)
         payload.put("scheduleChanges",JSONArray(activeChanges.map(HealthCoachPlans::scheduleChange)))
         payload.put("todayScheduleChange",activeChanges.firstOrNull {it.date==today.toString()}?.let(HealthCoachPlans::scheduleChange) ?: JSONObject.NULL)
         val readableKinds=input.facts.map {it.kind}.toSet()
@@ -190,16 +193,26 @@ If no personal data exists, explain that you are answering general questions wit
         system.put(
             "content",
             system.getString("content")+
-                "\nCoach follow-up mode: answer the user's question directly and conversationally. Use the confirmed goal, weekly plan, confirmed memories, recent actions and relevant facts; do not ask the user to repeat them. "+
+                "\nCoach follow-up mode: answer the user's question directly in the first sentence and conversationally. Use the confirmed goal, weekly plan, confirmed memories, recent actions and only the relevant facts; do not ask the user to repeat them. "+
                 "If the user asks whether their data is enough, separate what can be planned, what can be observed as a trend, and what cannot be judged. If the user asks what to do today, respect the plan and give one practical action with a fallback. "+
                 "If the user asks whether exercise was enough, separate completion from target-related amount and training quality; never treat a session-duration record as proof of strength quality. "+
                 "If the user reports fatigue, pain, illness or a schedule conflict, adapt conservatively and do not diagnose or prescribe. Do not invent measurements, goals, equipment, injuries or memories. "+
-                "Use [evidenceId] references when making a personalized factual claim. If no supplied fact supports a claim, say the data is insufficient. Keep the answer to two short paragraphs, at most one action and at most three suggestions. "+
-                "Only the app may change plans or settings. A proposed change is a suggestion until the user confirms it. Do not claim to remember anything that is not present in confirmedMemories. "+
+                "todayWeekday and todayScheduled are authoritative; never calculate or contradict them from the date or weeklyPlan. "+
+                "Use userReportedContext.minutes exactly when referring to the confirmed plan; never convert it to vague units such as '半刻钟' or '一刻钟'. "+
+                "Never write an approximate or repeated measurement immediately before a reference; the reference already inserts the exact value and unit. Write '有一段运动记录 [evidenceId]', not '约三十七分钟的运动记录 [evidenceId]'. "+
+                "Use [evidenceId] references when making a personalized factual claim. If no supplied fact supports a claim, say the data is insufficient. Mention stale data once; do not list every available metric or repeat the same limitation in different words. "+
+                "For yes/no, readiness or sufficiency questions, give the direct answer, at most two reasons that change the conclusion, and one next step. Do not audit every category. Unless the user explicitly asks for data coverage, use at most two inline evidence references and mention stale data once without listing every stale category. "+
+                "A non-empty weeklyPlan.days array is the confirmed weekly frequency; never say the weekly target is missing. If a weekly sufficiency question cannot be judged because completed sessions are unavailable, say that once, then ask the user to record enough sessions; do not introduce unrelated step or weight data. For this simple case return exactly one suggestion. "+
+                "Keep text to at most two short paragraphs, about 320 Chinese characters or 180 English words, with no bullet list. Return at most two suggestions, each under 120 Chinese characters. Do not repeat a suggestion or action in the narrative. "+
+                "Use each evidence reference at most once in an answer. "+
+                "Only the app may change plans or settings. A proposed change is a suggestion until the user confirms it. Do not say that you have remembered something before the user confirms the memory candidate; use wording such as '可以把这条作为待确认记忆'. "+
                 "In addition to text, claims and suggestions, you may return memoryCandidate and proposedPlanChange when the user explicitly states a durable preference/limitation or asks to change the schedule. Use null otherwise. "+
-                "memoryCandidate must be {\"text\":\"short user-confirmed statement\",\"kind\":\"preference|schedule|limitation|background|temporary\",\"expiresAt\":\"YYYY-MM-DD or empty\"}. "+
+                "memoryCandidate must be {\"text\":\"short user-confirmed statement\",\"kind\":\"preference|schedule|limitation|background|temporary\",\"expiresAt\":\"YYYY-MM-DD or empty\"}. Copy only the durable fact the user explicitly stated; do not append the current goal, plan or equipment. "+
                 "proposedPlanChange must be {\"date\":\"YYYY-MM-DD within 14 days\",\"action\":\"one practical action\",\"minutes\":5-240 or null,\"days\":[ISO weekday numbers 1-7],\"temporary\":true|false,\"reason\":\"brief reason\"}. "+
-                "For a one-off change set temporary=true and days=[]; for a lasting weekly change set temporary=false and include the full replacement days. Never put a candidate in text as though it were already saved or applied. "+
+                "For a one-off change set temporary=true and days=[]; date is the destination date, not the original plan date. For example, moving Friday to Saturday uses the upcoming Saturday as date. "+
+                "If the user says that today's available time is shorter than the planned duration, return a temporary plan change for today with the shorter minutes. For a lasting weekly change set temporary=false and include the full replacement days. Never put a candidate in text as though it were already saved or applied. "+
+                "Put suggestions only in the suggestions array; do not repeat them as bullet points in text. "+
+                "Never expose internal schema names, programming field names or evidence IDs in visible text. "+
                 "Every JSON key must have a value; use null, never omit a value after a colon or end the JSON early. "+
                 "Do not write digits for exercise counts, sets, repetitions or item counts in narrative or suggestions; use words such as '两三个动作' or '几个动作'. Durations and user-stated time limits may use digits."
         )
@@ -212,18 +225,23 @@ If no personal data exists, explain that you are answering general questions wit
         val planChangeCandidate:HealthCoachPlanChangeCandidate?=null
     )
     fun validateCoachReply(raw:String,input:HealthPromptInput,today:java.time.LocalDate=java.time.LocalDate.now()):CoachReply {
-        val (text,refs)=validate(raw,input,requireEvidence=false,ignoreUnknownReferences=true)
+        val (validatedText,refs)=validate(raw,input,requireEvidence=false,ignoreUnknownReferences=true)
+        val text=validatedText.replace(Regex("(?:大约|约)?半刻钟"),"计划时长")
         val o=responseObject(raw)
         val byId=input.facts.associateBy {it.id}
-        val memory=o.optJSONObject("memoryCandidate")?.let {candidate->
+        val memoryFromModel=o.optJSONObject("memoryCandidate")?.let {candidate->
             runCatching {
                 val parsed=HealthCoachMemoryCandidate(
                     candidate.getString("text").trim(),candidate.optString("kind","preference"),
                     candidate.optString("expiresAt"),"proposed"
                 )
-                parsed.takeIf {it.expiresAt.isBlank()||java.time.LocalDate.parse(it.expiresAt)>=today}
+                val explicit=explicitMemoryText(parsed.text,input.question)
+                parsed.copy(text=explicit).takeIf {
+                    explicit.isNotBlank()&&(it.expiresAt.isBlank()||java.time.LocalDate.parse(it.expiresAt)>=today)
+                }
             }.getOrNull()
         }
+        val memory=memoryFromModel ?: explicitMemoryFallback(input.question)
         val plan=o.optJSONObject("proposedPlanChange")?.let {candidate->
             runCatching {
                 val parsed=HealthCoachPlanChangeCandidate(
@@ -324,7 +342,9 @@ If no personal data exists, explain that you are answering general questions wit
         require(text.isNotEmpty()&&text.length<=32000&&!text.contains(Regex("https?://")))
         val byId=input.facts.associateBy {it.id};val ids=mutableListOf<String>();val claims=o.optJSONArray("claims")
         if(claims!=null)for(i in 0 until claims.length()) {
-            val claim=claims.getJSONObject(i);val id=claim.getString("evidenceId")
+            val claim=claims.getJSONObject(i);val id=claim.optString("evidenceId").trim()
+            if(id.isEmpty()&&ignoreUnknownReferences)continue
+            require(id.isNotEmpty()){"Missing claim evidence"}
             val e=byId[id]
             if(e==null&&ignoreUnknownReferences)continue
             if(e==null)error("Unknown evidence")
@@ -335,9 +355,12 @@ If no personal data exists, explain that you are answering general questions wit
         }
         var refs=Regex("\\[([a-f0-9]{4,24}(?:-(?:median|min|max))?)\\]").findAll(text).map {it.groupValues[1]}.toList()
         if(ignoreUnknownReferences) {
-            text=text.replace(Regex("\\s*\\[([a-f0-9]{4,24}(?:-(?:median|min|max))?)\\]")) {match->
-                if(match.groupValues[1] in byId)match.value else ""
+            text=text.replace(Regex("\\s*\\[\\s*([^\\]\\n]{1,80})\\s*\\]")) {match->
+                if(match.groupValues[1].trim() in byId)match.value else ""
             }.trim()
+            text=text.replace(Regex("(?i)[「『“\"']?\\s*evidenceId\\s*[」』”\"']?\\s*(?:显示|表明|为|：|:)?"),"")
+                .trim()
+            text=text.replace(Regex("\\s*[「『“\"']\\s*[」』”\"']\\s*"),"").trim()
             require(text.isNotEmpty())
             refs=refs.filter {it in byId}
         } else require(refs.all {it in byId})
@@ -346,7 +369,11 @@ If no personal data exists, explain that you are answering general questions wit
         requireNumbersAreSupported(text,byId,input.allowedNumbers)
         val suggestions=o.optJSONArray("suggestions")?.let(HealthJson::strings).orEmpty();require(suggestions.size<=3&&suggestions.all {it.length<=1500&&!it.contains(Regex("https?://"))})
         suggestions.forEach {requireNumbersAreSupported(it,byId,input.allowedNumbers)}
-        return (text+if(suggestions.isEmpty())"" else "\n\n"+suggestions.joinToString("\n"){"• $it"}) to ids.distinct()
+        val compactText=text.filterNot(Char::isWhitespace)
+        val newSuggestions=suggestions.distinctBy {it.filterNot(Char::isWhitespace)}.filterNot {
+            compactText.contains(it.filterNot(Char::isWhitespace))
+        }
+        return (text+if(newSuggestions.isEmpty())"" else "\n\n"+newSuggestions.joinToString("\n"){"• $it"}) to ids.distinct()
     }
     private fun responseObject(raw:String):JSONObject {
         val clean=normalizeModelJson(raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim())
@@ -388,6 +415,30 @@ If no personal data exists, explain that you are answering general questions wit
             }
         }
     }
+    private fun explicitMemoryText(candidate:String,question:String):String {
+        fun compact(value:String)=value.lowercase().replace(Regex("[\\s，,。.!！？?；;：:、\"'“”‘’「」『』]"),"")
+            .replace(Regex("^(请)?记住"),"")
+        val source=compact(question)
+        if(source.isEmpty())return ""
+        return candidate.split(Regex("[，,。；;\\n]+")).mapNotNull {part->
+            val value=part.trim()
+            val key=compact(value)
+            value.takeIf {key.length>=2&&source.contains(key)}
+        }.joinToString("，")
+    }
+    private fun explicitMemoryFallback(question:String):HealthCoachMemoryCandidate? {
+        if(!Regex("^(?:请|帮我)?记住").containsMatchIn(question.trim()))return null
+        val statement=question.trim().replaceFirst(Regex("^(?:请|帮我)?记住[:：,，\\s]*"),"")
+        val text=explicitMemoryText(statement,statement)
+        if(text.isBlank())return null
+        val kind=when {
+            text.contains(Regex("没空|有空|周一|周二|周三|周四|周五|周六|周日|每周|安排"))->"schedule"
+            text.contains(Regex("过敏|避免|不能|受伤|疼痛|限制"))->"limitation"
+            text.contains(Regex("喜欢|不喜欢|偏好|习惯"))->"preference"
+            else->"background"
+        }
+        return HealthCoachMemoryCandidate(text,kind)
+    }
     fun render(text:String,ids:List<String>,evidence:List<HealthEvidence>,chinese:Boolean):String {
         val byId=evidence.associateBy {it.id}
         val referenced=mutableSetOf<String>()
@@ -415,6 +466,16 @@ If no personal data exists, explain that you are answering general questions wit
             byId[match.groupValues[1]]?.let {" "+healthMetricDisplay(it,chinese)} ?: ""
         }.trim()
         return rendered to referenced.toList()
+    }
+    fun renderCoachForStorage(text:String,references:List<String>,input:HealthPromptInput,chinese:Boolean):Pair<String,List<String>> {
+        val rendered=renderCoach(text,input.facts,chinese).first.replace(
+            Regex(
+                """(?:(?:约|大约)\s*)?(?:\d+(?:[.,]\d+)?|[一二两三四五六七八九十百零点]+)\s*(分钟|小时|步|千卡|kcal|kg|公斤|bpm|ms)[^，。；\n]{0,18}?(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*\1""",
+                RegexOption.IGNORE_CASE
+            ),
+            "记录 $2 $1"
+        )
+        return rendered to references.map {input.sourceId(it)}.distinct()
     }
     private fun healthMetricDisplay(e:HealthEvidence,chinese:Boolean=false):String {
         val number=java.text.NumberFormat.getNumberInstance().apply {maximumFractionDigits=2}

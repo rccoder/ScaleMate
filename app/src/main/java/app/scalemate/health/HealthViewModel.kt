@@ -461,8 +461,10 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
                     disableReasoning=pending.service.format=="openai"&&pending.service.model.contains("deepseek",ignoreCase=true)
                 )
                 val reply=HealthPrompt.validateCoachReply(raw,input,today=LocalDate.now(java.time.ZoneId.of(snapshot?.window?.zone ?: mutable.value.window.zone)))
+                val chinese=language.startsWith("zh",ignoreCase=true)
+                val (rendered,sourceIds)=HealthPrompt.renderCoachForStorage(reply.text,reply.references,input,chinese)
                 val complete=assistant.copy(
-                    text=reply.text,status="complete",evidenceIds=reply.references,
+                    text=rendered,status="complete",evidenceIds=sourceIds,
                     memoryCandidate=reply.memoryCandidate,planChangeCandidate=reply.planChangeCandidate
                 )
                 conversation=conversation.copy(messages=conversation.messages.map {if(it.id==assistantId)complete else it})

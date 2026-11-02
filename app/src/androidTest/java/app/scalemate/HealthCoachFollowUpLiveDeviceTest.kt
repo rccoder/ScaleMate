@@ -3,6 +3,8 @@ package app.scalemate
 import androidx.test.platform.app.InstrumentationRegistry
 import app.scalemate.data.Store
 import app.scalemate.food.AiClient
+import app.scalemate.food.AiSecrets
+import app.scalemate.food.AiService
 import app.scalemate.food.FoodStore
 import app.scalemate.health.*
 import java.io.File
@@ -24,11 +26,28 @@ class HealthCoachFollowUpLiveDeviceTest {
         Store(context).use {db->
             val food=FoodStore(db);val health=HealthStore(db)
             val services=food.services()
-            val configured=services.find {it.id==food.setting("text")} ?: services.singleOrNull() ?: error("No selected text service")
             val model=InstrumentationRegistry.getArguments().getString("coachLiveModel").orEmpty()
-            val service=if(model.isBlank())configured else configured.copy(model=model)
+            val liveBaseUrl=InstrumentationRegistry.getArguments().getString("coachLiveBaseUrl").orEmpty()
+            val liveApiKey=InstrumentationRegistry.getArguments().getString("coachLiveApiKey").orEmpty()
+            val service=if(liveBaseUrl.isNotBlank()&&liveApiKey.isNotBlank()) {
+                val id="coach-live-${System.nanoTime()}"
+                AiService(
+                    id=id,name="Ephemeral live provider",baseUrl=liveBaseUrl,
+                    model=model.ifBlank {error("coachLiveModel is required for an ephemeral live service")},
+                    encryptedKey=AiSecrets().encrypt(id,liveApiKey),format="openai"
+                )
+            } else {
+                val configured=services.find {it.id==food.setting("text")} ?: services.singleOrNull()
+                    ?: error("No selected text service")
+                if(model.isBlank())configured else configured.copy(model=model)
+            }
             require(java.net.URI(service.baseUrl).port!=8765&&!service.model.contains("mock",true))
             val snapshot=health.activeSnapshot() ?: error("No existing Health Connect snapshot")
+            if(InstrumentationRegistry.getArguments().getString("coachLivePersistService")=="true") {
+                food.service(service)
+                food.setting("text",service.id)
+                health.consent(service,snapshot.categories,"coach-v3:")
+            }
             val now=Instant.now()
             val zone=ZoneId.of(snapshot.window.zone)
             val today=now.atZone(zone).toLocalDate()
@@ -73,9 +92,27 @@ class HealthCoachFollowUpLiveDeviceTest {
                         planChangeCandidate=reply.planChangeCandidate
                     )
                     conversation=conversation.copy(messages=conversation.messages+user+assistant)
+                    if(index==1)assertEquals(
+                        "A shorter available duration must produce a temporary plan change for today",
+                        today.toString(),
+                        reply.planChangeCandidate?.date
+                    )
                     if(index==3)assertNotNull("Real model did not propose the requested schedule change",reply.planChangeCandidate)
+                    if(index==3)assertEquals(
+                        "Temporary schedule change must target Saturday",
+                        java.time.DayOfWeek.SATURDAY,
+                        java.time.LocalDate.parse(reply.planChangeCandidate!!.date).dayOfWeek
+                    )
                     if(index==4) {
                         assertNotNull("Real model did not propose a memory candidate",reply.memoryCandidate)
+                        assertFalse(
+                            "Memory candidate must not append equipment or plan details",
+                            reply.memoryCandidate!!.text.contains("哑铃")
+                        )
+                        assertFalse(
+                            "Memory candidate must not expand the user's explicit statement",
+                            reply.memoryCandidate!!.text.contains("运动安排")
+                        )
                         reply.memoryCandidate?.let {memories+=HealthCoachPlans.acceptedMemory(it,now.toEpochMilli())}
                     }
                 }catch(e:Exception) {

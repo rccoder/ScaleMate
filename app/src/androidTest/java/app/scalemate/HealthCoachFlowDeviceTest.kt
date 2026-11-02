@@ -13,6 +13,8 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import app.scalemate.data.Store
+import app.scalemate.food.AiSecrets
+import app.scalemate.food.AiService
 import app.scalemate.food.FoodStore
 import app.scalemate.health.*
 import org.junit.Assert.*
@@ -27,11 +29,24 @@ class HealthCoachFlowDeviceTest {
         assumeTrue(InstrumentationRegistry.getArguments().getString("liveHealthCoachChecks")=="true")
         val app=InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as Application
         require(app.packageName=="app.scalemate.fooddev")
+        val args=InstrumentationRegistry.getArguments()
+        val liveBaseUrl=args.getString("coachLiveBaseUrl").orEmpty()
+        val liveApiKey=args.getString("coachLiveApiKey").orEmpty()
+        val liveFormat=args.getString("coachLiveFormat").orEmpty().ifBlank {"openai"}
         val model=InstrumentationRegistry.getArguments().getString("coachLiveModel").orEmpty()
         val name="coach-flow-${System.nanoTime()}.db"
         val saved=Store(app).use {db->
             val food=FoodStore(db);val health=HealthStore(db)
-            val service=food.services().find {it.id==food.setting("text")} ?: error("No selected service")
+            val service=if(liveBaseUrl.isNotBlank()&&liveApiKey.isNotBlank()) {
+                require(model.isNotBlank()) {"coachLiveModel is required for an ephemeral live service"}
+                val id="coach-flow-live-${System.nanoTime()}"
+                AiService(
+                    id=id,name="Ephemeral live provider",baseUrl=liveBaseUrl,model=model,
+                    encryptedKey=AiSecrets().encrypt(id,liveApiKey),format=liveFormat
+                )
+            } else {
+                food.services().find {it.id==food.setting("text")} ?: error("No selected service")
+            }
             Triple(health.activeSnapshot() ?: error("No health snapshot"),service,health.goals())
         }
         val snapshot=saved.first.copy(id=healthId(),readAt=System.currentTimeMillis(),rawFile="")
@@ -59,13 +74,13 @@ class HealthCoachFlowDeviceTest {
             compose.waitUntil(60000){!vm.state.value.busy&&(vm.state.value.coachPlans.isNotEmpty()||vm.state.value.error!=null)}
             assertNull("Initial coach request failed",vm.state.value.error)
             val first=vm.state.value.coachPlans.first()
-            compose.onNodeWithText("太难了").performScrollTo().performClick()
+            compose.onNodeWithText("太难").performScrollTo().performClick()
             compose.waitUntil(5000){vm.state.value.coachPlans.first().feedback==HealthCoachFeedback.TOO_HARD}
             assertFalse(vm.state.value.coachGenerating)
             compose.onNodeWithText("我的安排").performScrollTo().performClick()
-            compose.onNodeWithText("坚持活动").performClick()
-            compose.onNodeWithText("5 分钟").performClick()
-            compose.onNodeWithText("今天有点累").performClick()
+            compose.onNode(hasText("坚持活动") and hasClickAction()).performScrollTo().performClick()
+            compose.onNode(hasText("5 分钟") and hasClickAction()).performScrollTo().performClick().assertIsSelected()
+            compose.onNode(hasText("今天有点累") and hasClickAction()).performScrollTo().performClick().assertIsSelected()
             compose.onNodeWithText("保存").performClick()
             compose.onNodeWithText("生成更轻松的建议").performScrollTo().performClick()
             compose.waitUntil(60000){!vm.state.value.busy&&(vm.state.value.coachPlans.first().message.id!=first.message.id||vm.state.value.error!=null)}
@@ -73,7 +88,7 @@ class HealthCoachFlowDeviceTest {
             val second=vm.state.value.coachPlans.first()
             assertTrue(second.action.isNotBlank())
             assertEquals(5,second.profile.minutes)
-            compose.onNodeWithText("已完成").performScrollTo().performClick()
+            compose.onNodeWithText("完成").performScrollTo().performClick()
             compose.waitUntil(5000){vm.state.value.coachPlans.first().feedback==HealthCoachFeedback.DONE}
 
             // Recreate the model, then change the local snapshot revision without replacing the plan.

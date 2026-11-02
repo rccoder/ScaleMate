@@ -74,11 +74,6 @@ class HealthCoachHomeDeviceTest {
             )),
             coverage=listOf(HealthCoverage("Steps","available"))
         )
-        val todayPlan=HealthCoachPlan(
-            HealthMessage(role="assistant",text=copy.observation,snapshotId=snapshot.id),
-            today.toString(),copy.action,profile,setOf("Steps"),HealthCoachFeedback.PROPOSED,
-            kind=copy.kind,successCriteria=copy.successCriteria,fallback=copy.fallback,source="local"
-        )
         val (reviewStart,_)=HealthCoachPlans.reviewWeek(today)
         val history=profile.days.sorted().mapIndexed {index,day->
             val feedback=when(index) {
@@ -96,7 +91,7 @@ class HealthCoachHomeDeviceTest {
             Store(app,name).use {db->
                 val health=HealthStore(db)
                 health.categories(setOf("Steps"));health.snapshot(snapshot);health.setting("activeSnapshot",snapshot.id)
-                health.coachProfile(profile);health.coachPlans(listOf(todayPlan)+history,today)
+                health.coachProfile(profile);health.coachPlans(history,today)
             }
             val vm=HealthViewModel(app,databaseName=name)
             compose.activity.runOnUiThread {
@@ -112,6 +107,9 @@ class HealthCoachHomeDeviceTest {
                 }
             }
             compose.waitUntil(15000){vm.state.value.loaded&&!vm.state.value.busy}
+            compose.waitUntil(10000){vm.state.value.coachPlans.any {it.date==today.toString()}}
+            val todayPlan=vm.state.value.coachPlans.first {it.date==today.toString()}
+            assertEquals("local",todayPlan.source)
             compose.onNodeWithText("今日行动").assertExists()
             compose.onNodeWithText(copy.action).performScrollTo().assertExists()
             screenshot("01-today-action-first")
@@ -124,10 +122,14 @@ class HealthCoachHomeDeviceTest {
             compose.onNodeWithText("下周使用这个安排").performClick()
             compose.waitUntil(5000){!vm.state.value.busy}
             assertEquals(
-                HealthCoachPlans.weekReview(profile,listOf(todayPlan)+history,today).nextDays,
+                HealthCoachPlans.weekReview(profile,vm.state.value.coachPlans,today).nextDays,
                 vm.state.value.coachProfile.days
             )
+            val reopened=HealthViewModel(app,databaseName=name)
+            compose.waitUntil(15000){reopened.state.value.loaded&&!reopened.state.value.busy}
+            assertEquals(1,reopened.state.value.coachPlans.count {it.date==today.toString()})
             compose.runOnIdle {vm.cancel()}
+            compose.runOnIdle {reopened.cancel()}
         } finally {
             app.deleteDatabase(name)
         }

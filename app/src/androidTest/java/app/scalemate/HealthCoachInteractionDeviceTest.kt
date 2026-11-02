@@ -50,7 +50,13 @@ class HealthCoachInteractionDeviceTest {
     private val brief=HealthCoachBrief(today.toString(),null,emptySet(),emptySet(),listOf(HealthCoachSignal.Activity(fact,6000.0,null)))
     private fun show(language:String="zh",dark:Boolean=false,fontScale:Float=1f) {
         plan.value=plan.value.copy(evidence=listOf(fact))
-        if(language=="en")plan.value=plan.value.copy(message=plan.value.message.copy(text="Recent activity varies. Start with something easy to keep doing."),action="After lunch, take a comfortable five-minute walk without chasing a step total.")
+        if(language=="en")plan.value=plan.value.copy(
+            message=plan.value.message.copy(text="Recent activity varies. Start with something easy to keep doing."),
+            action="After lunch, take a comfortable five-minute walk without chasing a step total.",
+            profile=profile.value.copy(target="One activity a day"),
+            successCriteria="Complete a comfortable five-minute walk",
+            fallback="If time is short, walk for three minutes"
+        )
         compose.activity.runOnUiThread {
             val config=Configuration(compose.activity.resources.configuration).apply {setLocale(Locale.forLanguageTag(language));this.fontScale=fontScale}
             val context=compose.activity.createConfigurationContext(config)
@@ -81,14 +87,14 @@ class HealthCoachInteractionDeviceTest {
         show();screenshot("01-action")
         compose.onNodeWithText("步数 · 3,500 步").performScrollTo().performClick()
         assertEquals(fact.id,openedEvidence)
-        compose.onNodeWithText("今天试试").performScrollTo().performClick()
+        compose.onNodeWithText("试试").performScrollTo().performClick()
         assertEquals(HealthCoachFeedback.ACCEPTED,plan.value.feedback)
-        compose.onNodeWithText("已完成").performScrollTo().performClick()
+        compose.onNodeWithText("完成").performScrollTo().performClick()
         compose.onNodeWithText("本周完成 1/3 次计划 · 本人确认").performScrollTo().assertIsDisplayed()
         screenshot("02-done")
         compose.onNodeWithText("撤销反馈").performScrollTo().performClick()
-        compose.onNodeWithText("太难了").performScrollTo().performClick()
-        compose.onNodeWithText("生成更轻松的建议").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("太难").performScrollTo().performClick()
+        compose.onNodeWithText("生成更轻松的建议").assertDoesNotExist()
         assertEquals(HealthCoachFeedback.TOO_HARD,plan.value.feedback)
         screenshot("03-too-hard")
     }
@@ -97,16 +103,16 @@ class HealthCoachInteractionDeviceTest {
         compose.onNodeWithText("数据或安排已更新；今天的行动会暂时保持稳定，确认调整后才更换。").performScrollTo().assertIsDisplayed()
         compose.runOnIdle {generating.value=true}
         compose.onNodeWithText(plan.value.action).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("更新 AI 解读").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("更新 AI 解读").assertDoesNotExist()
         screenshot("04-generating-keeps-action")
     }
     @Test fun partialCompletionNeedsNoSecondWorkoutOrCatchUpTask() {
         show()
-        compose.onNodeWithText("今天试试").performScrollTo().performClick()
-        compose.onNodeWithText("部分完成").performScrollTo().performClick()
+        compose.onNodeWithText("试试").performScrollTo().performClick()
+        compose.onNodeWithText("部分").performScrollTo().performClick()
         compose.onNodeWithText("已记下部分完成。下次会把安排拆得更小，不要求补做。").performScrollTo().assertIsDisplayed()
         assertEquals(HealthCoachFeedback.PARTIAL,plan.value.feedback)
-        compose.onNodeWithText("今天试试").assertDoesNotExist()
+        compose.onNodeWithText("部分").assertIsSelected()
         screenshot("07-partial")
     }
     @Test fun preferencesAreEditableAndOldActionsAreNotPresentedAsTodaysTask() {
@@ -119,15 +125,19 @@ class HealthCoachInteractionDeviceTest {
         assertEquals(HealthCoachFocus.SLEEP,profile.value.focus)
         assertEquals(5,profile.value.minutes)
         assertEquals(HealthCoachEnergy.TIRED,profile.value.energy)
-        compose.runOnIdle {plan.value=plan.value.copy(date=today.minusDays(1).toString())}
-        compose.onNodeWithText("上次的行动").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("今天试试").assertDoesNotExist()
+        compose.runOnIdle {
+            plan.value=plan.value.copy(date=today.minusDays(1).toString())
+            profile.value=profile.value.copy(days=setOf(2))
+        }
+        compose.onNodeWithText("今天是休息日").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(plan.value.action).assertDoesNotExist()
+        compose.onNodeWithText("试试").assertDoesNotExist()
         screenshot("05-previous-day")
     }
     @Test fun englishDarkLargeTextKeepsActionAndControlsReadable() {
         show("en",true,1.3f)
-        compose.onNodeWithText("One thing to try today").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("I will try this").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Today’s action").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Try").performScrollTo().assertIsDisplayed()
         screenshot("06-english-dark-large-text")
     }
 }

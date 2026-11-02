@@ -66,6 +66,22 @@ private fun focusFor(goal:HealthCoachGoalType)=when(goal) {
                 label={Text(stringResource(R.string.health_coach_target_label))},
                 modifier=Modifier.fillMaxWidth(),singleLine=true
             )
+            OutlinedTextField(
+                value=draft.baseline,onValueChange={draft=draft.copy(baseline=it.take(160))},
+                label={Text(stringResource(R.string.health_coach_baseline_label))},
+                modifier=Modifier.fillMaxWidth(),singleLine=true
+            )
+            OutlinedTextField(
+                value=draft.deadline,onValueChange={draft=draft.copy(deadline=it.take(10))},
+                label={Text(stringResource(R.string.health_coach_deadline_label))},
+                placeholder={Text("YYYY-MM-DD")},
+                modifier=Modifier.fillMaxWidth(),singleLine=true
+            )
+            OutlinedTextField(
+                value=draft.successCriteria,onValueChange={draft=draft.copy(successCriteria=it.take(240))},
+                label={Text(stringResource(R.string.health_coach_success_label))},
+                modifier=Modifier.fillMaxWidth(),minLines=2
+            )
             Text(stringResource(R.string.health_coach_focus_label),style=MaterialTheme.typography.titleSmall)
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {HealthCoachFocus.entries.forEach {focus->
                 FilterChip(selected=draft.focus==focus,onClick={draft=draft.copy(focus=focus)},label={Text(stringResource(coachFocusLabel(focus)))})

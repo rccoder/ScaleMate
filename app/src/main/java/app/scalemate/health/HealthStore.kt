@@ -221,7 +221,7 @@ class HealthStore(private val store:Store) {
         val rows=runCatching {JSONArray(raw)}.getOrNull() ?: return emptyList()
         (0 until rows.length()).mapNotNull {runCatching {HealthCoachPlans.plan(rows.getJSONObject(it))}.getOrNull()}
     }.orEmpty()
-    fun coachPlans(plans:List<HealthCoachPlan>,today:java.time.LocalDate)=setting("coach:plans",JSONArray(HealthCoachPlans.recent(plans,today).map(HealthCoachPlans::json)).toString())
+    fun coachPlans(plans:List<HealthCoachPlan>,today:java.time.LocalDate)=setting("coach:plans",JSONArray(HealthCoachPlans.history(plans,today).map(HealthCoachPlans::json)).toString())
     fun clearCoach(){store.writableDatabase.delete("health_settings","key LIKE 'coach:%' OR key LIKE 'consent:coach-v2:%' OR key LIKE 'consent:coach-v3:%'",null)}
     fun reminders():List<HealthReminder> = store.readableDatabase.rawQuery("SELECT payload FROM health_reminders ORDER BY createdAt DESC",null).use {c->buildList {while(c.moveToNext())add(HealthJson.reminder(JSONObject(c.getString(0))))}}
     fun reminder(r:HealthReminder):Boolean = store.writableDatabase.insertWithOnConflict("health_reminders",null,ContentValues().apply {put("id",r.id);put("eventKey",r.key);put("dayKey",java.time.Instant.ofEpochMilli(r.createdAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString());put("createdAt",r.createdAt);put("payload",HealthJson.reminder(r).toString())},SQLiteDatabase.CONFLICT_IGNORE)!=-1L

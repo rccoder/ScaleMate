@@ -53,7 +53,7 @@ class HealthCoachFlowDeviceTest {
                 }
             }}
             compose.waitUntil(15000){vm.state.value.loaded&&!vm.state.value.busy}
-            compose.onNodeWithText("生成今日建议").performScrollTo().performClick()
+            compose.onNodeWithText("生成 AI 解读").performScrollTo().performClick()
             compose.waitUntil(5000){vm.state.value.consent!=null||vm.state.value.coachGenerating}
             if(vm.state.value.consent!=null)compose.onNodeWithText("同意并发送").performClick()
             compose.waitUntil(60000){!vm.state.value.busy&&(vm.state.value.coachPlans.isNotEmpty()||vm.state.value.error!=null)}

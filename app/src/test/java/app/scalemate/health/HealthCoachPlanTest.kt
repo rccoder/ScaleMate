@@ -135,9 +135,64 @@ class HealthCoachPlanTest {
     @Test fun profileRoundTripKeepsGoalScheduleEquipmentAndLimits() {
         val profile=HealthCoachProfile(
             HealthCoachFocus.ACTIVITY,30,HealthCoachEnergy.NORMAL,"",
-            HealthCoachGoalType.STRENGTH,"12 周力量目标",setOf(1,3,5),"哑铃、弹力带","避免跳跃"
+            HealthCoachGoalType.STRENGTH,"12 周力量目标",setOf(1,3,5),"哑铃、弹力带","避免跳跃",
+            baseline="每周 1 次",deadline="2027-01-31",successCriteria="每周稳定完成 3 次"
         )
         assertEquals(profile,HealthCoachPlans.profile(HealthCoachPlans.profile(profile)))
+    }
+    @Test fun localActionRespectsTheGoalInsteadOfForcingMinutesOntoEveryHabit() {
+        val sleep=HealthCoachPlans.localAction(HealthCoachProfile(goalType=HealthCoachGoalType.SLEEP),true)
+        assertEquals("SLEEP",sleep.kind)
+        assertTrue(sleep.action.contains("上床"))
+        assertFalse(sleep.action.contains("分钟"))
+        val strength=HealthCoachPlans.localAction(HealthCoachProfile(minutes=30,goalType=HealthCoachGoalType.STRENGTH),true)
+        assertEquals("STRENGTH",strength.kind)
+        assertTrue(strength.action.contains("30 分钟"))
+        assertTrue(strength.fallback.isNotBlank())
+    }
+    @Test fun weekReviewUsesScheduledDatesAndCanRecommendAnEasierWeek() {
+        val profile=HealthCoachProfile(days=setOf(1,3,5),minutes=30)
+        val plans=listOf(
+            plan("2026-10-26",HealthCoachFeedback.DONE),
+            plan("2026-10-28",HealthCoachFeedback.TOO_HARD),
+            plan("2026-10-30",HealthCoachFeedback.MISSED)
+        )
+        val review=HealthCoachPlans.weekReview(profile,plans,today)
+        assertEquals("2026-10-26",review.weekStart)
+        assertEquals("2026-11-01",review.weekEnd)
+        assertEquals(3,review.scheduledDays)
+        assertEquals(1,review.completedDays)
+        assertEquals(1,review.tooHardDays)
+        assertEquals(1,review.missedDays)
+        assertEquals(HealthCoachReviewAction.EASE,review.action)
+        assertEquals(setOf(1,3),review.nextDays)
+    }
+    @Test fun todayProgressRemainsVisibleWhenMondayShowsLastWeekReview() {
+        val profile=HealthCoachProfile(days=setOf(1,3,5),minutes=30)
+        val current=plan("2026-11-02",HealthCoachFeedback.DONE)
+        val previous=listOf(
+            plan("2026-10-26",HealthCoachFeedback.DONE),
+            plan("2026-10-28",HealthCoachFeedback.PARTIAL),
+            plan("2026-10-30",HealthCoachFeedback.MISSED)
+        )
+        val all=listOf(current)+previous
+        assertEquals(4,HealthCoachPlans.history(all,today).size)
+        val progress=HealthCoachPlans.weekProgress(profile,all,today)
+        val review=HealthCoachPlans.weekReview(profile,all,today)
+        assertEquals("2026-11-02",progress.weekStart)
+        assertEquals(1,progress.completedDays)
+        assertEquals(3,progress.scheduledDays)
+        assertEquals("2026-10-26",review.weekStart)
+        assertEquals(1,review.completedDays)
+        assertEquals(1,review.partialDays)
+        assertEquals(1,review.missedDays)
+        assertEquals(3,review.scheduledDays)
+    }
+    @Test fun planRoundTripKeepsActionContractAndLocalSource() {
+        val local=plan(feedback=HealthCoachFeedback.PROPOSED).copy(
+            kind="SLEEP",successCriteria="按计划上床",fallback="加班时只保留关屏步骤",source="local"
+        )
+        assertEquals(local,HealthCoachPlans.plan(HealthCoachPlans.json(local)))
     }
     @Test fun temporaryMemoriesExpireAndConfirmedMemoriesReachFollowUpContext() {
         val active=HealthCoachMemory(text="周一三五晚上有空",kind="schedule",createdAt=now.toEpochMilli())

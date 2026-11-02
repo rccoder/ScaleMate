@@ -32,10 +32,15 @@ import kotlinx.coroutines.runBlocking
 class HealthCoachInteractionDeviceTest {
     @get:Rule val compose=createAndroidComposeRule<MainActivity>()
     private val today=LocalDate.parse("2026-11-02")
-    private val profile=mutableStateOf(HealthCoachProfile())
+    private val profile=mutableStateOf(HealthCoachProfile(
+        focus=HealthCoachFocus.ACTIVITY,minutes=5,goalType=HealthCoachGoalType.ACTIVITY,
+        target="每天活动一次",days=setOf(1,3,5),baseline="目前每周一次",
+        successCriteria="每周完成三次轻量活动"
+    ))
     private val plan=mutableStateOf(HealthCoachPlan(
         HealthMessage(role="assistant",text="最近的活动记录有起伏，先选一个容易坚持的安排。",snapshotId="old-snapshot"),
-        today.toString(),"午饭后，按舒服的速度散步五分钟，不必赶步数。",profile.value,setOf("Steps")
+        today.toString(),"午饭后，按舒服的速度散步五分钟，不必赶步数。",profile.value,setOf("Steps"),
+        successCriteria="完成五分钟舒适散步",fallback="时间不足时改为三分钟",source="local"
     ))
     private val generating=mutableStateOf(false)
     private val showPreferences=mutableStateOf(false)
@@ -79,7 +84,7 @@ class HealthCoachInteractionDeviceTest {
         compose.onNodeWithText("今天试试").performScrollTo().performClick()
         assertEquals(HealthCoachFeedback.ACCEPTED,plan.value.feedback)
         compose.onNodeWithText("已完成").performScrollTo().performClick()
-        compose.onNodeWithText("近 7 天完成行动 1 天 · 本人确认").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("本周完成 1/3 次计划 · 本人确认").performScrollTo().assertIsDisplayed()
         screenshot("02-done")
         compose.onNodeWithText("撤销反馈").performScrollTo().performClick()
         compose.onNodeWithText("太难了").performScrollTo().performClick()
@@ -89,10 +94,10 @@ class HealthCoachInteractionDeviceTest {
     }
     @Test fun updatedDataAndGenerationKeepThePreviousActionVisible() {
         show()
-        compose.onNodeWithText("数据或安排已更新；保留这次建议，重新生成后会替换。").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("数据或安排已更新；今天的行动会暂时保持稳定，确认调整后才更换。").performScrollTo().assertIsDisplayed()
         compose.runOnIdle {generating.value=true}
         compose.onNodeWithText(plan.value.action).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("重新生成建议").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("更新 AI 解读").performScrollTo().assertIsNotEnabled()
         screenshot("04-generating-keeps-action")
     }
     @Test fun partialCompletionNeedsNoSecondWorkoutOrCatchUpTask() {
@@ -107,9 +112,9 @@ class HealthCoachInteractionDeviceTest {
     @Test fun preferencesAreEditableAndOldActionsAreNotPresentedAsTodaysTask() {
         show()
         compose.onNodeWithText("我的安排").performScrollTo().performClick()
-        compose.onNodeWithText("睡得规律").performClick()
-        compose.onNodeWithText("5 分钟").performClick()
-        compose.onNodeWithText("今天有点累").performClick()
+        compose.onNode(hasText("睡得规律") and hasClickAction()).performClick()
+        compose.onNode(hasText("5 分钟") and hasClickAction()).performClick()
+        compose.onNode(hasText("今天有点累") and hasClickAction()).performScrollTo().performClick().assertIsSelected()
         compose.onNodeWithText("保存").performClick()
         assertEquals(HealthCoachFocus.SLEEP,profile.value.focus)
         assertEquals(5,profile.value.minutes)

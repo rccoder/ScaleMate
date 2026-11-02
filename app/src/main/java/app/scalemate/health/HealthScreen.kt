@@ -75,8 +75,8 @@ import kotlinx.coroutines.withContext
     val today=LocalDate.now(ZoneId.of(s.window.zone))
     val todayMetrics=HealthOverview.today(s.snapshot,today)
     val coachBrief=remember(s.snapshot,s.goals,today){HealthCoach.brief(s.snapshot,s.goals,today)}
-    val coachPlans=HealthCoachPlans.recent(s.coachPlans,today).filter {plan->plan.categories.all {it in s.categories&&s.permissions[it]=="ready"}}
-    val coachMessage=coachPlans.firstOrNull()?.message ?: s.coachMessage?.takeIf {
+    val coachPlans=HealthCoachPlans.history(s.coachPlans,today).filter {plan->plan.categories.all {it in s.categories&&s.permissions[it]=="ready"}}
+    val coachMessage=coachPlans.firstOrNull {it.date==today.toString()}?.message ?: coachPlans.firstOrNull()?.message ?: s.coachMessage?.takeIf {
         s.coachPlans.isEmpty()&&it.snapshotId==s.snapshot?.id&&it.evidenceIds.isNotEmpty()&&
             it.evidenceIds.all {id->s.snapshot?.evidence?.any {e->e.id==id&&s.permissions[e.kind]=="ready"}==true}&&
             Instant.ofEpochMilli(it.createdAt).atZone(ZoneId.of(s.window.zone)).toLocalDate()==today
@@ -91,7 +91,7 @@ import kotlinx.coroutines.withContext
     fun go(next:String){if(next=="range"&&page!="custom")rangeWindow=s.window;page=next}
     fun disabledPage(next:String)=when {
         !BuildConfig.HEALTH_AI_ENABLED&&next in setOf("chat","conversations","reports","report","export","reminders","privacy")->true
-        !BuildConfig.HEALTH_COACH_ENABLED&&next in setOf("goals","coach","coachMemory")->true
+        !BuildConfig.HEALTH_COACH_ENABLED&&next in setOf("goals","coach","coachMemory","coachReview")->true
         else->false
     }
     fun settings(){try {context.startActivity(Intent("android.health.connect.action.HEALTH_HOME_SETTINGS"))}catch(_:Exception){localError=R.string.open_error}}
@@ -122,6 +122,25 @@ import kotlinx.coroutines.withContext
         when(page) {
             "home"->{
                 HealthHomeHeader(s,readAt=date(s.snapshot?.readAt),asOf=date(s.snapshot?.dataAsOf),view=view,onView={view=it},onRange={go("range")},onRefresh=vm::refresh,onPermissions=managePermissions)
+                if(BuildConfig.HEALTH_COACH_ENABLED) {
+                    HealthCoachSection(
+                        brief=coachBrief,
+                        message=coachMessage,
+                        configured=configuredService!=null,
+                        busy=s.busy,
+                        chinese=chinese,
+                        onGenerate=vm::coach,
+                        onConfigure=manageServices,
+                        onEvidence={id->vm.evidence(id)},
+                        profile=s.coachProfile.forDay(today),plans=coachPlans,today=today,
+                        generating=s.coachGenerating,currentSnapshotId=s.snapshot?.id.orEmpty(),
+                        onPreferences={coachPreferences=true},onFeedback=vm::coachFeedback,
+                        onPlanEvidence={id,snapshotId->vm.evidence(id,snapshotId)},
+                        onAsk={go("coach")},onMemory={go("coachMemory")},
+                        onReview={go("coachReview")},
+                        scheduleChanges=s.coachScheduleChanges
+                    )
+                }
                 if(view=="cards") {
                     if(todayMetrics.isEmpty()&&!s.busy) {
                         HealthCard {
@@ -183,24 +202,6 @@ import kotlinx.coroutines.withContext
                             }
                         }
                     }
-                }
-                if(BuildConfig.HEALTH_COACH_ENABLED) {
-                    HealthCoachSection(
-                        brief=coachBrief,
-                        message=coachMessage,
-                        configured=configuredService!=null,
-                        busy=s.busy,
-                        chinese=chinese,
-                        onGenerate=vm::coach,
-                        onConfigure=manageServices,
-                        onEvidence={id->vm.evidence(id)},
-                        profile=s.coachProfile.forDay(today),plans=coachPlans,today=today,
-                        generating=s.coachGenerating,currentSnapshotId=s.snapshot?.id.orEmpty(),
-                        onPreferences={coachPreferences=true},onFeedback=vm::coachFeedback,
-                        onPlanEvidence={id,snapshotId->vm.evidence(id,snapshotId)},
-                        onAsk={go("coach")},onMemory={go("coachMemory")},
-                        scheduleChanges=s.coachScheduleChanges
-                    )
                 }
                 if(BuildConfig.HEALTH_AI_ENABLED) {
                     HealthAiSection(enabled=!s.busy&&s.snapshot?.analysisEvidence()?.isNotEmpty()==true,configured=!configuredService.isNullOrEmpty(),onReport={vm.ask(reportQuestion,true);go("chat")},onChat={go("chat")},onConfigure=manageServices,onPreset={question=it;go("chat")},presets=listOf(
@@ -306,6 +307,46 @@ import kotlinx.coroutines.withContext
                         TextButton(enabled=!s.busy,onClick={vm.coachMemoryRemove(memory.id)}){Text(stringResource(R.string.health_coach_memory_forget))}
                     }
                 }
+            }
+            "coachReview"->{
+                val profile=s.coachProfile.forDay(today)
+                val review=HealthCoachPlans.weekReview(profile,coachPlans,today)
+                val resources=LocalResources.current
+                fun days(days:Set<Int>)=days.sorted().joinToString(" · ") {resources.getString(coachWeekdayLabel(it))}
+                    .ifBlank {resources.getString(R.string.health_coach_weekly_empty_short)}
+                Text(stringResource(R.string.health_coach_review_title),style=MaterialTheme.typography.headlineSmall)
+                Text("${review.weekStart} — ${review.weekEnd}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                HealthCard(MaterialTheme.colorScheme.primaryContainer.copy(alpha=.55f)) {
+                    Text(
+                        stringResource(R.string.health_coach_review_completion,review.completedDays,review.scheduledDays),
+                        style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.SemiBold
+                    )
+                    Text(
+                        stringResource(R.string.health_coach_review_detail,review.partialDays,review.missedDays,review.tooHardDays),
+                        style=MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        stringResource(when(review.action) {
+                            HealthCoachReviewAction.SET_UP->R.string.health_coach_review_setup
+                            HealthCoachReviewAction.KEEP->R.string.health_coach_review_keep
+                            HealthCoachReviewAction.EASE->R.string.health_coach_review_ease
+                            HealthCoachReviewAction.ADVANCE->R.string.health_coach_review_advance
+                        }),
+                        style=MaterialTheme.typography.bodyMedium
+                    )
+                }
+                Text(stringResource(R.string.health_coach_next_week),style=MaterialTheme.typography.titleMedium)
+                HealthCard(MaterialTheme.colorScheme.surfaceVariant) {
+                    Text(days(review.nextDays)+" · "+stringResource(R.string.health_coach_minutes,review.nextMinutes),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Medium)
+                    Text(stringResource(R.string.health_coach_next_week_note),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(
+                        enabled=!s.busy&&review.nextDays.isNotEmpty(),
+                        onClick={vm.coachApplyWeekReview(review);page="home"},
+                        modifier=Modifier.fillMaxWidth()
+                    ){Text(stringResource(R.string.health_coach_confirm_next_week))}
+                    TextButton(onClick={page="home"}){Text(stringResource(R.string.health_coach_keep_current_week))}
+                }
+                TextButton(onClick={go("coach")}){Text(stringResource(R.string.health_coach_ask_about_week))}
             }
             "sources"->{
                 Text(stringResource(R.string.health_main_source),style=MaterialTheme.typography.headlineSmall)
@@ -909,11 +950,12 @@ private fun trendAxisLabel(trend:HealthTrendSeries,value:Double):String {
     profile:HealthCoachProfile,plans:List<HealthCoachPlan>,today:LocalDate,generating:Boolean,
     currentSnapshotId:String,onPreferences:()->Unit,onFeedback:(String,HealthCoachFeedback)->Unit,
     onPlanEvidence:(String,String)->Unit={_,_->},onAsk:()->Unit={},onMemory:()->Unit={},
-    scheduleChanges:List<HealthCoachScheduleChange> = emptyList()
+    onReview:()->Unit={},scheduleChanges:List<HealthCoachScheduleChange> = emptyList()
 ) {
     val signals=brief?.signals.orEmpty()
     val hasData=signals.isNotEmpty()||(brief?.availableFactCount ?: 0)>0
-    val plan=plans.firstOrNull()
+    val plan=plans.firstOrNull {it.date==today.toString()} ?: plans.firstOrNull()
+    val review=HealthCoachPlans.weekProgress(profile,plans,today)
     val todayChange=scheduleChanges.filter {it.active(today)}.minByOrNull {it.date}?.takeIf {it.date==today.toString()}
     var showAllSignals by remember {mutableStateOf(false)}
     val visibleSignals=if(showAllSignals)signals else emptyList()
@@ -924,7 +966,7 @@ private fun trendAxisLabel(trend:HealthTrendSeries,value:Double):String {
                 TextButton(enabled=!busy,onClick=onPreferences){Text(stringResource(R.string.health_coach_preferences))}
             }
             Text(stringResource(coachGoalLabel(profile.goalType))+(profile.target.takeIf {it.isNotBlank()}?.let {" · $it"}.orEmpty()),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(stringResource(coachFocusLabel(profile.focus))+" · "+stringResource(R.string.health_coach_minutes,profile.minutes)+if(profile.energy==HealthCoachEnergy.TIRED)" · "+stringResource(R.string.health_coach_tired_today) else "",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(profile.energy==HealthCoachEnergy.TIRED)Text(stringResource(R.string.health_coach_tired_today),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
             val resources=LocalResources.current
             val dayLabels=profile.days.sorted().joinToString(" · ") {resources.getString(coachWeekdayLabel(it))}
             Text(
@@ -943,7 +985,7 @@ private fun trendAxisLabel(trend:HealthTrendSeries,value:Double):String {
             if(message==null)Text(stringResource(R.string.health_coach_intro),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             if(message!=null&&(message.status=="complete"||plan!=null)) {
                 HealthCard(MaterialTheme.colorScheme.surface.copy(alpha=.78f)) {
-                    if(plan!=null)Text(stringResource(R.string.health_coach_plan_date,plan.date),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    if(plan!=null&&plan.date!=today.toString())Text(stringResource(R.string.health_coach_plan_date,plan.date),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     val display=message.text.replace(Regex("\\[[a-f0-9]{4,24}(?:-(?:median|min|max))?\\]"),"").trim()
                     if(display.isNotEmpty())Text(display)
                     if(plan!=null) {
@@ -956,6 +998,8 @@ private fun trendAxisLabel(trend:HealthTrendSeries,value:Double):String {
                         HorizontalDivider()
                         Text(stringResource(if(plan.date==today.toString())R.string.health_coach_action_today else R.string.health_coach_action_previous),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
                         Text(plan.action.replace(Regex("\\[[a-f0-9]{4,24}(?:-(?:median|min|max))?\\]"),""),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Medium)
+                        if(plan.successCriteria.isNotBlank())Text(stringResource(R.string.health_coach_success_criteria,plan.successCriteria),style=MaterialTheme.typography.bodySmall)
+                        if(plan.fallback.isNotBlank())Text(stringResource(R.string.health_coach_fallback,plan.fallback),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         val status=when(plan.feedback) {
                             HealthCoachFeedback.PROPOSED->null
                             HealthCoachFeedback.ACCEPTED->R.string.health_coach_accepted
@@ -982,18 +1026,26 @@ private fun trendAxisLabel(trend:HealthTrendSeries,value:Double):String {
                 }
             }
             if(generating)Text(stringResource(R.string.health_coach_pending),style=MaterialTheme.typography.bodySmall)
-            if(plans.isNotEmpty())Text(stringResource(R.string.health_coach_week_progress,HealthCoachPlans.completedDays(plans,today)),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            if(!hasData)Text(stringResource(R.string.health_coach_no_data),style=MaterialTheme.typography.bodySmall)
-            if(configured)Button(enabled=!busy&&hasData,onClick=onGenerate,modifier=Modifier.fillMaxWidth()) {
-                Text(stringResource(when {
-                    plan?.feedback==HealthCoachFeedback.TOO_HARD->R.string.health_coach_generate_easier
-                    plan?.feedback==HealthCoachFeedback.DONE&&plan.date==today.toString()&&plan.profile.focus==profile.focus->R.string.health_coach_review
-                    message?.status=="complete"->R.string.health_coach_regenerate
-                    else->R.string.health_coach_generate
-                }))
-            } else OutlinedButton(onClick=onConfigure,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_coach_configure))}
+            if(plans.isNotEmpty()||review.scheduledDays>0)Text(stringResource(R.string.health_coach_week_progress,review.completedDays,review.scheduledDays),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(!hasData&&plan==null)Text(stringResource(R.string.health_coach_no_data),style=MaterialTheme.typography.bodySmall)
+            if(plan==null) {
+                FilledTonalButton(onClick=onPreferences,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_coach_set_weekly_plan))}
+            }
+            if(configured&&hasData) {
+                if(plan==null)Button(enabled=!busy,onClick=onGenerate,modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.health_coach_generate))}
+                else TextButton(enabled=!busy,onClick=onGenerate) {
+                    Text(stringResource(when {
+                        plan.feedback==HealthCoachFeedback.TOO_HARD->R.string.health_coach_generate_easier
+                        plan.feedback==HealthCoachFeedback.DONE&&plan.date==today.toString()&&plan.profile.focus==profile.focus->R.string.health_coach_review
+                        else->R.string.health_coach_update_insight
+                    }))
+                }
+            } else if(plan==null) {
+                TextButton(onClick=onConfigure){Text(stringResource(R.string.health_coach_configure))}
+            }
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                 AssistChip(enabled=!busy,onClick=onAsk,label={Text(stringResource(R.string.health_coach_ask))})
+                if(plans.isNotEmpty()||review.scheduledDays>0)AssistChip(enabled=!busy,onClick=onReview,label={Text(stringResource(R.string.health_coach_review_short))})
                 AssistChip(enabled=!busy,onClick=onMemory,label={Text(stringResource(R.string.health_coach_memory))})
             }
             if(signals.isNotEmpty())TextButton(onClick={showAllSignals=!showAllSignals},contentPadding=PaddingValues(0.dp)) {

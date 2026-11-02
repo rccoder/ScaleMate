@@ -74,6 +74,7 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
                 coachScheduleChanges=store.coachScheduleChanges())
         }
         mutable.update {s->val revoked=s.permissions.any {(kind,status)->status=="ready"&&data.permissions[kind]!="ready"};val keep=!revoked&&(s.busy||s.snapshot?.id!=before);s.copy(loaded=true,available=data.available,categories=data.categories,permissions=data.permissions,window=if(keep)s.window else data.window,historySupported=data.historySupported,historyGranted=data.historyGranted,backgroundSupported=data.backgroundSupported,backgroundGranted=data.backgroundGranted,snapshot=if(keep)s.snapshot else data.snapshot,services=data.services,serviceId=data.serviceId,goals=data.goals,reminderSettings=data.reminderSettings,reminders=data.reminders,conversations=data.conversations,conversation=if(revoked)HealthConversation() else s.conversation,reports=data.reports,lastCheck=data.lastCheck,sources=data.sources,coachMessage=if(s.coachGenerating)s.coachMessage else data.coachMessage,coachProfile=data.coachProfile,coachPlans=data.coachPlans,coachConversation=if(revoked)HealthConversation() else if(s.generating)s.coachConversation else data.coachConversation,coachMemories=data.coachMemories,coachScheduleChanges=data.coachScheduleChanges)}
+        if(BuildConfig.HEALTH_COACH_ENABLED)ensureTodayPlan()
         if(BuildConfig.HEALTH_AI_ENABLED&&data.reminderSettings.enabled)HealthReminders.schedule(getApplication(),true)
         val current=mutable.value
         if(refreshIfStale&&!current.busy&&current.categories.any {current.permissions[it]=="ready"}&&(current.snapshot==null||System.currentTimeMillis()-current.snapshot.readAt>60000))refresh()
@@ -212,7 +213,41 @@ class HealthViewModel @JvmOverloads constructor(application:Application,private 
     fun coachProfile(profile:HealthCoachProfile) {
         if(mutable.value.busy)return
         mutable.update {it.copy(coachProfile=profile,consent=null)}
-        task {withContext(Dispatchers.IO){store.coachProfile(profile)}}
+        task {
+            withContext(Dispatchers.IO){store.coachProfile(profile)}
+            ensureTodayPlan()
+        }
+    }
+    fun coachApplyWeekReview(review:HealthCoachWeekReview) {
+        val profile=mutable.value.coachProfile.copy(
+            days=review.nextDays,
+            minutes=review.nextMinutes.takeIf {it in setOf(5,15,30)} ?: mutable.value.coachProfile.minutes
+        )
+        coachProfile(profile)
+    }
+    private suspend fun ensureTodayPlan() {
+        val state=mutable.value
+        val snapshot=state.snapshot ?: return
+        val today=LocalDate.now(java.time.ZoneId.of(state.window.zone))
+        val profile=state.coachProfile.forDay(today)
+        if(profile.days.isEmpty()||today.dayOfWeek.value !in profile.days)return
+        if(state.coachPlans.any {it.date==today.toString()})return
+        val readable=snapshot.categories.intersect(state.categories.filter {state.permissions[it]=="ready"}.toSet())
+        val chinese=getApplication<Application>().resources.configuration.locales[0].language=="zh"
+        val copy=HealthCoachPlans.localAction(profile,chinese)
+        val message=HealthMessage(
+            role="assistant",text=copy.observation,snapshotId=snapshot.id,
+            status="complete"
+        )
+        val plan=HealthCoachPlan(
+            message,today.toString(),copy.action,profile,readable,
+            HealthCoachFeedback.PROPOSED,emptyList(),copy.kind,copy.successCriteria,copy.fallback,"local"
+        )
+        val plans=withContext(Dispatchers.IO){store.transaction {
+            store.coachPlans(listOf(plan)+store.coachPlans(),today)
+            store.coachPlans()
+        }}
+        mutable.update {it.copy(coachPlans=plans)}
     }
     fun coachMemoryAdd(text:String,expiresAt:String="") {
         if(mutable.value.busy||text.isBlank())return

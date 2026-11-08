@@ -34,6 +34,8 @@ object ScaleProtocols {
     private val parsers: List<ScaleParser> = listOf(
         YunmaiM263Parser,
         YunmaiXBroadcast,
+        XiaomiWeightScaleBroadcast,
+        XiaomiBodyScaleBroadcast,
         PicoocMiniLiteBroadcast,
         EtekcityFit8SBroadcast,
         FitIndexFt26rBroadcast,

@@ -49,7 +49,7 @@
 目前已接入以下体重秤，并统一只读取体重：
 
 - **云麦**：智能体脂秤 3 SE、mini 系列、SE、X、mini 2S
-- **小米**：小米体重秤 2、小米体脂秤 2
+- **小米**：小米体重秤／2、小米体脂秤／2
 - **PICOOC**：连接型体脂秤、Mini Lite
 - **荣耀**：体脂秤 AH100 / CH100
 - **realme**：真我智能秤 RMH2011
@@ -92,3 +92,5 @@
 ## 致谢
 
 感谢 [openScale](https://github.com/oliexdev/openScale) 项目及其贡献者。公开的蓝牙体重秤协议解析实现，为称伴理解设备报文、实现体重读取提供了重要参考。
+
+感谢 [Theengs Decoder](https://github.com/theengs/decoder) 提供的小米体重秤公开协议字段与测试向量。

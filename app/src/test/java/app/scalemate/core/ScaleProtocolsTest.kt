@@ -89,10 +89,30 @@ class ScaleProtocolsTest {
         manufacturerData = mapOf(0xF0FF to byteArrayOf(0, 0, 0xDF.toByte(), 0x02)),
     )
 
+    private fun xiaomiWeight() = ScaleAdvertisement(
+        address = "AA:BB:CC:DD:EE:11",
+        name = "MI_SCALE2",
+        manufacturerData = emptyMap(),
+        serviceData = mapOf(
+            XiaomiWeightScaleBroadcast.SERVICE_WEIGHT to "223e30e607020e10293a".hex(),
+        ),
+    )
+
+    private fun xiaomiBody() = ScaleAdvertisement(
+        address = "AA:BB:CC:DD:EE:12",
+        name = "MIBFS",
+        manufacturerData = emptyMap(),
+        serviceData = mapOf(
+            XiaomiBodyScaleBroadcast.SERVICE_BODY to "0226e607020e10293af7019a38".hex(),
+        ),
+    )
+
     @Test fun routesEachAdvertisementToItsProductModel() {
         val expected = listOf(
             ScaleCatalog.yunmai3Se to yunmaiM263(),
             ScaleCatalog.yunmaiX to yunmaiX(),
+            ScaleCatalog.xiaomiWeightScale2 to xiaomiWeight(),
+            ScaleCatalog.xiaomiBodyScale2 to xiaomiBody(),
             ScaleCatalog.picoocMiniLite to picooc(),
             ScaleCatalog.etekcityFit8S to etekcity(),
             ScaleCatalog.fitIndexFt26rW to fitIndex(),
@@ -143,8 +163,6 @@ class ScaleProtocolsTest {
 
     @Test fun identifiesConnectionOnlyScalesFromAdvertisementNames() {
         val expected = listOf(
-            "MI_SCALE2" to ScaleCatalog.xiaomiWeightScale2,
-            "MIBCS" to ScaleCatalog.xiaomiBodyScale2,
             "Latin-S" to ScaleCatalog.picoocGatt,
             "AH100" to ScaleCatalog.honorBodyFatScaleAh100,
             "realme Smart Scale" to ScaleCatalog.realmeSmartScale,
@@ -155,5 +173,19 @@ class ScaleProtocolsTest {
             val advertisement = ScaleAdvertisement("AA:BB:CC:DD:EE:FF", name, emptyMap())
             assertSame(model, ScaleProtocols.identify(advertisement))
         }
+    }
+
+    @Test fun xiaomiAdvertisementNeedsServiceDataRatherThanNameAlone() {
+        val nameOnly = ScaleAdvertisement("AA:BB:CC:DD:EE:11", "MI_SCALE2", emptyMap())
+        val bodyNameOnly = ScaleAdvertisement("AA:BB:CC:DD:EE:12", "MIBFS", emptyMap())
+
+        assertNull(ScaleProtocols.identify(nameOnly))
+        assertNull(ScaleProtocols.identify(bodyNameOnly))
+        assertSame(ScaleCatalog.xiaomiWeightScale2, ScaleProtocols.identify(xiaomiWeight()))
+        assertSame(ScaleCatalog.xiaomiBodyScale2, ScaleProtocols.identify(xiaomiBody()))
+    }
+
+    private fun String.hex(): ByteArray = ByteArray(length / 2) { index ->
+        substring(index * 2, index * 2 + 2).toInt(16).toByte()
     }
 }

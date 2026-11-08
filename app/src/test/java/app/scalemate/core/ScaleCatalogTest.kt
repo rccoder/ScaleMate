@@ -72,7 +72,8 @@ class ScaleCatalogTest {
         assertSame(ScaleCatalog.picoocGatt, ScaleCatalog.forAdapter(PicoocGattProtocol.ADAPTER))
         assertSame(ScaleCatalog.honorBodyFatScaleAh100, ScaleCatalog.forAdapter(HuaweiAhCh100GattProtocol.ADAPTER))
         assertSame(ScaleCatalog.realmeSmartScale, ScaleCatalog.forAdapter(RealmeGattProtocol.ADAPTER))
-        assertSame(ScaleCatalog.xiaomiWeightScale2, ScaleCatalog.forAdapter(XiaomiGattProtocol.ADAPTER))
+        assertSame(ScaleCatalog.xiaomiWeightScale2, ScaleCatalog.forAdapter(XiaomiWeightScaleBroadcast.ADAPTER))
+        assertSame(ScaleCatalog.xiaomiBodyScale2, ScaleCatalog.forAdapter(XiaomiBodyScaleBroadcast.ADAPTER))
         assertSame(ScaleCatalog.yunmai3Se, ScaleCatalog.forStoredName("YUNMAI YMBS-M263"))
         for (model in ScaleCatalog.supported) assertSame(model, ScaleCatalog.forStoredName(model.id))
         assertNull(ScaleCatalog.forId(null))
@@ -90,6 +91,6 @@ class ScaleCatalogTest {
         assertEquals(ScaleCatalog.okokV20.adapterId, ScaleCatalog.okokV11.adapterId)
         assertEquals(ScaleCatalog.okokV20.adapterId, ScaleCatalog.okokVf0.adapterId)
         assertEquals(ScaleCatalog.yunmaiMiniGatt.adapterId, ScaleCatalog.yunmaiSeGatt.adapterId)
-        assertEquals(ScaleCatalog.xiaomiWeightScale2.adapterId, ScaleCatalog.xiaomiBodyScale2.adapterId)
+        assertTrue(ScaleCatalog.xiaomiWeightScale2.adapterId != ScaleCatalog.xiaomiBodyScale2.adapterId)
     }
 }

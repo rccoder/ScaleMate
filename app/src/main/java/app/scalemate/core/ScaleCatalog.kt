@@ -114,20 +114,18 @@ object ScaleCatalog {
     val xiaomiWeightScale2 = ScaleModel(
         id = "xiaomi-mi-smart-scale-2",
         manufacturer = "Xiaomi",
-        internalModel = "XMTZC04HM",
-        adapterId = XiaomiGattProtocol.ADAPTER,
+        internalModel = "XMTZC01HM/XMTZC04HM",
+        adapterId = XiaomiWeightScaleBroadcast.ADAPTER,
         displayNameResource = R.string.model_xiaomi_mi_smart_scale_2,
         legacyDefaultNames = emptySet(),
-        connection = ScaleConnection.GATT,
     )
     val xiaomiBodyScale2 = ScaleModel(
         id = "xiaomi-mi-body-composition-scale-2",
         manufacturer = "Xiaomi",
-        internalModel = "XMTZC05HM",
-        adapterId = XiaomiGattProtocol.ADAPTER,
+        internalModel = "XMTZC02HM/XMTZC05HM",
+        adapterId = XiaomiBodyScaleBroadcast.ADAPTER,
         displayNameResource = R.string.model_xiaomi_mi_body_composition_scale_2,
         legacyDefaultNames = emptySet(),
-        connection = ScaleConnection.GATT,
     )
     val picoocGatt = ScaleModel(
         id = "picooc-connection-body-fat-scale",

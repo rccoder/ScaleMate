@@ -47,7 +47,6 @@ interface ScaleGattProtocol {
 
 object ScaleGattProtocols {
     val all: List<ScaleGattProtocol> = listOf(
-        XiaomiGattProtocol,
         PicoocGattProtocol,
         HuaweiAhCh100GattProtocol,
         RealmeGattProtocol,

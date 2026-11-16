@@ -1,0 +1,131 @@
+{
+  "tag": "v0.4.3",
+  "releaseUrl": "https://github.com/rccoder/ScaleMate/releases/tag/v0.4.3",
+  "commit": "24a5371330c2609bffe2878a1b4b9d161914da17",
+  "ciRun": "https://github.com/rccoder/ScaleMate/actions/runs/43903693294",
+  "releaseRun": "https://github.com/rccoder/ScaleMate/actions/runs/43904642354",
+  "release": {
+    "draft": false,
+    "prerelease": false,
+    "latestTag": "v0.4.3",
+    "bodyMatchesRepositoryNotes": true,
+    "assetCount": 7,
+    "assets": [
+      {
+        "name": "SHA256SUMS",
+        "sizeBytes": 80,
+        "state": "uploaded",
+        "digest": "sha256:18e6a051f4a299b21cae7fba9008ed26086c003569b780b8d652291a077fc90b"
+      },
+      {
+        "name": "ScaleMate.apk",
+        "sizeBytes": 26426532,
+        "state": "uploaded",
+        "digest": "sha256:5035e1767d0855afaafb9ba49d478da44ba18dd8f21df989f69a9ba46f411c19"
+      },
+      {
+        "name": "releases.json",
+        "sizeBytes": 2099,
+        "state": "uploaded",
+        "digest": "sha256:329a10b13ff0643c5b894bd95047844d68fa394be663e0d245a3354ee175c5db"
+      },
+      {
+        "name": "releases.json.sig",
+        "sizeBytes": 512,
+        "state": "uploaded",
+        "digest": "sha256:6a574bfbd84389c2725a26bb9d4141f43f60482083bf774c612f7ec20873b53b"
+      },
+      {
+        "name": "signing-certificate.txt",
+        "sizeBytes": 957,
+        "state": "uploaded",
+        "digest": "sha256:7101d592bccd52f047dac7d1687cdf67aad27ae799e9fc0c4eaca182aa13f846"
+      },
+      {
+        "name": "update.json",
+        "sizeBytes": 2223,
+        "state": "uploaded",
+        "digest": "sha256:0c431d20c8e297a4e84f36bd38c3426828b982cfa10e6e3c6dfc613cf02394f5"
+      },
+      {
+        "name": "update.json.sig",
+        "sizeBytes": 512,
+        "state": "uploaded",
+        "digest": "sha256:1521817c1b10158a714ad925c67f8956d4b45345674e78fd5001fab74aba45bf"
+      }
+    ]
+  },
+  "apk": {
+    "sha256": "5035e1767d0855afaafb9ba49d478da44ba18dd8f21df989f69a9ba46f411c19",
+    "sizeBytes": 26426532,
+    "sha256sumsVerified": true,
+    "fixedSignatureVerified": true,
+    "certificateSha256": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5",
+    "package": "app.scalemate",
+    "versionName": "0.4.3",
+    "versionCode": 29,
+    "nonDebuggable": true,
+    "latestFixedLinkSha256": "5035e1767d0855afaafb9ba49d478da44ba18dd8f21df989f69a9ba46f411c19",
+    "latestFixedLinkMatches": true,
+    "installedApkSha256Matches": true
+  },
+  "metadata": {
+    "updateJsonSignatureVerified": true,
+    "releasesJsonSignatureVerified": true,
+    "updateManifestVerified": true,
+    "updateIndexVerified": true,
+    "channel": "stable",
+    "publicKeySha256": "159749322f1e08c8ef648ba4de38cf295d98ff098ac1f5220f84f664d1c27c7f"
+  },
+  "downloadSources": {
+    "successful": [
+      "github-official",
+      "gh-proxy-com",
+      "gh-proxy-org"
+    ],
+    "failed": [
+      {
+        "source": "ghfast-top",
+        "elapsedSeconds": 180.5,
+        "error": "TimeoutError: Total route deadline exceeded (180.0s)"
+      },
+      {
+        "source": "ghproxy-net",
+        "elapsedSeconds": 20.0,
+        "error": "URLError: <urlopen error _ssl.c:1126: The handshake operation timed out>"
+      },
+      {
+        "source": "gh-llkk-cc",
+        "elapsedSeconds": 20.2,
+        "error": "HTTPError: HTTP Error 522: <none>"
+      }
+    ]
+  },
+  "emulatorUpgrade": {
+    "serial": "emulator-5556",
+    "apiLevel": 36,
+    "fromVersionName": "0.4.3-preview.3",
+    "fromVersionCode": 28,
+    "toVersionName": "0.4.3",
+    "toVersionCode": 29,
+    "previewChannelPreserved": true,
+    "updateFoundInApp": true,
+    "downloadVerifiedInApp": true,
+    "androidConfirmationShown": true,
+    "cancelThenRetrySucceeded": true,
+    "installedOverExistingApp": true,
+    "firstInstallTimeBefore": "2026-10-31 12:09:19",
+    "firstInstallTimeAfter": "2026-10-31 12:09:19",
+    "launchAfterUpgrade": true,
+    "nonEmptySampleRecordRetained": true,
+    "retainedSample": "1 餐 Banana，100 kcal，本地已保存",
+    "upToDateAfterCheck": true,
+    "crashBufferEmpty": true
+  },
+  "boundaries": [
+    "本轮未覆盖用户真机公开包升级，未唤醒或修改用户手机上的 App。",
+    "模拟器中的 Banana 是合成验收样例，不是用户真实餐食或健康数据。",
+    "本轮未连接真实小米体脂秤 2、真实 Health Connect 目标应用或真实 AI 服务。",
+    "下载线路结果只代表本轮网络环境，不承诺代理长期可用性。"
+  ]
+}

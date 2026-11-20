@@ -836,7 +836,8 @@
     <string name="health_notifications_optional">Optional · affects reminder notifications only</string>
     <string name="health_reminder_permissions">Allow background reading and notifications for reminders</string>
     <string name="food_merge_dish">Combine into one dish</string>
-    <string name="food_merge_hint">Select at least two parts of one dish and give it a name, such as chicken, vegetables and dressing for a salad. Keep drinks separate. Existing personal nutrition is added together without another AI call. Save the meal to add the dish to your food library.</string>
+    <string name="food_merge_suggested">Combine as “%1$s”</string>
+    <string name="food_merge_hint">The AI proposed these items as one dish and filled in the name. Adjust the selection or serving if needed, then confirm. Existing personal nutrition is added together without another AI call. Save the meal to add the dish to your food library.</string>
     <string name="food_merge_name">Dish name</string>
     <string name="food_merge_default_portion">Combined personal serving</string>
     <string name="food_merge_total">Combined nutrition</string>

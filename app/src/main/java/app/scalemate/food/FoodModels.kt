@@ -46,6 +46,9 @@ data class AiUsage(
     val hasContent get()=inputTokens!=null||outputTokens!=null||totalTokens!=null
 }
 
+/** AI-provided correction hint: these entries form one naturally named dish if the user merges them. */
+data class FoodMergeSuggestion(val name:String,val itemIds:List<String>,val id:String=newFoodId())
+
 data class FoodItem(
     val id: String = newFoodId(), val name: String = "", val portion: String = "1", val grams: Double? = null,
     val base: Nutrients = Nutrients(), val shareCount: Int = 1, val fraction: Double = 1.0,
@@ -84,10 +87,14 @@ data class FoodTemplate(val id: String=newFoodId(),val item: FoodItem)
 data class FoodBatch(
     val id:String=newFoodId(),val kind:String="photo",val photos:List<String> = emptyList(),
     val description:String="",val tags:Set<String> = emptySet(),val shareCount:Int=1,
-    val results:List<FoodItem> = emptyList(),val status:String="idle",val editingItemId:String?=null,
+    val results:List<FoodItem> = emptyList(),val mergeSuggestions:List<FoodMergeSuggestion> = emptyList(),val status:String="idle",val editingItemId:String?=null,
     val advice:MealAdvice=MealAdvice(),val usage:AiUsage=AiUsage(),val analysisMs:Long?=null
 ) {
     fun validForCommit()=results.isNotEmpty()&&results.all {it.valid()}&&Nutrients.sum(results.map {it.nutrients}).valid()
+    /** Suggestions whose referenced entries still exist; stale suggestions are never offered. */
+    val applicableMergeSuggestions get()=mergeSuggestions.filter {s->
+        s.name.isNotBlank()&&s.itemIds.distinct().size>=2&&s.itemIds.all {id->results.any {it.id==id}}
+    }
     /** A changed photo set starts a fresh analysis; same-photo revisions keep their previous result. */
     fun withChangedPhotos(changed:List<String>):FoodBatch {
         val hadAnalysis=results.isNotEmpty()||advice.hasContent||usage.hasContent||analysisMs!=null
@@ -95,6 +102,7 @@ data class FoodBatch(
             photos=changed,
             description=if(hadAnalysis) "" else description,
             results=emptyList(),
+            mergeSuggestions=emptyList(),
             status="idle",
             advice=MealAdvice(),
             usage=AiUsage(),
@@ -111,7 +119,7 @@ data class FoodDraft(val meal:Meal=Meal(),val editing:Boolean=false,val updatedA
         val pending=batch ?: return this
         if(pending.results.none {it.id==id})return this
         val remaining=pending.results.filterNot {it.id==id}
-        return if(remaining.isNotEmpty())copy(batch=pending.copy(results=remaining)) else copy(
+        return if(remaining.isNotEmpty())copy(batch=pending.copy(results=remaining,mergeSuggestions=pending.mergeSuggestions.filter {s->id !in s.itemIds})) else copy(
             meal=if(pending.editingItemId!=null)meal.copy(items=meal.items.filterNot {it.id==pending.editingItemId}) else meal,
             batch=null)
     }

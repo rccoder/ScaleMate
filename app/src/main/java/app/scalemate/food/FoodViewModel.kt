@@ -187,7 +187,7 @@ class FoodViewModel(application: Application): AndroidViewModel(application) {
                 mutable.update {it.copy(
                     analysisStage="ready",message=R.string.food_analysis_ready,
                     draft=it.draft?.let {d->d.copy(batch=d.batch?.copy(
-                        results=result.items,status="review",advice=result.advice,
+                        results=result.items,mergeSuggestions=result.mergeSuggestions,status="review",advice=result.advice,
                         usage=result.usage,analysisMs=elapsed
                     ),updatedAt=System.currentTimeMillis())}
                 )};persistDraft()

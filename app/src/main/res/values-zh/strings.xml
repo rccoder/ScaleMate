@@ -836,7 +836,8 @@
     <string name="health_notifications_optional">可选 · 只影响主动提醒通知</string>
     <string name="health_reminder_permissions">授权提醒所需的后台读取与通知</string>
     <string name="food_merge_dish">合并为一道菜</string>
-    <string name="food_merge_hint">选中同一道菜的至少两项，并填写菜名。比如把鸡胸肉、蔬菜和酱汁合成一份轻食，饮料另留。合并只累加已有的本人营养，不额外调用 AI；保存这一餐后才加入食物库。</string>
+    <string name="food_merge_suggested">合并为「%1$s」</string>
+    <string name="food_merge_hint">AI 已按分组选中这些项目并给出合并后的菜名。你可以调整选择或份量后确认。合并只累加已有的本人营养，不额外调用 AI；保存这一餐后才加入食物库。</string>
     <string name="food_merge_name">合并后的菜名</string>
     <string name="food_merge_default_portion">所选食物合计的本人份量</string>
     <string name="food_merge_total">合并后的营养</string>

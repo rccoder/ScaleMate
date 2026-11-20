@@ -101,6 +101,7 @@ import kotlinx.coroutines.launch
     var reanalyze by remember {mutableStateOf(false)}
     var abandon by remember {mutableStateOf(false)}
     var mergeBatchId by rememberSaveable {mutableStateOf<String?>(null)}
+    var mergeSuggestionId by rememberSaveable {mutableStateOf<String?>(null)}
     var manualReturn by rememberSaveable {mutableStateOf("picker")}
     var selectedMeal by remember {mutableStateOf<String?>(initialMealId)}
     var selector by remember(initialSelector){mutableStateOf(initialSelector)}
@@ -285,7 +286,9 @@ import kotlinx.coroutines.launch
                         }
                         if(batch.kind=="photo"||batch.advice.hasContent||batch.usage.hasContent)MealAdviceCard(batch.advice,Nutrients.sum(batch.results.map {it.nutrients}),batch.usage,batch.analysisMs)
                         Text(stringResource(R.string.food_personal_results),color=MaterialTheme.colorScheme.primary)
-                        if(batch.kind=="photo"&&batch.results.size>=2)OutlinedButton(enabled=!s.busy&&!s.saving,onClick={mergeBatchId=batch.id},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.food_merge_dish))}
+                        if(batch.kind=="photo")batch.applicableMergeSuggestions.forEach {suggestion->
+                            OutlinedButton(enabled=!s.busy&&!s.saving,onClick={mergeBatchId=batch.id;mergeSuggestionId=suggestion.id},modifier=Modifier.fillMaxWidth()){Text(stringResource(R.string.food_merge_suggested,suggestion.name))}
+                        }
                         if(batch.kind=="photo"&&batch.results.any {it.estimateContext?.resultMode!="personal"})Text(stringResource(R.string.food_portion_old_result),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         batch.results.forEach {food->key(food.id){
                             var expanded by rememberSaveable(batch.id,food.id){mutableStateOf(batch.kind in listOf("manual","edit"))}
@@ -381,8 +384,13 @@ import kotlinx.coroutines.launch
     if(reanalyze)AlertDialog(onDismissRequest={reanalyze=false},title={Text(stringResource(R.string.food_change_context))},text={Text(stringResource(R.string.food_reanalysis_replace))},confirmButton={TextButton(onClick={reanalyze=false;vm.clearMessage();vm.updateBatch {it.copy(status="idle")};resetContentScroll()}){Text(stringResource(R.string.food_edit_analysis_context))}},dismissButton={TextButton(onClick={reanalyze=false}){Text(stringResource(R.string.cancel))}})
     if(abandon)AlertDialog(onDismissRequest={abandon=false},title={Text(stringResource(R.string.food_discard_addition))},text={Text(stringResource(R.string.food_pending_note))},confirmButton={TextButton(onClick={vm.abandonBatch();abandon=false;page="editor"}){Text(stringResource(R.string.food_discard_addition))}},dismissButton={TextButton(onClick={abandon=false}){Text(stringResource(R.string.cancel))}})
     libraryEditing?.let {entry->FoodEditDialog(entry.item,onDismiss={libraryEditing=null}){vm.updateLibrary(entry.id,it);libraryEditing=null}}
-    draft?.batch?.takeIf {it.id==mergeBatchId&&it.kind=="photo"&&it.status=="review"&&it.results.size>=2&&!s.busy&&!s.saving}?.let {batch->
-        FoodDishMergeDialog(batch,onDismiss={mergeBatchId=null}){ids,name,portion->if(vm.mergeDish(batch.id,ids,name,portion))mergeBatchId=null}
+    val mergeTarget=draft?.batch?.takeIf {it.id==mergeBatchId&&it.kind=="photo"&&it.status=="review"&&!s.busy&&!s.saving}?.let {batch->
+        batch.applicableMergeSuggestions.find {it.id==mergeSuggestionId}?.let {batch to it}
+    }
+    mergeTarget?.let {(batch,suggestion)->
+        FoodDishMergeDialog(batch,suggestion,onDismiss={mergeBatchId=null;mergeSuggestionId=null}){ids,name,portion->
+            if(vm.mergeDish(batch.id,ids,name,portion)){mergeBatchId=null;mergeSuggestionId=null}
+        }
     }
     if(syncGuide)AlertDialog(onDismissRequest={syncGuide=false},title={Text(stringResource(R.string.food_local_saved_title))},text={Text(stringResource(if(s.healthAvailable)R.string.food_sync_guide else R.string.food_health_unavailable))},confirmButton={TextButton(onClick={syncGuide=false;if(s.healthAvailable)authorize() else openHealth()}){Text(stringResource(if(s.healthAvailable)R.string.food_nutrition_authorize else R.string.health_settings))}},dismissButton={TextButton(onClick={syncGuide=false}){Text(stringResource(R.string.food_continue_local))}})
     if(discardDialog)AlertDialog(onDismissRequest={discardDialog=false},title={Text(stringResource(R.string.food_discard))},text={Text(stringResource(R.string.food_draft_note))},confirmButton={TextButton(onClick={vm.discard();discardDialog=false;page="home"}){Text(stringResource(R.string.food_discard))}},dismissButton={TextButton(onClick={discardDialog=false}){Text(stringResource(R.string.cancel))}})

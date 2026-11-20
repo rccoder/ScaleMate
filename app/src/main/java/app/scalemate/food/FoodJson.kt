@@ -81,8 +81,10 @@ object FoodJson {
     fun meal(m: Meal): JSONObject = JSONObject().put("id",m.id).put("revision",m.revision).put("time",m.time).put("offset",m.offset).put("mealType",m.mealType)
         .put("items",JSONArray().apply {m.items.forEach {put(item(it))}}).put("advice",advice(m.advice)).put("usage",usage(m.usage)).put("analysisMs",m.analysisMs ?: JSONObject.NULL)
     fun meal(j: JSONObject): Meal = Meal(id=j.getString("id"),revision=j.getLong("revision"),time=j.getLong("time"),offset=j.getInt("offset"),mealType=j.getInt("mealType"),items=j.getJSONArray("items").let {a->(0 until a.length()).map {item(a.getJSONObject(it))}},advice=advice(j.optionalObject("advice")),usage=usage(j.optionalObject("usage")),analysisMs=j.longOrNull("analysisMs"))
-    fun batch(b:FoodBatch)=JSONObject().put("id",b.id).put("kind",b.kind).put("photos",JSONArray(b.photos)).put("description",b.description).put("tags",JSONArray(b.tags.toList())).put("shareCount",b.shareCount).put("results",items(b.results)).put("status",b.status).put("editingItemId",b.editingItemId ?: JSONObject.NULL).put("advice",advice(b.advice)).put("usage",usage(b.usage)).put("analysisMs",b.analysisMs ?: JSONObject.NULL)
-    fun batch(j:JSONObject)=FoodBatch(id=j.getString("id"),kind=j.optString("kind","photo"),photos=j.strings("photos"),description=j.optString("description"),tags=j.strings("tags").toSet(),shareCount=j.optInt("shareCount",1).coerceIn(1,20),results=foodItems(j.optJSONArray("results") ?: JSONArray()),status=if(j.optString("status")=="analyzing")"interrupted" else j.optString("status","idle"),editingItemId=if(j.isNull("editingItemId"))null else j.getString("editingItemId"),advice=advice(j.optionalObject("advice")),usage=usage(j.optionalObject("usage")),analysisMs=j.longOrNull("analysisMs"))
+    private fun mergeSuggestion(s:FoodMergeSuggestion)=JSONObject().put("id",s.id).put("name",s.name).put("itemIds",JSONArray(s.itemIds))
+    private fun mergeSuggestion(j:JSONObject)=FoodMergeSuggestion(name=j.optionalText("name"),itemIds=j.strings("itemIds"),id=j.optString("id").ifBlank {newFoodId()})
+    fun batch(b:FoodBatch)=JSONObject().put("id",b.id).put("kind",b.kind).put("photos",JSONArray(b.photos)).put("description",b.description).put("tags",JSONArray(b.tags.toList())).put("shareCount",b.shareCount).put("results",items(b.results)).put("mergeSuggestions",JSONArray().apply {b.mergeSuggestions.forEach {put(mergeSuggestion(it))}}).put("status",b.status).put("editingItemId",b.editingItemId ?: JSONObject.NULL).put("advice",advice(b.advice)).put("usage",usage(b.usage)).put("analysisMs",b.analysisMs ?: JSONObject.NULL)
+    fun batch(j:JSONObject)=FoodBatch(id=j.getString("id"),kind=j.optString("kind","photo"),photos=j.strings("photos"),description=j.optString("description"),tags=j.strings("tags").toSet(),shareCount=j.optInt("shareCount",1).coerceIn(1,20),results=foodItems(j.optJSONArray("results") ?: JSONArray()),mergeSuggestions=j.optJSONArray("mergeSuggestions")?.let {a->(0 until a.length()).mapNotNull {a.optJSONObject(it)?.let(::mergeSuggestion)}}.orEmpty(),status=if(j.optString("status")=="analyzing")"interrupted" else j.optString("status","idle"),editingItemId=if(j.isNull("editingItemId"))null else j.getString("editingItemId"),advice=advice(j.optionalObject("advice")),usage=usage(j.optionalObject("usage")),analysisMs=j.longOrNull("analysisMs"))
     fun draft(d: FoodDraft) = JSONObject().put("meal",meal(d.meal)).put("batch",d.batch?.let {batch(it)} ?: JSONObject.NULL).put("editing",d.editing).put("updatedAt",d.updatedAt).toString()
     fun draft(raw: String): FoodDraft {
         val j=JSONObject(raw);val original=meal(j.getJSONObject("meal"))
@@ -95,7 +97,7 @@ object FoodJson {
         ) else null
         return FoodDraft(meal=original.copy(items=original.items.filterNot {it.needsPortionReview}),editing=j.optBoolean("editing"),updatedAt=j.optLong("updatedAt",System.currentTimeMillis()),batch=addition)
     }
-    data class Recognition(val items:List<FoodItem>,val advice:MealAdvice=MealAdvice())
+    data class Recognition(val items:List<FoodItem>,val advice:MealAdvice=MealAdvice(),val mergeSuggestions:List<FoodMergeSuggestion> = emptyList())
     /** AI returns final personal intake. Never divide or scale these estimates in the app. */
     fun recognitionPersonal(raw:String,sharing:Int,photos:List<String> = emptyList(),tags:Set<String> = emptySet(),description:String=""):List<FoodItem> =
         recognition(raw,sharing,photos,tags,description).items
@@ -119,7 +121,16 @@ object FoodJson {
                     shareCount=sharing,tags=tags.toList(),description=description,interpretation=j.optionalText("contextInterpretation").take(1000),warning=j.optionalText("contextWarning").take(200),
                     resultMode="personal",summary=j.optionalText("intakeSummary").take(240),reportedGrams=grams,reportedNutrients=personal))
         }
-        return Recognition(items,advice(root.optionalObject("mealAdvice")))
+        val suggestions=root.optJSONArray("mergeSuggestions")?.let {array->
+            (0 until array.length()).mapNotNull {index->
+                val suggestion=array.optJSONObject(index) ?: return@mapNotNull null
+                val name=suggestion.optionalText("name")
+                val indices=suggestion.optJSONArray("foodIndices")?.let {a->(0 until a.length()).map {a.optInt(it,-1)}.distinct()}.orEmpty()
+                if(name.length !in 1..120||indices.size<2||indices.any {it !in items.indices})null
+                else FoodMergeSuggestion(name=name,itemIds=indices.map {items[it].id})
+            }.distinctBy {it.name to it.itemIds}.take(8)
+        }.orEmpty()
+        return Recognition(items,advice(root.optionalObject("mealAdvice")),suggestions)
     }
     fun usage(raw:String):AiUsage {
         val root=runCatching {embeddedJson(raw)}.getOrNull() ?: return AiUsage()

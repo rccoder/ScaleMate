@@ -32,9 +32,12 @@ internal fun FoodBatch.mergeDish(ids:Set<String>,name:String,portion:String):Foo
     )
     require(merged.copy(needsPortionReview=false).valid())
     val first=results.indexOfFirst {it.id in ids}
-    return copy(results=results.flatMapIndexed {index,item->when {
-        index==first->listOf(merged)
-        item.id in ids->emptyList()
-        else->listOf(item)
-    }})
+    return copy(
+        results=results.flatMapIndexed {index,item->when {
+            index==first->listOf(merged)
+            item.id in ids->emptyList()
+            else->listOf(item)
+        }},
+        mergeSuggestions=mergeSuggestions.filter {suggestion->suggestion.itemIds.none {it in ids}}
+    )
 }

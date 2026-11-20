@@ -88,5 +88,44 @@ class FoodDishMergeTest {
         val parsed=FoodJson.recognition(raw,2,photos=listOf("meal.jpg"))
         assertEquals(listOf("salad","milk"),parsed.items.map {it.name})
         assertEquals(listOf(300.0,120.0),parsed.items.map {it.nutrients.kcal})
+        assertTrue(parsed.mergeSuggestions.isEmpty())
+    }
+
+    @Test fun aiMergeSuggestionMapsFoodIndexesAndRejectsInvalidGroups() {
+        val raw="""{"calculationMode":"personal","foods":[
+            {"name":"chicken","personalNutrients":{"kcal":180},"personalGrams":100},
+            {"name":"vegetables","personalNutrients":{"kcal":40},"personalGrams":150},
+            {"name":"milk","personalNutrients":{"kcal":120},"personalGrams":200}],
+            "mergeSuggestions":[
+            {"name":" Chicken salad ","foodIndices":[0,1]},
+            {"name":"bad index","foodIndices":[0,9]},
+            {"name":"one item","foodIndices":[1]},
+            {"name":"","foodIndices":[0,1]}]}"""
+        val parsed=FoodJson.recognition(raw,1,photos=listOf("meal.jpg"))
+        val suggestion=parsed.mergeSuggestions.single()
+        assertEquals("Chicken salad",suggestion.name)
+        assertEquals(parsed.items.take(2).map {it.id},suggestion.itemIds)
+        val batch=FoodBatch(results=parsed.items,mergeSuggestions=parsed.mergeSuggestions,status="review")
+        assertEquals(listOf(suggestion),batch.applicableMergeSuggestions)
+        assertEquals(suggestion,batch.applicableMergeSuggestions.first())
+    }
+
+    @Test fun mergeDropsSuggestionsThatReferenceMergedOrRemovedItems() {
+        val a=food("chicken",180.0);val b=food("vegetables",40.0);val c=food("rice",200.0);val d=food("soup",60.0)
+        val first=FoodMergeSuggestion("Chicken salad",listOf(a.id,b.id))
+        val second=FoodMergeSuggestion("Rice set",listOf(c.id,d.id))
+        val original=batch(a,b,c,d).copy(mergeSuggestions=listOf(first,second))
+        val merged=original.mergeDish(setOf(a.id,b.id),"Chicken salad","Personal serving")
+        assertEquals(listOf("Rice set"),merged.applicableMergeSuggestions.map {it.name})
+        val restored=FoodJson.batch(FoodJson.batch(merged))
+        assertEquals(listOf("Rice set"),restored.applicableMergeSuggestions.map {it.name})
+        val removed=FoodDraft(batch=restored).removeBatchResult(c.id).batch!!.applicableMergeSuggestions
+        assertTrue(removed.isEmpty())
+    }
+
+    @Test fun changedPhotosDiscardMergeSuggestions() {
+        val a=food("chicken",180.0);val b=food("vegetables",40.0)
+        val batch=batch(a,b).copy(mergeSuggestions=listOf(FoodMergeSuggestion("Salad",listOf(a.id,b.id))))
+        assertTrue(batch.withChangedPhotos(listOf("other.jpg")).mergeSuggestions.isEmpty())
     }
 }

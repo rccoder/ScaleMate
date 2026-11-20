@@ -15,11 +15,12 @@ import androidx.compose.ui.unit.dp
 import app.scalemate.R
 import java.text.NumberFormat
 
-@Composable internal fun FoodDishMergeDialog(batch:FoodBatch,onDismiss:()->Unit,onMerge:(Set<String>,String,String)->Unit) {
-    var selected by rememberSaveable(batch.id){mutableStateOf(emptyList<String>())}
-    var name by rememberSaveable(batch.id){mutableStateOf("")}
+@Composable internal fun FoodDishMergeDialog(batch:FoodBatch,suggestion:FoodMergeSuggestion,onDismiss:()->Unit,onMerge:(Set<String>,String,String)->Unit) {
+    val suggestedIds=remember(suggestion.id,batch.results){suggestion.itemIds.filter {id->batch.results.any {it.id==id}}}
+    var selected by rememberSaveable(batch.id,suggestion.id){mutableStateOf(suggestedIds)}
+    var name by rememberSaveable(batch.id,suggestion.id){mutableStateOf(suggestion.name)}
     val defaultPortion=stringResource(R.string.food_merge_default_portion)
-    var portion by rememberSaveable(batch.id){mutableStateOf(defaultPortion)}
+    var portion by rememberSaveable(batch.id,suggestion.id){mutableStateOf(defaultPortion)}
     val ids=selected.toSet()
     val foods=batch.results.filter {it.id in ids}
     val total=Nutrients.sum(foods.map {it.nutrients})

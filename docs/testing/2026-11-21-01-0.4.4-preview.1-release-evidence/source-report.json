@@ -1,0 +1,54 @@
+{
+  "tag": "v0.4.4-preview.1",
+  "asset": "ScaleMate.apk",
+  "sha256": "743c6fd33a6eb21c30f8828d7daf67a670fc55196c0ef7d48413eef8b4b0728f",
+  "sizeBytes": 26426972,
+  "sources": [
+    {
+      "source": "github-official",
+      "url": "https://github.com/rccoder/ScaleMate/releases/download/v0.4.4-preview.1/ScaleMate.apk",
+      "ok": true,
+      "sizeBytes": 26426972,
+      "elapsedSeconds": 3.3,
+      "contentLength": 26426972
+    },
+    {
+      "source": "gh-proxy-com",
+      "url": "https://gh-proxy.com/https://github.com/rccoder/ScaleMate/releases/download/v0.4.4-preview.1/ScaleMate.apk",
+      "ok": true,
+      "sizeBytes": 26426972,
+      "elapsedSeconds": 5.1,
+      "contentLength": 26426972
+    },
+    {
+      "source": "ghfast-top",
+      "url": "https://ghfast.top/https://github.com/rccoder/ScaleMate/releases/download/v0.4.4-preview.1/ScaleMate.apk",
+      "ok": true,
+      "sizeBytes": 26426972,
+      "elapsedSeconds": 23.2,
+      "contentLength": 26426972
+    },
+    {
+      "source": "ghproxy-net",
+      "url": "https://ghproxy.net/https://github.com/rccoder/ScaleMate/releases/download/v0.4.4-preview.1/ScaleMate.apk",
+      "ok": false,
+      "elapsedSeconds": 20.0,
+      "error": "URLError: <urlopen error _ssl.c:1126: The handshake operation timed out>"
+    },
+    {
+      "source": "gh-llkk-cc",
+      "url": "https://gh.llkk.cc/https://github.com/rccoder/ScaleMate/releases/download/v0.4.4-preview.1/ScaleMate.apk",
+      "ok": false,
+      "elapsedSeconds": 20.5,
+      "error": "HTTPError: HTTP Error 522: <none>"
+    },
+    {
+      "source": "gh-proxy-org",
+      "url": "https://gh-proxy.org/https://github.com/rccoder/ScaleMate/releases/download/v0.4.4-preview.1/ScaleMate.apk",
+      "ok": true,
+      "sizeBytes": 26426972,
+      "elapsedSeconds": 2.8,
+      "contentLength": 26426972
+    }
+  ]
+}

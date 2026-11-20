@@ -1,0 +1,72 @@
+{
+  "tag": "v0.4.4-preview.1",
+  "channel": "preview",
+  "versionName": "0.4.4-preview.1",
+  "versionCode": 30,
+  "tagCommit": "e0db7c4145da3897310d13c4e2371133880dbae9",
+  "annotatedTagObject": "180493c628a9079e9d073cae5630ce1fcc3315cd",
+  "releaseUrl": "https://github.com/rccoder/ScaleMate/releases/tag/v0.4.4-preview.1",
+  "isDraft": false,
+  "isPrerelease": true,
+  "latestTagAfterPublish": "v0.4.3",
+  "workflows": {
+    "featureCi": "https://github.com/rccoder/ScaleMate/actions/runs/44778141947",
+    "releaseCommitCi": "https://github.com/rccoder/ScaleMate/actions/runs/44779023857",
+    "signedRelease": "https://github.com/rccoder/ScaleMate/actions/runs/44779947992"
+  },
+  "assets": [
+    {"name": "ScaleMate.apk", "size": 26426972, "sha256": "743c6fd33a6eb21c30f8828d7daf67a670fc55196c0ef7d48413eef8b4b0728f"},
+    {"name": "SHA256SUMS", "size": 80, "sha256": "639ff876256d4efa938692391bb262bf8a52e3343eba92a08a4d73f544010e25"},
+    {"name": "signing-certificate.txt", "size": 957, "sha256": "7101d592bccd52f047dac7d1687cdf67aad27ae799e9fc0c4eaca182aa13f846"},
+    {"name": "update.json", "size": 2064, "sha256": "5fdc04c46957ce5677b15d0c96f46a8e2a8de3b54c926d4d504e086dc6ba8b32"},
+    {"name": "update.json.sig", "size": 512, "sha256": "6586cd907bfd61063b8bd5d4289f34065ba11f86e84be934d889111e42e1b565"},
+    {"name": "releases.json", "size": 1927, "sha256": "0b49a31a62dd442b743fd94f588a9f35a86bf9fc3eeb2d132fe130b26c5f44f6"},
+    {"name": "releases.json.sig", "size": 512, "sha256": "64953abe6a05e68c58609992fd37e94bf897917284ae89134eda7620bab0c77c"}
+  ],
+  "apk": {
+    "packageName": "app.scalemate",
+    "versionCode": 30,
+    "versionName": "0.4.4-preview.1",
+    "debuggable": false,
+    "signatureSchemes": {"v1": false, "v2": true},
+    "certificateSha256": "9836e7ea5e5dc782be63e7b21c39cb0fa9f6a9633d18952664e83cfaa8172ed5",
+    "publicKeySha256": "159749322f1e08c8ef648ba4de38cf295d98ff098ac1f5220f84f664d1c27c7f"
+  },
+  "checks": {
+    "sha256sum": "OK",
+    "check_release": "Release checks passed: v0.4.4-preview.1 / versionCode 30 / preview; APK signature and package verified",
+    "updateJsonSignature": "verified with fixed public key",
+    "releasesJsonSignature": "verified with fixed public key",
+    "updateManifest": "Update manifest checks passed: v0.4.4-preview.1",
+    "updateIndex": "Update index checks passed: v0.4.4-preview.1 / 1 release(s)"
+  },
+  "downloadSources": {
+    "ok": ["github-official", "gh-proxy-com", "ghfast-top", "gh-proxy-org"],
+    "failed": [
+      {"source": "ghproxy-net", "error": "TLS handshake timeout after 20s"},
+      {"source": "gh-llkk-cc", "error": "HTTP 522 after 20.5s"}
+    ],
+    "report": "source-report.json"
+  },
+  "emulatorUpgrade": {
+    "device": "emulator-5556",
+    "apiLevel": 36,
+    "from": {"versionName": "0.4.3", "versionCode": 29},
+    "to": {"versionName": "0.4.4-preview.1", "versionCode": 30},
+    "firstInstallTime": "2026-10-31 12:09:19",
+    "lastUpdateTime": "2026-11-21 01:14:36",
+    "installedApkSha256": "743c6fd33a6eb21c30f8828d7daf67a670fc55196c0ef7d48413eef8b4b0728f",
+    "installedApkSha256MatchesRelease": true,
+    "installCancelThenRetry": true,
+    "mealSampleRetained": "Banana / 100 kcal / 1 pending sync record",
+    "weightRecordsBeforeUpgrade": 0,
+    "weightRecordsAfterUpgrade": 0,
+    "switchBackToStable": "blocked by product rule: installed preview is newer than available stable"
+  },
+  "limitations": [
+    "Real AI 4-fixture prompt regression for mergeSuggestions was not run; no private AI configuration on the emulator.",
+    "The emulator had no weight records or paired scale before the upgrade, so weight record retention was not exercised.",
+    "No physical device, Bluetooth scale, real Health Connect write, or target health app read was verified.",
+    "update.json knownIssues is a generic preview warning; version-specific risks remain in docs/releases/v0.4.4-preview.1.md."
+  ]
+}
